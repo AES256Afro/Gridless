@@ -391,6 +391,17 @@ function integrityFailures(world: World) {
       if (stop.progress < 0 || stop.progress > 1) failures.push(`Transit stop ${stop.id} has invalid route progress.`);
     }
   }
+  for (const facility of world.parking) {
+    if (facility.capacity <= 0 || facility.occupied < 0 || facility.occupied > facility.capacity) {
+      failures.push(`Parking facility ${facility.id} has invalid capacity or occupancy.`);
+    }
+    if (facility.accessibleSpaces < 0 || facility.accessibleSpaces > facility.capacity) {
+      failures.push(`Parking facility ${facility.id} has invalid accessible-space capacity.`);
+    }
+    if (facility.hourlyRate < 0 || facility.hourlyRate > 25 || facility.revenue < 0) {
+      failures.push(`Parking facility ${facility.id} has invalid pricing or revenue data.`);
+    }
+  }
   return unique(failures);
 }
 

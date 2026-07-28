@@ -159,6 +159,13 @@ app.innerHTML = `
         <option value="surface">Surface lot · 18 spaces</option>
         <option value="garage">Garage · 84 spaces</option>
       </select>
+      <select id="parking-price" aria-label="Parking hourly price">
+        <option value="0">Free parking</option>
+        <option value="2">Economy · $2/hr</option>
+        <option value="4">Market · $4/hr</option>
+        <option value="6" selected>Premium · $6/hr</option>
+        <option value="10">Event · $10/hr</option>
+      </select>
     </div>
     <div class="home-tools" aria-label="Home building tools">
       <button data-home-tool="select" class="active">Inspect</button>
@@ -874,11 +881,11 @@ function parkExplorerVehicle() {
   setPanel(
     "CITY EXPLORER",
     "Vehicle parked",
-    `${parkingKindLabel(facility.kind)} has ${facility.capacity - facility.occupied} spaces available, including ${facility.accessibleSpaces} designated accessible spaces.`,
+    `${parkingKindLabel(facility.kind)} charges ${formatParkingRate(facility.hourlyRate)} and has ${facility.capacity - facility.occupied} spaces available. ${parkingPressureLabel(facility)}. ${facility.accessibleSpaces} spaces are designated accessible.`,
     "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
   );
   updateExplorerMovementStatus(0);
-  notice(`Parked in ${parkingKindLabel(facility.kind).toLowerCase()}`);
+  notice(`Parked in ${parkingKindLabel(facility.kind).toLowerCase()} · ${formatParkingRate(facility.hourlyRate)}`);
 }
 
 function toggleExplorerVehicle() {
@@ -1269,6 +1276,31 @@ function parkingKindLabel(kind: ParkingKind) {
   return kind === "curb" ? "Curb parking" : kind === "surface" ? "Surface parking lot" : "Parking garage";
 }
 
+function closestParkingFacility(point: Point2, maximumDistance: number) {
+  return world.parking
+    .map(facility => ({
+      facility,
+      distance: Math.hypot(facility.position.x - point.x, facility.position.z - point.z)
+    }))
+    .filter(candidate => candidate.distance <= maximumDistance)
+    .sort((a, b) => a.distance - b.distance)[0];
+}
+
+function formatParkingRate(hourlyRate: number) {
+  return hourlyRate > 0 ? `$${hourlyRate.toFixed(hourlyRate % 1 ? 2 : 0)}/hr` : "Free";
+}
+
+function parkingPressureLabel(facility: ParkingFacility) {
+  const demand = world.parkingDemand(facility);
+  return demand >= .86 ? "Very high demand" : demand >= .66 ? "High demand" : demand >= .4 ? "Balanced demand" : "Low demand";
+}
+
+function formatParkingMonthly(value: number) {
+  return value >= 100_000
+    ? `$${(value / 1_000).toFixed(0)}k/mo`
+    : `$${(value / 1_000).toFixed(1)}k/mo`;
+}
+
 function createParkingFacility(facility: ParkingFacility) {
   const group = new THREE.Group();
   group.position.set(facility.position.x, .19, facility.position.z);
@@ -1336,13 +1368,18 @@ function createParkingFacility(facility: ParkingFacility) {
   }
 
   if (mode === "city" && cityTool === "parking") {
+    const projectedRevenue = world.parkingMonthlyProjection(facility);
+    const projectedNet = projectedRevenue - world.parkingMonthlyCost(facility);
     const label = makeLabel(
-      `${parkingKindLabel(facility.kind)} · ${facility.occupied}/${facility.capacity} occupied · ${facility.accessibleSpaces} accessible`
+      `${parkingKindLabel(facility.kind)} · ${formatParkingRate(facility.hourlyRate)} · ${facility.occupied}/${facility.capacity} occupied · ${parkingPressureLabel(facility)} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
     );
     label.position.y = facility.kind === "garage" ? 14 : 4.2;
-    label.scale.set(58, 8, 1);
+    label.scale.set(82, 8, 1);
     group.add(label);
   }
+  group.traverse(object => {
+    object.userData.parkingId = facility.id;
+  });
   return group;
 }
 
@@ -1363,7 +1400,9 @@ function updateCityStats() {
     jobs,
     openBusinesses,
     workersOnShift,
-    monthlyBalance: balance
+    monthlyBalance: balance,
+    parkingRevenue,
+    parkingCosts
   } = world.cityEconomy();
   document.querySelector("#population")!.textContent = population.toLocaleString();
   lastMonthlyBalance = balance;
@@ -1412,7 +1451,7 @@ function updateCityStats() {
         ? "Available jobs are increasing demand for nearby housing."
         : "Demand reflects current households, jobs, and available land.";
   document.querySelector("#economy-summary")!.textContent =
-    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift`;
+    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))}`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
 }
 
@@ -1802,6 +1841,10 @@ function currentUtilityKind() {
 
 function currentParkingKind() {
   return (document.querySelector("#parking-kind") as HTMLSelectElement).value as ParkingKind;
+}
+
+function currentParkingRate() {
+  return Number((document.querySelector("#parking-price") as HTMLSelectElement).value);
 }
 
 function utilityColor(kind: UtilityKind) {
@@ -2215,18 +2258,23 @@ function updateExplorerContext() {
     const signalCopy = signal
       ? ` Signal ${signal.color} in ${Math.max(1, Math.round(signal.distance))}m.`
       : "";
+    const parkingOffer = closestParkingFacility(vehiclePosition, 34);
+    const parkingCopy = parkingOffer
+      ? ` ${parkingKindLabel(parkingOffer.facility.kind)} in ${Math.max(1, Math.round(parkingOffer.distance))}m: ${formatParkingRate(parkingOffer.facility.hourlyRate)}, ${parkingOffer.facility.capacity - parkingOffer.facility.occupied} spaces available.`
+      : "";
     document.querySelector("#panel-kicker")!.textContent = "CITY EXPLORER";
     document.querySelector("#panel-title")!.textContent = `Driving ${road?.roadName ?? "the city"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy} Buildings, facilities, and shorelines remain solid.`;
+      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
     return;
   }
   if (accessibleRouteSummary) {
     const facility = world.parking.find(item => item.id === accessibleRouteSummary!.facilityId);
     document.querySelector("#panel-kicker")!.textContent = "ACCESSIBLE WAYFINDING";
     document.querySelector("#panel-title")!.textContent = `Route to ${parkingKindLabel(facility?.kind ?? "curb").toLowerCase()}`;
+    const availableSpaces = facility ? facility.capacity - facility.occupied : 0;
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(accessibleRouteSummary.distance)}m along connected sidewalks and marked crossings. ${accessibleRouteSummary.rampedCrossings} ${accessibleRouteSummary.rampedCrossings === 1 ? "crossing uses" : "crossings use"} paired curb ramps.`;
+      `${Math.round(accessibleRouteSummary.distance)}m along connected sidewalks and marked crossings. ${accessibleRouteSummary.rampedCrossings} ${accessibleRouteSummary.rampedCrossings === 1 ? "crossing uses" : "crossings use"} paired curb ramps.${facility ? ` Destination price is ${formatParkingRate(facility.hourlyRate)} with ${availableSpaces} ${availableSpaces === 1 ? "space" : "spaces"} available.` : ""}`;
     return;
   }
   const nearbyStop = nearestTransitStop(
@@ -2239,6 +2287,15 @@ function updateExplorerContext() {
     document.querySelector("#panel-title")!.textContent = nearbyStop.stop.name;
     document.querySelector("#panel-copy")!.textContent =
       `${nearbyStop.line.name} stops here. Press T to board and ride its full route through the city.`;
+    return;
+  }
+  const nearbyParking = closestParkingFacility({ x: camera.position.x, z: camera.position.z }, 22);
+  if (nearbyParking) {
+    const facility = nearbyParking.facility;
+    document.querySelector("#panel-kicker")!.textContent = "PARKING & ACCESS";
+    document.querySelector("#panel-title")!.textContent = parkingKindLabel(facility.kind);
+    document.querySelector("#panel-copy")!.textContent =
+      `${formatParkingRate(facility.hourlyRate)}. ${facility.capacity - facility.occupied} of ${facility.capacity} spaces are available, including ${facility.accessibleSpaces} designated accessible spaces. ${parkingPressureLabel(facility)}.`;
     return;
   }
   const home = selectedLot ? world.homes.find(item => item.lotId === selectedLot!.id) : undefined;
@@ -2417,8 +2474,8 @@ function updateCityToolPanel(lot?: Lot) {
     setPanel(
       "PARKING & ACCESS",
       `Place ${parkingKindLabel(kind).toLowerCase()}`,
-      `${definition} Parking persists in the city save and becomes a destination for Explorer wayfinding.`,
-      "Click land|Place facility;R in Explorer|Accessible route;⌘ Z|Undo"
+      `${definition} New facilities charge ${formatParkingRate(currentParkingRate())}. Price changes alter demand, turnover, and projected municipal revenue.`,
+      "Click land|Place facility;Click parking|Apply selected price;R in Explorer|Accessible route;⌘ Z|Undo"
     );
   } else {
     const label = cityTool === "mixed" ? "mixed-use" : cityTool;
@@ -2491,6 +2548,28 @@ renderer.domElement.addEventListener("pointerdown", event => {
   if (mode === "city" && cityTool === "parking") {
     const hit = raycaster.intersectObject(ground)[0];
     if (!hit) return;
+    const facilityHit = raycaster
+      .intersectObjects(worldGroup.children, true)
+      .find(item => item.object.userData.parkingId);
+    const groundParking = world.parking
+      .map(facility => ({
+        facility,
+        distance: Math.hypot(facility.position.x - hit.point.x, facility.position.z - hit.point.z)
+      }))
+      .filter(candidate => candidate.distance <= 14)
+      .sort((a, b) => a.distance - b.distance)[0]?.facility;
+    const parkingId = (facilityHit?.object.userData.parkingId as string | undefined) ?? groundParking?.id;
+    if (parkingId) {
+      const facility = world.parking.find(item => item.id === parkingId);
+      if (!facility) return;
+      if (world.setParkingRate(parkingId, currentParkingRate())) {
+        renderWorld();
+        notice(`${parkingKindLabel(facility.kind)} price set to ${formatParkingRate(facility.hourlyRate)}`);
+      } else {
+        notice(`${parkingKindLabel(facility.kind)} already charges ${formatParkingRate(facility.hourlyRate)}`);
+      }
+      return;
+    }
     const kind = currentParkingKind();
     const road = nearestRoadLocation(explorerRoadPaths, { x: hit.point.x, z: hit.point.z });
     if (!road) {
@@ -2508,9 +2587,9 @@ renderer.domElement.addEventListener("pointerdown", event => {
         z: road.point.z + normal.z * offset
       };
     }
-    const facility = world.addParking(kind, position, heading);
+    const facility = world.addParking(kind, position, heading, currentParkingRate());
     renderWorld();
-    notice(`${parkingKindLabel(facility.kind)} placed · ${facility.capacity} spaces`);
+    notice(`${parkingKindLabel(facility.kind)} placed · ${facility.capacity} spaces · ${formatParkingRate(facility.hourlyRate)}`);
     return;
   }
   if (mode === "city" && cityTool === "utility") {
@@ -2648,8 +2727,14 @@ document.querySelector("#utility-kind")!.addEventListener("change", () => {
   notice(`${utilityName(kind)} selected`);
 });
 document.querySelector("#parking-kind")!.addEventListener("change", () => {
+  const rate = currentParkingKind() === "curb" ? 6 : currentParkingKind() === "surface" ? 2 : 4;
+  (document.querySelector("#parking-price") as HTMLSelectElement).value = String(rate);
   if (cityTool === "parking") updateCityToolPanel();
-  notice(`${parkingKindLabel(currentParkingKind())} selected`);
+  notice(`${parkingKindLabel(currentParkingKind())} selected · ${formatParkingRate(rate)}`);
+});
+document.querySelector("#parking-price")!.addEventListener("change", () => {
+  if (cityTool === "parking") updateCityToolPanel();
+  notice(`Parking price set to ${formatParkingRate(currentParkingRate())}`);
 });
 document.querySelector("#staffing-policy")!.addEventListener("change", event => {
   const funding = Number((event.currentTarget as HTMLSelectElement).value);

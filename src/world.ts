@@ -166,6 +166,8 @@ export type ParkingFacility = {
   capacity: number;
   accessibleSpaces: number;
   occupied: number;
+  hourlyRate: number;
+  revenue: number;
 };
 
 export type PlayerVehicle = {
@@ -272,6 +274,8 @@ export type CityEconomy = {
   monthlyRevenue: number;
   monthlyCosts: number;
   monthlyBalance: number;
+  parkingRevenue: number;
+  parkingCosts: number;
 };
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -371,7 +375,7 @@ export class World {
     }
   }
 
-  addParking(kind: ParkingKind, position: Point2, rotation: number) {
+  addParking(kind: ParkingKind, position: Point2, rotation: number, hourlyRate = defaultParkingRate(kind)) {
     const definition = {
       curb: { capacity: 2, accessibleSpaces: 1 },
       surface: { capacity: 18, accessibleSpaces: 2 },
@@ -384,10 +388,62 @@ export class World {
       position: clone(position),
       rotation,
       occupied: kind === "curb" ? 0 : Math.floor(definition.capacity * .42),
+      hourlyRate: normalizeParkingRate(hourlyRate),
+      revenue: 0,
       ...definition
     };
     this.parking.push(facility);
     return facility;
+  }
+
+  setParkingRate(parkingId: string, hourlyRate: number) {
+    const facility = this.parking.find(item => item.id === parkingId);
+    if (!facility) return false;
+    const normalized = normalizeParkingRate(hourlyRate);
+    if (facility.hourlyRate === normalized) return false;
+    this.checkpoint();
+    facility.hourlyRate = normalized;
+    return true;
+  }
+
+  parkingDemand(facility: ParkingFacility, minute = this.clock.minute) {
+    const hour = positiveModulo(minute, 24 * 60) / 60;
+    const localCapacity = Math.max(2, this.parking
+      .filter(item => distance(item.position, facility.position) <= 180)
+      .reduce((total, item) => total + item.capacity, 0));
+    const demandUnits = this.lots.reduce((total, lot) => {
+      if (this.constructionProgress(lot) < 1) return total;
+      const localDistance = distance(lot.center, facility.position);
+      if (localDistance > 180) return total;
+      const proximity = 1 - localDistance / 180;
+      const residentialFactor = hour < 7 || hour >= 18 ? .016 : .004;
+      const jobFactor = hour >= 7 && hour < 19 ? .012 : .003;
+      const businessFactor = hour >= 8 && hour < 22 ? .18 : .04;
+      return total + proximity * (
+        this.lotPopulation(lot) * residentialFactor
+        + this.lotJobs(lot) * jobFactor
+        + lot.businesses * businessFactor
+      );
+    }, 0);
+    const baseDemand = 1 - Math.exp(-demandUnits / localCapacity);
+    const standardRate = defaultParkingRate(facility.kind);
+    const priceFactor = clamp(1.28 - facility.hourlyRate / Math.max(1, standardRate) * .34, .3, 1.24);
+    const kindFactor = facility.kind === "curb" ? 1.08 : facility.kind === "surface" ? .92 : 1;
+    const congestionFactor = .88 + this.congestionLevel() * .24;
+    return clamp(.04 + baseDemand * priceFactor * kindFactor * congestionFactor, .04, .98);
+  }
+
+  parkingMonthlyProjection(facility: ParkingFacility) {
+    const averageDemand = [2, 8, 12, 17, 21].reduce(
+      (total, hour) => total + this.parkingDemand(facility, hour * 60),
+      0
+    ) / 5;
+    return Math.round(facility.capacity * averageDemand * facility.hourlyRate * 24 * 30 * .55);
+  }
+
+  parkingMonthlyCost(facility: ParkingFacility) {
+    const costPerSpace = facility.kind === "curb" ? 50 : facility.kind === "surface" ? 110 : 310;
+    return facility.capacity * costPerSpace;
   }
 
   parkPlayerVehicle(parkingId: string, position: Point2, heading: number) {
@@ -445,11 +501,19 @@ export class World {
       return total;
     }, { openBusinesses: 0, workersOnShift: 0 });
     const workersOnShift = activity.workersOnShift + this.onDutyPublicJobs();
-    const monthlyRevenue = population * 118 + businesses * 4_800;
+    const parkingRevenue = this.parking.reduce(
+      (total, facility) => total + this.parkingMonthlyProjection(facility),
+      0
+    );
+    const parkingCosts = this.parking.reduce(
+      (total, facility) => total + this.parkingMonthlyCost(facility),
+      0
+    );
+    const monthlyRevenue = population * 118 + businesses * 4_800 + parkingRevenue;
     const monthlyCosts = this.services.reduce(
       (total, service) => total + service.monthlyCost * (.4 + this.serviceFunding * .6),
       0
-    );
+    ) + parkingCosts;
     return {
       completedLots: completedLots.length,
       households,
@@ -462,7 +526,9 @@ export class World {
       workersOnShift,
       monthlyRevenue,
       monthlyCosts,
-      monthlyBalance: monthlyRevenue - monthlyCosts
+      monthlyBalance: monthlyRevenue - monthlyCosts,
+      parkingRevenue,
+      parkingCosts
     };
   }
 
@@ -797,6 +863,11 @@ export class World {
     for (let boundary = firstUtilityBoundary; boundary <= lastUtilityBoundary; boundary++) {
       this.createUtilityFailure(boundary * 720);
     }
+    const firstParkingBoundary = Math.floor(previousElapsed / 60) + 1;
+    const lastParkingBoundary = Math.floor(this.clock.elapsedMinutes / 60);
+    for (let boundary = firstParkingBoundary; boundary <= lastParkingBoundary; boundary++) {
+      this.updateParkingActivity(boundary * 60);
+    }
     this.incidents = this.incidents
       .filter(incident => incident.resolvedAt === undefined || this.clock.elapsedMinutes - incident.resolvedAt < 3 * 24 * 60)
       .slice(-24);
@@ -807,6 +878,20 @@ export class World {
     this.updateResidentActions();
     this.updateResidentNeeds(minutes);
     return monthChanged;
+  }
+
+  private updateParkingActivity(elapsedMinute: number) {
+    const minuteOfDay = positiveModulo(8 * 60 + elapsedMinute, 24 * 60);
+    for (const facility of this.parking) {
+      facility.revenue = Math.round((facility.revenue + facility.occupied * facility.hourlyRate) * 100) / 100;
+      const playerSpaces = this.playerVehicle?.parkingId === facility.id ? 1 : 0;
+      const publicCapacity = Math.max(0, facility.capacity - playerSpaces);
+      const currentPublic = Math.max(0, facility.occupied - playerSpaces);
+      const variation = (hashString(`${facility.id}:${Math.floor(elapsedMinute / 60)}`) % 9 - 4) / 100;
+      const target = Math.round(publicCapacity * clamp(this.parkingDemand(facility, minuteOfDay) + variation, 0, 1));
+      const nextPublic = Math.round(currentPublic * .55 + target * .45);
+      facility.occupied = Math.round(clamp(nextPublic + playerSpaces, playerSpaces, facility.capacity));
+    }
   }
 
   activeIncidents() {
@@ -1002,7 +1087,11 @@ export class World {
     this.incidents = clone(snapshot.incidents ?? []);
     this.utilityFailures = clone(snapshot.utilityFailures ?? []);
     this.commuteFlows = clone(snapshot.commuteFlows ?? []);
-    this.parking = clone(snapshot.parking ?? initialParking(this.roads));
+    this.parking = clone(snapshot.parking ?? initialParking(this.roads)).map(facility => ({
+      ...facility,
+      hourlyRate: normalizeParkingRate(facility.hourlyRate ?? defaultParkingRate(facility.kind)),
+      revenue: facility.revenue ?? 0
+    }));
     this.playerVehicle = snapshot.playerVehicle ? clone(snapshot.playerVehicle) : undefined;
     this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads));
     for (const incident of this.incidents) {
@@ -1607,6 +1696,22 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function distance(a: Point2, b: Point2) {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function positiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function defaultParkingRate(kind: ParkingKind) {
+  return kind === "curb" ? 6 : kind === "surface" ? 2 : 4;
+}
+
+function normalizeParkingRate(hourlyRate: number) {
+  return Math.round(clamp(hourlyRate, 0, 25) * 4) / 4;
+}
+
 function average(values: number[]) {
   return values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0;
 }
@@ -1795,7 +1900,9 @@ function initialParking(roads: Road[]): ParkingFacility[] {
       rotation: Math.atan2(-tangent.x, -tangent.z),
       capacity: 2,
       accessibleSpaces: 1,
-      occupied: index % 2
+      occupied: index % 2,
+      hourlyRate: defaultParkingRate("curb"),
+      revenue: 0
     }];
   });
 }

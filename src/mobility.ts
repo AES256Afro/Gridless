@@ -25,7 +25,13 @@ export function nearestParkingFacility(parking: ParkingFacility[], point: Point2
       distance: Math.hypot(facility.position.x - point.x, facility.position.z - point.z)
     }))
     .filter(candidate => candidate.distance <= maximumDistance)
-    .sort((a, b) => a.distance - b.distance)[0]?.facility;
+    .sort((a, b) => {
+      const score = (candidate: typeof a) =>
+        candidate.distance
+        + candidate.facility.hourlyRate * 1.6
+        + candidate.facility.occupied / Math.max(1, candidate.facility.capacity) * 8;
+      return score(a) - score(b);
+    })[0]?.facility;
 }
 
 export function buildAccessibleRoute(

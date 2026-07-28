@@ -715,6 +715,14 @@ kbd {
 .city-editing .actionbar { top: 136px; bottom: auto; }
 .city-editing .city-tools { top: 186px; bottom: auto; }
 
+@media (max-width: 1500px) {
+  .city-build-tools {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .city-editing .panel { bottom: 132px; }
+}
+
 @media (max-width: 1100px) {
   .stats { top: 76px; width: 350px; }
   .home-editing .actionbar { top: 186px; }
@@ -723,10 +731,6 @@ kbd {
   .home-tools button { padding: 8px 9px; }
   .household-summary { max-width: 140px; }
   .city-tools > div:first-child { display: none; }
-  .city-build-tools {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
   .city-editing .panel { bottom: 132px; }
 }
 
