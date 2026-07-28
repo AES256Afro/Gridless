@@ -182,6 +182,11 @@ Current vertical slice:
 - Pressing `R` in City Explorer cycles the nearest home, business, park, transit stop, and available parking destination. `Shift+R` hides the route.
 - Complete-trip wayfinding reports connected sidewalk distance, ramped-crossing counts, final-entrance usability, and any remaining barrier instead of stopping its analysis at the curb.
 - Home Simulator and the parcel inspector expose the same entrance condition used by street-level routing.
+- City Explorer can enter a furnished home from its actual lot entrance with `F`. A stepped approach or doorway narrower than 0.9m blocks entry until City Builder funds the access upgrade.
+- Entered homes use the persistent Home Simulator floor plan. Exterior openings and doorways between adjacent rooms are generated from that plan.
+- First-person interior movement stays inside room walls, slides along obstructions, collides with sofas, tables, beds, and plants, and reports the current room.
+- Household members who are home remain visible at their active furniture targets, while the interior panel reports live actions, utility disruptions, and entrance quality.
+- Home Simulator rejects furniture placed outside every room, and the Explorer regression gate verifies entry access, lot transforms, room transitions, wall containment, and furniture collision.
 - Garages participate in Explorer collision rather than behaving like decorative scenery.
 - Representative commuter cars occupy separate right-hand lanes in each direction instead of stacking on the road centerline.
 - AI traffic identifies signalized intersections along its actual route, holds behind the stop line during red and all-red phases, proceeds on yellow and green, and illuminates brake lights while stopped.
@@ -192,9 +197,9 @@ Current vertical slice:
 - Deterministic hourly operations generate passengers, process stop queues against available service, count stop boardings, and persist cumulative ridership and fare revenue.
 - City Explorer enters near the closest stop to its selected district or active commute. Stop context reports frequency, waiting passengers, average wait, fare, crowding, and access. Pressing `T` boards with the live passenger load, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
 - Transit line geometry, stop names, route progress, service plan, queues, boardings, ridership, and fare revenue persist in the world snapshot. Older saves receive safe operating defaults.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, curb enforcement and revenue, named event scheduling and recurrence, attendance, event-controlled curbs, traffic pressure, event transit demand, event finance and persistence, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, curb enforcement and revenue, named event scheduling and recurrence, attendance, event-controlled curbs, traffic pressure, event transit demand, event finance and persistence, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, interior entry access, room doorways, rotated lot transforms, wall and furniture collision, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are accessibility-aware building interiors, additional editable transit lines, and district-scale event routing with road closures and temporary transit service.
+Next systems are direct household control and interactions, additional editable transit lines, and district-scale event routing with road closures and temporary transit service.
 
 ## Milestone 3: Metropolitan scale
 

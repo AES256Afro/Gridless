@@ -55,9 +55,12 @@ The current vertical slice proves:
 - Accessibility-aware sidewalk routing to available parking, including marked crossings, paired curb ramps, visible street-level guidance, and distance reporting
 - Persistent street-facing entrances for homes, businesses, parks, and transit stops with step-free access, clear width, tactile guidance, automatic-door state, and saved upgrades
 - City-funded accessibility upgrades plus complete-trip Explorer routing that cycles destination types and reports sidewalk, crossing, and final-entrance barriers
+- Enterable Home Simulator interiors reached from their actual City Explorer street entrances with `F`, using the same step-free and clear-width access gate as city wayfinding
+- First-person room traversal with exterior and connecting door openings, wall containment, furniture collision, warm interior lighting, and room-aware location readouts
+- Live household activity and utility-disruption context inside the same persistent furnished home
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities attached to real city lots
-- Room drawing, architectural walls and floors, furniture placement, and household residents
+- Room drawing, architectural walls and floors, room-contained furniture placement, and household residents
 
 This is a visual and interaction prototype with local persistence and a deterministic early economic simulation. The current reference scenario passes its automated ten-year stability gate; qualitative diagnosis and fun remain playtest questions.
 

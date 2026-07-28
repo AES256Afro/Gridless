@@ -5,6 +5,17 @@ import {
   resolveExplorerMovement,
   sidewalkSpawn
 } from "./explorer";
+import {
+  homeEntryStatus,
+  interiorDoorways,
+  interiorEntryPoint,
+  interiorExteriorDoorway,
+  interiorRoomAt,
+  isInteriorPositionValid,
+  lotLocalToWorld,
+  resolveInteriorMovement,
+  worldToLotLocal
+} from "./interiors";
 import { detectStreetIntersections, trafficSignalState } from "./streets";
 import {
   assessAccessibleTrip,
@@ -27,7 +38,15 @@ import {
   transitFleetSize,
   scheduledTransitPose
 } from "./transit";
-import { World, type Area, type Lot, type ParkingFacility, type Road } from "./world";
+import {
+  World,
+  type AccessibilityEntrance,
+  type Area,
+  type Home,
+  type Lot,
+  type ParkingFacility,
+  type Road
+} from "./world";
 
 const road: Road = {
   id: "test-road",
@@ -157,6 +176,72 @@ const garage: ParkingFacility = {
   hourlyRate: 4,
   revenue: 0
 };
+const interiorHome: Home = {
+  id: "interior-home",
+  lotId: lot.id,
+  name: "Explorer test home",
+  floors: 1,
+  rooms: [
+    { id: "living-room", kind: "Living room", x: 0, z: 0, width: 8, depth: 6 },
+    { id: "bedroom", kind: "Bedroom", x: 6, z: 0, width: 4, depth: 6 }
+  ],
+  furniture: [
+    { id: "interior-table", kind: "table", x: 0, z: 0, rotation: 0 },
+    { id: "interior-bed", kind: "bed", x: 6, z: 1, rotation: Math.PI / 2 }
+  ],
+  residents: []
+};
+const usableHomeEntrance: AccessibilityEntrance = {
+  id: "interior-entrance",
+  targetKind: "lot",
+  targetId: lot.id,
+  position: lot.center,
+  stepFree: true,
+  doorWidth: 1.05,
+  tactileGuidance: true,
+  automaticDoor: false
+};
+const entryStatus = homeEntryStatus(interiorHome, usableHomeEntrance);
+check(entryStatus.allowed, "A furnished home with a usable entrance was not enterable.");
+check(
+  !homeEntryStatus(interiorHome, { ...usableHomeEntrance, stepFree: false }).allowed,
+  "A stepped home entrance incorrectly allowed interior entry."
+);
+check(
+  !homeEntryStatus(interiorHome, { ...usableHomeEntrance, doorWidth: .78 }).allowed,
+  "A narrow home entrance incorrectly allowed interior entry."
+);
+const interiorEntry = interiorEntryPoint(interiorHome, { x: -10, z: 0 });
+check(Boolean(interiorEntry), "Interior entry did not find a clear floor position.");
+check(isInteriorPositionValid(interiorHome, interiorEntry!), "Interior entry landed inside a wall or furnishing.");
+check(interiorRoomAt(interiorHome, interiorEntry!)?.id === "living-room", "Interior entry selected the wrong room.");
+check(interiorDoorways(interiorHome).length === 1, "Adjacent rooms did not create one connecting doorway.");
+check(
+  interiorExteriorDoorway(interiorHome, { x: -12, z: 0 })?.roomId === "living-room",
+  "The street-facing opening was not assigned to the nearest exterior room wall."
+);
+const doorwayMove = resolveInteriorMovement(interiorHome, { x: 3.5, z: 0 }, { x: 4.5, z: 0 });
+check(!doorwayMove.blocked && doorwayMove.position.x === 4.5, "The player could not walk through a connecting doorway.");
+const furnitureMove = resolveInteriorMovement(interiorHome, { x: -2, z: 0 }, { x: 0, z: 0 });
+check(furnitureMove.blocked && furnitureMove.position.x !== 0, "Furniture did not block interior walking.");
+const wallMove = resolveInteriorMovement(interiorHome, { x: -3, z: 2 }, { x: -5, z: 2 });
+check(wallMove.blocked && wallMove.position.x >= -4, "Room walls did not contain interior walking.");
+const transformedInteriorPoint = lotLocalToWorld({ x: 2.25, z: -1.5 }, lot);
+const restoredInteriorPoint = worldToLotLocal(transformedInteriorPoint, lot);
+check(
+  Math.hypot(restoredInteriorPoint.x - 2.25, restoredInteriorPoint.z + 1.5) < .0001,
+  "Home interior coordinates did not survive the lot rotation transform."
+);
+const furniturePlacementWorld = new World();
+furniturePlacementWorld.homes = [structuredClone(interiorHome)];
+check(
+  furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
+  "Home Simulator rejected furniture placed inside a room."
+);
+check(
+  !furniturePlacementWorld.addFurniture(interiorHome.id, "plant", 20, 20),
+  "Home Simulator allowed furniture outside every room."
+);
 const curbParking: ParkingFacility = {
   id: "test-curb",
   kind: "curb",
@@ -495,7 +580,12 @@ console.log(JSON.stringify({
   sidewalkDistance: Number(spawnLocation!.distance.toFixed(2)),
   buildingCollision: buildingMove.blocked,
   garageCollision: garageMove.blocked,
-  waterBoundary: waterMove.blocked
+  waterBoundary: waterMove.blocked,
+  interiorEntry: interiorEntry,
+  interiorDoorways: interiorDoorways(interiorHome).length,
+  interiorFurnitureCollision: furnitureMove.blocked,
+  interiorWallCollision: wallMove.blocked,
+  interiorAccessGate: entryStatus.allowed
 }, null, 2));
 
 function check(condition: boolean, message: string) {
