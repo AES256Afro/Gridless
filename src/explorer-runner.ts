@@ -7,12 +7,14 @@ import {
 } from "./explorer";
 import {
   homeEntryStatus,
+  furnitureInteraction,
   interiorDoorways,
   interiorEntryPoint,
   interiorExteriorDoorway,
   interiorRoomAt,
   isInteriorPositionValid,
   lotLocalToWorld,
+  nearestInteriorFurniture,
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
@@ -241,6 +243,56 @@ check(
 check(
   !furniturePlacementWorld.addFurniture(interiorHome.id, "plant", 20, 20),
   "Home Simulator allowed furniture outside every room."
+);
+const directControlWorld = new World();
+const directControlHome = structuredClone(interiorHome);
+directControlHome.residents = [{
+  id: "controlled-resident",
+  name: "Avery",
+  age: "adult",
+  role: "home",
+  energy: 50,
+  social: 50,
+  comfort: 50,
+  health: 70,
+  stress: 45,
+  completedActions: 0
+}];
+directControlWorld.homes = [directControlHome];
+check(
+  furnitureInteraction("table").action === "eat",
+  "Table interaction did not map to the meal action."
+);
+const nearbyTable = nearestInteriorFurniture(directControlHome, { x: -2, z: 0 }, 2.5);
+check(nearbyTable?.item.kind === "table", "Direct control did not find the nearby table.");
+check(directControlWorld.setControlledResident("controlled-resident"), "Resident could not enter direct-control state.");
+check(
+  directControlWorld.setResidentHomePosition(directControlHome.id, "controlled-resident", { x: -2, z: 0 }),
+  "Controlled resident position was not accepted."
+);
+const directedMeal = directControlWorld.commandResidentFurnitureAction(
+  directControlHome.id,
+  "controlled-resident",
+  nearbyTable!.item.id
+);
+check(directedMeal.ok, "Controlled resident could not start a furniture interaction.");
+check(
+  Boolean(
+    directControlHome.residents[0].currentAction?.kind === "eat"
+      && directControlHome.residents[0].currentAction?.directed
+  ),
+  "Furniture interaction did not create a directed persistent action."
+);
+check(
+  directControlWorld.snapshot().homes[0].residents[0].homePosition?.x === -2,
+  "Controlled resident position was not included in the world snapshot."
+);
+directControlWorld.advanceMinutes(45, 0);
+check(
+  directControlHome.residents[0].lastActionKind === "eat"
+    && directControlHome.residents[0].completedActions === 1
+    && directControlHome.residents[0].energy === 58,
+  "Directed meal did not complete through the shared resident need system."
 );
 const curbParking: ParkingFacility = {
   id: "test-curb",
@@ -585,7 +637,10 @@ console.log(JSON.stringify({
   interiorDoorways: interiorDoorways(interiorHome).length,
   interiorFurnitureCollision: furnitureMove.blocked,
   interiorWallCollision: wallMove.blocked,
-  interiorAccessGate: entryStatus.allowed
+  interiorAccessGate: entryStatus.allowed,
+  directResidentAction: directControlHome.residents[0].lastActionKind,
+  directedActionsCompleted: directControlHome.residents[0].completedActions,
+  controlledResidentEnergy: directControlHome.residents[0].energy
 }, null, 2));
 
 function check(condition: boolean, message: string) {

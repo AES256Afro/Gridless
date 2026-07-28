@@ -55,6 +55,7 @@ The run found no:
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
 - missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, or furniture placed outside every room
+- invalid controlled-resident home positions or resident actions targeting missing furniture
 - broken home, incident, failure, service, utility, or commute references
 - duplicate or invalid transit lines, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
@@ -67,7 +68,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, transit passenger operations, the saved entrance layer, and home-interior integrity checks included, the latest complete deterministic gate took about 82 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, transit passenger operations, the saved entrance layer, and home-interior integrity checks included, the latest complete deterministic gate took about 66 seconds for both decades on the development machine.
 
 ## Boundary
 

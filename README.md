@@ -58,8 +58,11 @@ The current vertical slice proves:
 - Enterable Home Simulator interiors reached from their actual City Explorer street entrances with `F`, using the same step-free and clear-width access gate as city wayfinding
 - First-person room traversal with exterior and connecting door openings, wall containment, furniture collision, warm interior lighting, and room-aware location readouts
 - Live household activity and utility-disruption context inside the same persistent furnished home
+- Direct household control from resident cards or the interior `C` control, with persistent in-home positions and observer switching
+- Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables, and tending plants through the same need-changing action system used by autonomous residents
+- A live interaction prompt with action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
-- Persistent home entities attached to real city lots
+- Persistent home entities and directly controlled resident positions attached to real city lots
 - Room drawing, architectural walls and floors, room-contained furniture placement, and household residents
 
 This is a visual and interaction prototype with local persistence and a deterministic early economic simulation. The current reference scenario passes its automated ten-year stability gate; qualitative diagnosis and fun remain playtest questions.

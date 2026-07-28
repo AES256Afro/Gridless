@@ -38,7 +38,9 @@ import {
   interiorEntryPoint,
   interiorExteriorDoorway,
   interiorRoomAt,
+  isInteriorPositionValid,
   lotLocalToWorld,
+  nearestInteriorFurniture,
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
@@ -244,6 +246,9 @@ app.innerHTML = `
       <div><span>Surface</span><strong id="explorer-surface">Sidewalk</strong></div>
       <div><span>Movement</span><strong id="explorer-pace">Standing</strong></div>
     </div>
+    <div class="interaction-prompt" id="interaction-prompt" aria-live="polite">
+      <kbd>C</kbd><span>Choose a resident to control</span>
+    </div>
     <div class="crosshair"></div>
   </div>`;
 
@@ -352,6 +357,7 @@ let explorerVehicleSpeed = 0;
 let explorerVehicleHeading = 0;
 let explorerInteriorHomeId: string | null = null;
 let explorerExteriorReturn: { position: Point2; yaw: number } | null = null;
+let controlledResidentId: string | null = null;
 let accessibleRouteSummary: {
   destinationId: string;
   destinationKind: AccessibilityDestinationKind;
@@ -995,6 +1001,8 @@ function toggleHomeInterior() {
     const exit = explorerExteriorReturn?.position ?? findExplorerSpawn(fallback);
     explorerInteriorHomeId = null;
     selectedLot = activeInterior.lot;
+    world.setControlledResident();
+    updateInteriorInteractionPrompt();
     setInteriorSceneVisibility(false);
     renderWorld();
     camera.position.set(exit.x, 1.82, exit.z);
@@ -1048,6 +1056,13 @@ function toggleHomeInterior() {
   };
   explorerInteriorHomeId = home.id;
   selectedLot = lot;
+  const selectedResident = controlledResidentId
+    ? home.residents.find(resident => resident.id === controlledResidentId)
+    : undefined;
+  if (!selectedResident || world.residentStatus(selectedResident) !== "Home") {
+    controlledResidentId = null;
+  }
+  world.setControlledResident(controlledResidentId ?? undefined);
   clearAccessibleRoute();
   setInteriorSceneVisibility(true);
   renderHome();
@@ -1066,11 +1081,12 @@ function toggleHomeInterior() {
   setPanel(
     "HOME INTERIOR",
     home.name,
-    "Walk through the rooms and furniture designed in Home Simulator. Household activity, utilities, and city conditions continue while you are inside.",
-    "WASD|Walk;Mouse|Look;Shift|Move faster;F|Exit home;Esc|Return to City Builder"
+    "Choose a resident, walk them through the rooms, and use the furniture designed in Home Simulator. Household needs and city conditions continue while you are inside.",
+    "C|Choose resident;WASD|Walk;Mouse|Look;E|Use furnishing;F|Exit home;Esc|Return to City Builder"
   );
   updateExplorerMovementStatus(0);
   updateExplorerContext();
+  updateInteriorInteractionPrompt();
   requestExplorerPointerLock();
   notice(`Entered ${home.name}`);
 }
@@ -1363,9 +1379,11 @@ function updateExplorerMovementStatus(speed: number) {
         : speed < 6.2
           ? "Walking"
           : "Moving quickly";
-    document.querySelector("#explorer-location")!.textContent = interior.home.name;
+    const controlled = controlledInteriorResident();
+    document.querySelector("#explorer-location")!.textContent = controlled?.resident.name ?? interior.home.name;
     document.querySelector("#explorer-surface")!.textContent = room?.kind ?? "Interior doorway";
     document.querySelector("#explorer-pace")!.textContent = pace;
+    updateInteriorInteractionPrompt();
     return;
   }
   const position = transitRide
@@ -2530,6 +2548,121 @@ function currentExplorerInterior() {
   return lot ? { home, lot } : null;
 }
 
+function controlledInteriorResident() {
+  const interior = currentExplorerInterior();
+  if (!interior || !controlledResidentId) return null;
+  const resident = interior.home.residents.find(item => item.id === controlledResidentId);
+  return resident ? { ...interior, resident } : null;
+}
+
+function cycleControlledResident() {
+  const interior = currentExplorerInterior();
+  if (!interior) return;
+  const available = interior.home.residents.filter(
+    resident => world.residentStatus(resident) === "Home"
+  );
+  if (!available.length) {
+    controlledResidentId = null;
+    world.setControlledResident();
+    updateInteriorInteractionPrompt();
+    notice("No household residents are home to control");
+    return;
+  }
+  const currentIndex = available.findIndex(resident => resident.id === controlledResidentId);
+  const next = currentIndex < 0
+    ? available[0]
+    : currentIndex === available.length - 1
+      ? null
+      : available[currentIndex + 1];
+  controlledResidentId = next?.id ?? null;
+  world.setControlledResident(next?.id);
+  if (next) {
+    const currentLocal = worldToLotLocal(
+      { x: camera.position.x, z: camera.position.z },
+      interior.lot
+    );
+    const saved = next.homePosition;
+    const controlPosition = saved && isInteriorPositionValid(interior.home, saved)
+      ? saved
+      : currentLocal;
+    world.setResidentHomePosition(interior.home.id, next.id, controlPosition);
+    const worldPosition = lotLocalToWorld(controlPosition, interior.lot);
+    camera.position.x = worldPosition.x;
+    camera.position.z = worldPosition.z;
+    notice(`Now controlling ${next.name}`);
+  } else {
+    notice("Returned to observer mode");
+  }
+  renderHome();
+  updateExplorerContext();
+  updateInteriorInteractionPrompt();
+}
+
+function nearbyInteriorInteraction() {
+  const controlled = controlledInteriorResident();
+  if (!controlled) return null;
+  const local = worldToLotLocal(
+    { x: camera.position.x, z: camera.position.z },
+    controlled.lot
+  );
+  return nearestInteriorFurniture(controlled.home, local);
+}
+
+function useNearbyInteriorFurniture() {
+  const controlled = controlledInteriorResident();
+  if (!controlled) {
+    notice("Press C to choose a resident first");
+    updateInteriorInteractionPrompt();
+    return;
+  }
+  const nearby = nearbyInteriorInteraction();
+  if (!nearby) {
+    notice("Move closer to a furnishing to use it");
+    updateInteriorInteractionPrompt();
+    return;
+  }
+  const result = world.commandResidentFurnitureAction(
+    controlled.home.id,
+    controlled.resident.id,
+    nearby.item.id
+  );
+  if (!result.ok) {
+    notice(result.reason);
+    return;
+  }
+  renderHome();
+  updateExplorerContext();
+  updateInteriorInteractionPrompt();
+  notice(result.reason);
+}
+
+function updateInteriorInteractionPrompt() {
+  const prompt = document.querySelector<HTMLElement>("#interaction-prompt")!;
+  const interior = currentExplorerInterior();
+  if (!interior) {
+    prompt.classList.remove("visible");
+    return;
+  }
+  prompt.classList.add("visible");
+  const controlled = controlledInteriorResident();
+  if (!controlled) {
+    prompt.innerHTML = "<kbd>C</kbd><span>Choose a resident to control</span>";
+    return;
+  }
+  const nearby = nearbyInteriorInteraction();
+  if (nearby) {
+    prompt.innerHTML =
+      `<kbd>E</kbd><span>${nearby.interaction.label} with ${controlled.resident.name}<small>${nearby.interaction.effect}</small></span><kbd>C</kbd><span>Switch resident</span>`;
+    return;
+  }
+  const action = world.activeResidentAction(controlled.resident);
+  const actionCopy = action
+    ? `${world.residentActionLabel(controlled.resident)} · ${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m left`
+    : `Walking as ${controlled.resident.name}`;
+  prompt.innerHTML =
+    `<kbd>C</kbd><span>Switch resident<small>${actionCopy}</small></span><kbd>E</kbd><span>Use nearby furnishing</span>`;
+}
+
 function localToWorld(point: Point2, lot: Lot) {
   return lotLocalToWorld(point, lot);
 }
@@ -2600,6 +2733,7 @@ function renderHome() {
 
   for (const item of home.furniture) homeGroup.add(createFurniture(item));
   home.residents.filter(resident => world.residentStatus(resident) === "Home").forEach((resident, index) => {
+    if (explorerInterior && resident.id === controlledResidentId) return;
     const person = new THREE.Group();
     const action = world.activeResidentAction(resident);
     const target = world.residentActionTarget(home, resident);
@@ -2622,9 +2756,9 @@ function renderHome() {
       person.add(actionLabel);
     }
     person.position.set(
-      target ? target.x + (index % 2 ? .55 : -.55) : -1 + index * 1.1,
+      target ? target.x + (index % 2 ? .55 : -.55) : resident.homePosition?.x ?? -1 + index * 1.1,
       .2,
-      target ? target.z + .65 : .4
+      target ? target.z + .65 : resident.homePosition?.z ?? .4
     );
     homeGroup.add(person);
   });
@@ -2859,8 +2993,11 @@ function updateHouseholdSummary(home: Home) {
           const destination = resident.role === "home" ? "Home district" : world.residentDestinationName(resident);
           const action = world.activeResidentAction(resident);
           const actionProgress = Math.round(world.residentActionProgress(resident) * 100);
+          const status = world.residentStatus(resident);
+          const canEnterHome = Boolean(entrance && world.entranceIsUsable(entrance));
+          const canControl = status === "Home" && canEnterHome;
           return `
-            <div class="resident-card ${wellbeing.label.toLowerCase()}">
+            <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
                 <span><strong>${resident.name}</strong><small>${world.residentActionLabel(resident)} · ${destination}</small></span>
                 <b>${wellbeing.score}% ${wellbeing.label}</b>
@@ -2878,12 +3015,36 @@ function updateHouseholdSummary(home: Home) {
                 ${needMeter("Calm", 100 - resident.stress)}
               </div>
               <p>${wellbeing.pressure} · commute burden ${wellbeing.commuteBurden}%</p>
+              <button
+                type="button"
+                class="resident-control"
+                data-control-resident="${resident.id}"
+                ${canControl ? "" : "disabled"}
+              >${status !== "Home" ? status : canEnterHome ? "Control in home" : "Upgrade entrance first"}</button>
             </div>
           `;
         }).join("") : `<div class="resident-empty">Add a resident to start needs, schedules, health, and household wellbeing.</div>`}
       </div>
     `;
     details.classList.add("visible");
+    details.querySelectorAll<HTMLButtonElement>("[data-control-resident]").forEach(button => {
+      button.addEventListener("click", () => {
+        if (!button.dataset.controlResident || mode !== "home") return;
+        const currentEntrance = selectedLot
+          ? world.accessibilityEntrances.find(
+              item => item.targetKind === "lot" && item.targetId === selectedLot!.id
+            )
+          : undefined;
+        const status = homeEntryStatus(home, currentEntrance);
+        if (!status.allowed) {
+          notice(status.reason);
+          return;
+        }
+        controlledResidentId = button.dataset.controlResident;
+        setMode("explore");
+        toggleHomeInterior();
+      });
+    });
     document.querySelector(".panel")!.classList.add("inspecting");
   }
   document.querySelector("#panel-title")!.textContent = home.name;
@@ -2922,9 +3083,11 @@ function setMode(next: Mode) {
     transitRide = null;
     explorerInteriorHomeId = null;
     explorerExteriorReturn = null;
+    world.setControlledResident();
   }
   mode = next;
   setInteriorSceneVisibility(false);
+  updateInteriorInteractionPrompt();
   if (next !== "explore") {
     explorerDriving = false;
     explorerVehicleSpeed = 0;
@@ -3045,6 +3208,15 @@ function updateExplorerContext() {
     const entrance = world.accessibilityEntrances.find(
       item => item.targetKind === "lot" && item.targetId === interior.lot.id
     );
+    const controlled = controlledInteriorResident();
+    const controlledAction = controlled
+      ? world.activeResidentAction(controlled.resident)
+      : undefined;
+    const controlCopy = controlled
+      ? ` You are controlling ${controlled.resident.name}. ${controlledAction
+          ? `${world.residentActionLabel(controlled.resident)} has ${Math.max(1, Math.ceil(controlledAction.endsAt - world.clock.elapsedMinutes))} minutes remaining.`
+          : "Move near a furnishing and press E to use it."}`
+      : " Press C to choose a resident for direct control.";
     const activityCopy = activities.length
       ? ` ${activities.join(" and ")}.`
       : " No household members are currently home.";
@@ -3053,9 +3225,11 @@ function updateExplorerContext() {
       : " Utilities are operating normally.";
     document.querySelector("#panel-kicker")!.textContent = "HOME INTERIOR";
     document.querySelector("#panel-title")!.textContent =
-      `${interior.home.name} · ${room?.kind ?? "Doorway"}`;
+      controlled
+        ? `${controlled.resident.name} · ${room?.kind ?? "Doorway"}`
+        : `${interior.home.name} · ${room?.kind ?? "Doorway"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${interior.home.rooms.length} rooms and ${interior.home.furniture.length} furnishings are part of the persistent Home Simulator plan.${activityCopy}${outageCopy} ${entrance ? entranceAccessLabel(entrance) : "Entrance not connected"}. Press F to return to the street.`;
+      `${interior.home.rooms.length} rooms and ${interior.home.furniture.length} furnishings are part of the persistent Home Simulator plan.${controlCopy}${activityCopy}${outageCopy} ${entrance ? entranceAccessLabel(entrance) : "Entrance not connected"}. Press F to return to the street.`;
     return;
   }
   if (transitRide) {
@@ -3708,6 +3882,28 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
+  if (mode === "explore" && explorerInteriorHomeId && event.code === "KeyC" && !event.repeat) {
+    event.preventDefault();
+    cycleControlledResident();
+  }
+  if (mode === "explore" && explorerInteriorHomeId && event.code === "KeyE" && !event.repeat) {
+    event.preventDefault();
+    useNearbyInteriorFurniture();
+  }
+  if (
+    mode === "explore"
+    && explorerInteriorHomeId
+    && controlledResidentId
+    && ["KeyW", "KeyA", "KeyS", "KeyD"].includes(event.code)
+    && !event.repeat
+  ) {
+    const interior = currentExplorerInterior();
+    if (interior && world.cancelResidentAction(interior.home.id, controlledResidentId)) {
+      renderHome();
+      updateExplorerContext();
+      notice("Movement canceled the current activity");
+    }
+  }
   if (mode === "explore" && event.code === "KeyF" && !event.repeat) {
     event.preventDefault();
     toggleHomeInterior();
@@ -3989,6 +4185,14 @@ function animate() {
       const movementSpeed = traveled / Math.max(.001, dt);
       camera.position.x = movement.position.x;
       camera.position.z = movement.position.z;
+      const controlled = controlledInteriorResident();
+      if (interior && controlled && traveled > .0001) {
+        world.setResidentHomePosition(
+          interior.home.id,
+          controlled.resident.id,
+          worldToLotLocal(movement.position, interior.lot)
+        );
+      }
 
       if (!explorerGrounded) {
         explorerVerticalOffset += explorerVerticalVelocity * dt;

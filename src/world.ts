@@ -84,6 +84,7 @@ export type ResidentAction = {
   endsAt: number;
   targetFurnitureId?: string;
   partnerResidentId?: string;
+  directed?: boolean;
 };
 
 export type Resident = {
@@ -101,6 +102,7 @@ export type Resident = {
   lastActionKind?: ResidentActionKind;
   lastActionAt?: number;
   completedActions?: number;
+  homePosition?: Point2;
 };
 
 export type ResidentWellbeing = {
@@ -449,6 +451,7 @@ export class World {
   cityEvents: CityEvent[] = [];
   accessibilityEntrances: AccessibilityEntrance[] = [];
   lastDailyActivity = { households: 0, businesses: 0 };
+  controlledResidentId?: string;
   private history: WorldSnapshot[] = [];
 
   constructor() {
@@ -1333,6 +1336,61 @@ export class World {
       : undefined;
   }
 
+  commandResidentFurnitureAction(homeId: string, residentId: string, furnitureId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (!home || !resident || !furniture) {
+      return { ok: false, reason: "Resident or furniture is no longer available." };
+    }
+    if (this.residentStatus(resident) !== "Home") {
+      return { ok: false, reason: `${resident.name} is currently ${this.residentStatus(resident).toLowerCase()}.` };
+    }
+    const interaction = {
+      bed: { kind: "sleep" as const, duration: 90 },
+      sofa: { kind: "relax" as const, duration: 75 },
+      table: { kind: "eat" as const, duration: 45 },
+      plant: { kind: "tend-plants" as const, duration: 45 }
+    }[furniture.kind];
+    this.checkpoint();
+    resident.currentAction = {
+      kind: interaction.kind,
+      startedAt: this.clock.elapsedMinutes,
+      endsAt: this.clock.elapsedMinutes + interaction.duration,
+      targetFurnitureId: furniture.id,
+      directed: true
+    };
+    return { ok: true, reason: `${resident.name} started ${this.residentActionLabel(resident).toLowerCase()}.` };
+  }
+
+  cancelResidentAction(homeId: string, residentId: string) {
+    const resident = this.homes
+      .find(item => item.id === homeId)
+      ?.residents.find(item => item.id === residentId);
+    if (!resident?.currentAction) return false;
+    this.checkpoint();
+    resident.currentAction = undefined;
+    return true;
+  }
+
+  setResidentHomePosition(homeId: string, residentId: string, position: Point2) {
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.z)) return false;
+    const resident = this.homes
+      .find(item => item.id === homeId)
+      ?.residents.find(item => item.id === residentId);
+    if (!resident) return false;
+    resident.homePosition = { x: position.x, z: position.z };
+    return true;
+  }
+
+  setControlledResident(residentId?: string) {
+    if (residentId && !this.homes.some(home => home.residents.some(resident => resident.id === residentId))) {
+      return false;
+    }
+    this.controlledResidentId = residentId;
+    return true;
+  }
+
   homeQuality(home: Home) {
     const residentCount = Math.max(1, home.residents.length);
     const roomShare = Math.min(1, home.rooms.length / residentCount);
@@ -1677,6 +1735,7 @@ export class World {
       if (parsed.version !== 1) return false;
       this.checkpoint();
       this.apply(parsed);
+      this.controlledResidentId = undefined;
       return true;
     } catch {
       return false;
@@ -2271,6 +2330,7 @@ export class World {
           continue;
         }
         if (this.activeResidentAction(resident)) continue;
+        if (resident.id === this.controlledResidentId) continue;
         resident.currentAction = this.chooseResidentAction(home, resident);
       }
     }

@@ -4,7 +4,7 @@ import {
   type ServiceKind,
   type UtilityKind
 } from "./world";
-import { interiorEntryPoint } from "./interiors";
+import { interiorEntryPoint, isInteriorPositionValid } from "./interiors";
 
 export type StabilityCheckpoint = {
   year: number;
@@ -384,6 +384,15 @@ function integrityFailures(world: World) {
       if (!containingRoom) failures.push(`Furniture ${item.id} is outside every room in home ${home.id}.`);
     }
     for (const resident of home.residents) {
+      if (resident.homePosition && !isInteriorPositionValid(home, resident.homePosition)) {
+        failures.push(`Resident ${resident.id} has an invalid saved home position.`);
+      }
+      if (
+        resident.currentAction?.targetFurnitureId
+        && !home.furniture.some(item => item.id === resident.currentAction!.targetFurnitureId)
+      ) {
+        failures.push(`Resident ${resident.id} action points to missing furniture.`);
+      }
       for (const [name, value] of Object.entries({
         energy: resident.energy,
         social: resident.social,
