@@ -23,6 +23,8 @@ import {
   beginTransitRide,
   nearestTransitStop,
   requestTransitAlight,
+  scheduledTransitFleet,
+  transitFleetSize,
   scheduledTransitPose
 } from "./transit";
 import { World, type Area, type Lot, type ParkingFacility, type Road } from "./world";
@@ -215,6 +217,12 @@ const transitLine = mobilityWorld.transitLines[0];
 check(transitLine.route.length >= 8, "Transit line route geometry is incomplete.");
 check(transitLine.stops.length >= 4, "Transit line did not create enough curbside stops.");
 check(
+  transitLine.headwayMinutes === 10
+    && transitLine.fare === 2.75
+    && transitLine.vehicleCapacity === 48,
+  "Transit line did not receive its default operating plan."
+);
+check(
   mobilityWorld.snapshot().transitLines?.[0].stops.length === transitLine.stops.length,
   "Transit line and stops were not included in the world snapshot."
 );
@@ -229,8 +237,36 @@ check(
   outboundBus.tangent.x * returningBus.tangent.x + outboundBus.tangent.z * returningBus.tangent.z < -.9,
   "Scheduled transit did not reverse direction for its return trip."
 );
-const startedTransitRide = beginTransitRide(transitLine, transitLine.stops[0].id);
+check(mobilityWorld.setTransitOperations(transitLine.id, 18, 2.75), "Basic transit service could not be selected.");
+const basicFleetSize = transitFleetSize(transitLine);
+const basicWait = mobilityWorld.transitAverageWait(transitLine);
+const basicDemand = mobilityWorld.transitLineDemand(transitLine, 8 * 60);
+check(mobilityWorld.setTransitOperations(transitLine.id, 6, 2.75), "Rapid transit service could not be selected.");
+const rapidFleetSize = transitFleetSize(transitLine);
+const rapidWait = mobilityWorld.transitAverageWait(transitLine);
+const rapidDemand = mobilityWorld.transitLineDemand(transitLine, 8 * 60);
+check(rapidFleetSize > basicFleetSize, "More frequent transit did not require a larger active fleet.");
+check(rapidWait < basicWait, "More frequent transit did not reduce average waiting time.");
+check(rapidDemand > basicDemand, "More frequent transit did not increase passenger demand.");
+const rapidFleet = scheduledTransitFleet(transitLine, mobilityWorld.clock.elapsedMinutes);
+check(rapidFleet.length === rapidFleetSize, "Scheduled transit fleet did not match the operating plan.");
+check(
+  rapidFleet.length < 2
+    || Math.hypot(
+      rapidFleet[0].pose.point.x - rapidFleet[1].pose.point.x,
+      rapidFleet[0].pose.point.z - rapidFleet[1].pose.point.z
+    ) > 1,
+  "Active transit vehicles were not separated along the route."
+);
+check(mobilityWorld.setTransitOperations(transitLine.id, 6, 4), "Premium transit fare could not be selected.");
+const premiumTransitDemand = mobilityWorld.transitLineDemand(transitLine, 8 * 60);
+check(mobilityWorld.setTransitOperations(transitLine.id, 6, 0), "Fare-free transit could not be selected.");
+const freeTransitDemand = mobilityWorld.transitLineDemand(transitLine, 8 * 60);
+check(freeTransitDemand > premiumTransitDemand, "Lower transit fares did not increase passenger demand.");
+check(mobilityWorld.setTransitOperations(transitLine.id, 10, 2.75), "Transit operating plan could not be reset.");
+const startedTransitRide = beginTransitRide(transitLine, transitLine.stops[0].id, 35);
 check(Boolean(startedTransitRide), "Transit ride could not begin at a valid stop.");
+check(startedTransitRide?.passengers === 35, "Transit ride did not preserve its passenger load.");
 let transitRide = requestTransitAlight(startedTransitRide!, transitLine);
 check(
   transitRide.alightStopId === transitLine.stops[1].id,
@@ -255,13 +291,35 @@ const premiumDemand = mobilityWorld.parkingDemand(placedParking, 12 * 60);
 check(premiumDemand < marketDemand, "Higher parking price did not reduce modeled demand.");
 check(mobilityWorld.setParkingRate(placedParking.id, 4), "Parking rate could not be reset for turnover testing.");
 const parkingRevenueBefore = placedParking.revenue;
+const transitRidershipBefore = transitLine.ridership;
+const transitFareRevenueBefore = transitLine.fareRevenue;
 mobilityWorld.advanceMinutes(60, mobilityWorld.cityEconomy().monthlyBalance);
 check(placedParking.revenue > parkingRevenueBefore, "Occupied parking did not collect hourly revenue.");
 check(placedParking.occupied >= 0 && placedParking.occupied <= placedParking.capacity, "Parking turnover exceeded capacity bounds.");
+check(transitLine.ridership > transitRidershipBefore, "Hourly transit simulation did not board passengers.");
+check(transitLine.fareRevenue > transitFareRevenueBefore, "Hourly transit simulation did not collect fares.");
+check(
+  transitLine.stops.every(stop => stop.waiting >= 0 && stop.boardings >= 0),
+  "Transit queues or stop boardings left their valid bounds."
+);
 const parkingEconomy = mobilityWorld.cityEconomy();
 check(parkingEconomy.parkingRevenue > 0, "Parking pricing did not contribute projected municipal revenue.");
+check(
+  parkingEconomy.transitRevenue > 0
+    && parkingEconomy.transitCosts > 0
+    && parkingEconomy.transitRidership === transitLine.ridership,
+  "Transit operations were not included in the city economy."
+);
 const parkingSnapshot = mobilityWorld.snapshot().parking?.find(item => item.id === placedParking.id);
 check(parkingSnapshot?.hourlyRate === 4 && parkingSnapshot.revenue === placedParking.revenue, "Parking price and revenue were not included in the world snapshot.");
+const transitSnapshot = mobilityWorld.snapshot().transitLines?.find(item => item.id === transitLine.id);
+check(
+  transitSnapshot?.headwayMinutes === 10
+    && transitSnapshot.fare === 2.75
+    && transitSnapshot.ridership === transitLine.ridership
+    && transitSnapshot.stops.some(stop => stop.boardings > 0),
+  "Transit frequency, fares, ridership, and stop activity were not included in the world snapshot."
+);
 check(mobilityWorld.parkPlayerVehicle(placedParking.id, placedParking.position, placedParking.rotation), "Player vehicle could not use available parking.");
 check(mobilityWorld.snapshot().playerVehicle?.parkingId === placedParking.id, "Parked vehicle was not included in the world snapshot.");
 mobilityWorld.advanceMinutes(60, parkingEconomy.monthlyBalance);
@@ -294,6 +352,11 @@ console.log(JSON.stringify({
   blockedEntranceReported: blockedEntranceTrip.barriers[0],
   transitLine: transitLine.name,
   transitStops: transitLine.stops.length,
+  transitFleet: transitFleetSize(transitLine),
+  transitRidership: transitLine.ridership,
+  transitFareRevenue: transitLine.fareRevenue,
+  transitAverageWait: Number(mobilityWorld.transitAverageWait(transitLine).toFixed(2)),
+  transitCrowding: Number(mobilityWorld.transitLineCrowding(transitLine).toFixed(2)),
   transitAlight: arrivedTransitStop,
   parkingMarketDemand: Number(marketDemand.toFixed(2)),
   parkingPremiumDemand: Number(premiumDemand.toFixed(2)),

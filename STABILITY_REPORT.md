@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `964c1a6f`
+Deterministic signature: `cb8cfd3f`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking and transit, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household.
+The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking, frequency-controlled transit with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -23,15 +23,15 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Population | 18,401 | 29,090 |
 | Households | 8,230 | 13,016 |
 | Businesses | 1,012 | 1,576 |
-| Monthly balance | -$2.05m | +$1.92m |
-| Treasury | $25.00m | $251.36m |
+| Monthly balance | -$1.87m | +$2.26m |
+| Treasury | $25.00m | $291.73m |
 | City wellbeing | 78% | 74% |
 | Service staffing | 85% | 85% |
 | Resident wellbeing | 77% | 86% |
 | Completed resident actions | 0 | 14,399 |
-| Save snapshot | 324 KB | 338 KB |
+| Save snapshot | 332 KB | 347 KB |
 
-The largest observed snapshot was 353,259 bytes.
+The largest observed snapshot was 353,574 bytes.
 
 ## Load and recovery
 
@@ -53,7 +53,7 @@ The run found no:
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
 - broken home, incident, failure, service, utility, or commute references
-- duplicate or invalid transit lines, stops, routes, or schedules
+- duplicate or invalid transit lines, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
 - duplicate accessibility entrances, missing entrance targets, invalid clear widths, or non-finite entrance positions
 - calendar or monthly-budget boundary errors
@@ -62,7 +62,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover and the saved entrance layer included, a complete decade takes about 34 seconds on the development machine; the default gate takes about 68 seconds because it runs the decade twice.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, transit passenger operations, and the saved entrance layer included, the first complete decade took about 50 seconds on the development machine. The default deterministic gate took about 89 seconds because it runs the decade twice.
 
 ## Boundary
 

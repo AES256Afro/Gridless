@@ -7,6 +7,7 @@ export type TransitRide = {
   lineId: string;
   progress: number;
   direction: TransitDirection;
+  passengers: number;
   alightStopId?: string;
 };
 
@@ -45,7 +46,12 @@ export function initialTransitLines(roads: Road[]): TransitLine[] {
         color: 0x2d79a7,
         route,
         stops: [],
-        travelMinutes: 1
+        travelMinutes: 1,
+        headwayMinutes: 10,
+        fare: 2.75,
+        vehicleCapacity: 48,
+        ridership: 0,
+        fareRevenue: 0
       },
       progress,
       1,
@@ -55,7 +61,9 @@ export function initialTransitLines(roads: Road[]): TransitLine[] {
       id: `transit-stop-${road.id}-${index + 1}`,
       name: stopNames[index] ?? `${road.name ?? "City Line"} Stop ${index + 1}`,
       position,
-      progress
+      progress,
+      waiting: 0,
+      boardings: 0
     };
   });
   return [{
@@ -65,7 +73,12 @@ export function initialTransitLines(roads: Road[]): TransitLine[] {
     color: 0x2d79a7,
     route,
     stops,
-    travelMinutes: Math.max(6, Math.round(length / 150 + stopCount * .65))
+    travelMinutes: Math.max(6, Math.round(length / 150 + stopCount * .65)),
+    headwayMinutes: 10,
+    fare: 2.75,
+    vehicleCapacity: 48,
+    ridership: 0,
+    fareRevenue: 0
   }];
 }
 
@@ -99,13 +112,31 @@ export function scheduledTransitPose(line: TransitLine, elapsedMinutes: number, 
   return transitPoseAtProgress(line, 0, 1, laneOffset);
 }
 
-export function beginTransitRide(line: TransitLine, stopId: string): TransitRide | undefined {
+export function transitCycleMinutes(line: TransitLine) {
+  return Math.max(1, line.travelMinutes) * 2 + 1.5;
+}
+
+export function transitFleetSize(line: TransitLine) {
+  return Math.max(1, Math.min(16, Math.ceil(transitCycleMinutes(line) / Math.max(4, line.headwayMinutes))));
+}
+
+export function scheduledTransitFleet(line: TransitLine, elapsedMinutes: number, laneOffset = 2.5) {
+  const fleetSize = transitFleetSize(line);
+  const spacing = transitCycleMinutes(line) / fleetSize;
+  return Array.from({ length: fleetSize }, (_, index) => ({
+    id: `${line.id}-vehicle-${index + 1}`,
+    pose: scheduledTransitPose(line, elapsedMinutes + index * spacing, laneOffset)
+  }));
+}
+
+export function beginTransitRide(line: TransitLine, stopId: string, passengers = 1): TransitRide | undefined {
   const stopIndex = line.stops.findIndex(stop => stop.id === stopId);
   if (stopIndex < 0) return undefined;
   return {
     lineId: line.id,
     progress: line.stops[stopIndex].progress,
-    direction: stopIndex === line.stops.length - 1 ? -1 : 1
+    direction: stopIndex === line.stops.length - 1 ? -1 : 1,
+    passengers: Math.max(1, Math.min(line.vehicleCapacity, Math.round(passengers)))
   };
 }
 

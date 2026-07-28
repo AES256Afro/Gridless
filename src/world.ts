@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { NYC_TEMPLATE, WORLD_TEMPLATES } from "./templates";
 import { findRoadRoute, routeLength } from "./routing";
-import { initialTransitLines } from "./transit";
+import { initialTransitLines, transitFleetSize } from "./transit";
 
 export type Point2 = { x: number; z: number };
 
@@ -206,6 +206,8 @@ export type TransitStop = {
   name: string;
   position: Point2;
   progress: number;
+  waiting: number;
+  boardings: number;
 };
 
 export type TransitLine = {
@@ -216,6 +218,11 @@ export type TransitLine = {
   route: Point2[];
   stops: TransitStop[];
   travelMinutes: number;
+  headwayMinutes: number;
+  fare: number;
+  vehicleCapacity: number;
+  ridership: number;
+  fareRevenue: number;
 };
 
 export type SimulationClock = {
@@ -302,6 +309,9 @@ export type CityEconomy = {
   monthlyBalance: number;
   parkingRevenue: number;
   parkingCosts: number;
+  transitRevenue: number;
+  transitCosts: number;
+  transitRidership: number;
 };
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -434,6 +444,100 @@ export class World {
     if (facility.hourlyRate === normalized) return false;
     this.checkpoint();
     facility.hourlyRate = normalized;
+    return true;
+  }
+
+  setTransitOperations(lineId: string, headwayMinutes: number, fare: number) {
+    const line = this.transitLines.find(item => item.id === lineId);
+    if (!line) return false;
+    const headway = Math.round(clamp(headwayMinutes, 4, 30));
+    const normalizedFare = Math.round(clamp(fare, 0, 10) * 4) / 4;
+    if (line.headwayMinutes === headway && line.fare === normalizedFare) return false;
+    this.checkpoint();
+    line.headwayMinutes = headway;
+    line.fare = normalizedFare;
+    return true;
+  }
+
+  transitStopDemand(line: TransitLine, stop: TransitStop, minute = this.clock.minute) {
+    const hour = positiveModulo(minute, 24 * 60) / 60;
+    const timeFactor = hour >= 6 && hour < 10
+      ? 1.34
+      : hour >= 15 && hour < 19
+        ? 1.42
+        : hour >= 10 && hour < 22
+          ? .88
+          : .28;
+    const localDemand = this.lots.reduce((total, lot) => {
+      if (this.constructionProgress(lot) < 1) return total;
+      const localDistance = distance(lot.center, stop.position);
+      if (localDistance > 190) return total;
+      const proximity = 1 - localDistance / 190;
+      return total + proximity * (
+        this.lotPopulation(lot) * .0042
+        + this.lotJobs(lot) * .0031
+        + lot.businesses * .12
+      );
+    }, 0);
+    const frequencyFactor = clamp(1.34 - line.headwayMinutes / 30, .42, 1.2);
+    const fareFactor = clamp(1.2 - line.fare / 9, .48, 1.18);
+    const entrance = this.accessibilityEntrances.find(
+      item => item.targetKind === "transit" && item.targetId === stop.id
+    );
+    const accessFactor = entrance && this.entranceIsUsable(entrance) ? 1 : .72;
+    return Math.max(0, localDemand * timeFactor * frequencyFactor * fareFactor * accessFactor);
+  }
+
+  transitLineDemand(line: TransitLine, minute = this.clock.minute) {
+    return line.stops.reduce(
+      (total, stop) => total + this.transitStopDemand(line, stop, minute),
+      0
+    );
+  }
+
+  transitLineCrowding(line: TransitLine, minute = this.clock.minute) {
+    const busesPerHour = 60 / Math.max(4, line.headwayMinutes);
+    const averageOnboard = this.transitLineDemand(line, minute) * .42 / Math.max(.5, busesPerHour);
+    return clamp(averageOnboard / Math.max(1, line.vehicleCapacity), 0, 1.5);
+  }
+
+  transitPassengerLoad(line: TransitLine, minute = this.clock.minute) {
+    return Math.min(
+      line.vehicleCapacity,
+      Math.max(1, Math.round(line.vehicleCapacity * this.transitLineCrowding(line, minute)))
+    );
+  }
+
+  transitAverageWait(line: TransitLine) {
+    const baseWait = line.headwayMinutes / 2;
+    const waiting = line.stops.reduce((total, stop) => total + stop.waiting, 0);
+    const hourlyCapacity = line.vehicleCapacity * 60 / Math.max(4, line.headwayMinutes);
+    return Math.min(
+      line.headwayMinutes * 2,
+      baseWait + waiting / Math.max(1, hourlyCapacity) * line.headwayMinutes
+    );
+  }
+
+  transitMonthlyProjection(line: TransitLine) {
+    const averageHourlyDemand = [2, 7, 9, 12, 17, 21].reduce(
+      (total, hour) => total + this.transitLineDemand(line, hour * 60),
+      0
+    ) / 6;
+    return Math.round(averageHourlyDemand * 24 * 30 * line.fare * .82);
+  }
+
+  transitMonthlyCost(line: TransitLine) {
+    return transitFleetSize(line) * 32_000 + line.stops.length * 1_400;
+  }
+
+  boardTransitPassenger(lineId: string, stopId: string) {
+    const line = this.transitLines.find(item => item.id === lineId);
+    const stop = line?.stops.find(item => item.id === stopId);
+    if (!line || !stop) return false;
+    line.ridership += 1;
+    line.fareRevenue = Math.round((line.fareRevenue + line.fare) * 100) / 100;
+    stop.boardings += 1;
+    stop.waiting = Math.max(0, stop.waiting - 1);
     return true;
   }
 
@@ -628,11 +732,23 @@ export class World {
       (total, facility) => total + this.parkingMonthlyCost(facility),
       0
     );
-    const monthlyRevenue = population * 118 + businesses * 4_800 + parkingRevenue;
+    const transitRevenue = this.transitLines.reduce(
+      (total, line) => total + this.transitMonthlyProjection(line),
+      0
+    );
+    const transitCosts = this.transitLines.reduce(
+      (total, line) => total + this.transitMonthlyCost(line),
+      0
+    );
+    const transitRidership = this.transitLines.reduce(
+      (total, line) => total + line.ridership,
+      0
+    );
+    const monthlyRevenue = population * 118 + businesses * 4_800 + parkingRevenue + transitRevenue;
     const monthlyCosts = this.services.reduce(
       (total, service) => total + service.monthlyCost * (.4 + this.serviceFunding * .6),
       0
-    ) + parkingCosts;
+    ) + parkingCosts + transitCosts;
     return {
       completedLots: completedLots.length,
       households,
@@ -647,7 +763,10 @@ export class World {
       monthlyCosts,
       monthlyBalance: monthlyRevenue - monthlyCosts,
       parkingRevenue,
-      parkingCosts
+      parkingCosts,
+      transitRevenue,
+      transitCosts,
+      transitRidership
     };
   }
 
@@ -986,6 +1105,7 @@ export class World {
     const lastParkingBoundary = Math.floor(this.clock.elapsedMinutes / 60);
     for (let boundary = firstParkingBoundary; boundary <= lastParkingBoundary; boundary++) {
       this.updateParkingActivity(boundary * 60);
+      this.updateTransitActivity(boundary * 60);
     }
     this.incidents = this.incidents
       .filter(incident => incident.resolvedAt === undefined || this.clock.elapsedMinutes - incident.resolvedAt < 3 * 24 * 60)
@@ -1010,6 +1130,24 @@ export class World {
       const target = Math.round(publicCapacity * clamp(this.parkingDemand(facility, minuteOfDay) + variation, 0, 1));
       const nextPublic = Math.round(currentPublic * .55 + target * .45);
       facility.occupied = Math.round(clamp(nextPublic + playerSpaces, playerSpaces, facility.capacity));
+    }
+  }
+
+  private updateTransitActivity(elapsedMinute: number) {
+    const minuteOfDay = positiveModulo(8 * 60 + elapsedMinute, 24 * 60);
+    for (const line of this.transitLines) {
+      const hourlyThroughput = line.vehicleCapacity * (60 / Math.max(4, line.headwayMinutes)) * 2.2;
+      const stopThroughput = Math.max(1, Math.floor(hourlyThroughput / Math.max(1, line.stops.length)));
+      for (const stop of line.stops) {
+        const variation = (hashString(`${line.id}:${stop.id}:${Math.floor(elapsedMinute / 60)}`) % 17 - 8) / 100;
+        const arrivals = Math.max(0, Math.round(this.transitStopDemand(line, stop, minuteOfDay) * (1 + variation)));
+        const queue = Math.min(line.vehicleCapacity * 12, stop.waiting + arrivals);
+        const boarded = Math.min(queue, stopThroughput);
+        stop.waiting = Math.max(0, queue - boarded);
+        stop.boardings += boarded;
+        line.ridership += boarded;
+        line.fareRevenue = Math.round((line.fareRevenue + boarded * line.fare) * 100) / 100;
+      }
     }
   }
 
@@ -1213,7 +1351,19 @@ export class World {
       revenue: facility.revenue ?? 0
     }));
     this.playerVehicle = snapshot.playerVehicle ? clone(snapshot.playerVehicle) : undefined;
-    this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads));
+    this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads)).map(line => ({
+      ...line,
+      headwayMinutes: Math.round(clamp(line.headwayMinutes ?? 10, 4, 30)),
+      fare: Math.round(clamp(line.fare ?? 2.75, 0, 10) * 4) / 4,
+      vehicleCapacity: Math.max(1, Math.round(line.vehicleCapacity ?? 48)),
+      ridership: Math.max(0, Math.round(line.ridership ?? 0)),
+      fareRevenue: Math.max(0, line.fareRevenue ?? 0),
+      stops: line.stops.map(stop => ({
+        ...stop,
+        waiting: Math.max(0, Math.round(stop.waiting ?? 0)),
+        boardings: Math.max(0, Math.round(stop.boardings ?? 0))
+      }))
+    }));
     this.accessibilityEntrances = clone(snapshot.accessibilityEntrances ?? []);
     for (const incident of this.incidents) {
       if (incident.route?.length || !incident.responderServiceId) continue;

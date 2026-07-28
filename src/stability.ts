@@ -392,8 +392,22 @@ function integrityFailures(world: World) {
     if (line.route.length < 2 || line.stops.length < 2 || line.travelMinutes <= 0) {
       failures.push(`Transit line ${line.id} has invalid route, stop, or schedule data.`);
     }
+    if (line.headwayMinutes < 4 || line.headwayMinutes > 30 || line.vehicleCapacity <= 0) {
+      failures.push(`Transit line ${line.id} has invalid frequency or vehicle capacity.`);
+    }
+    if (line.fare < 0 || line.fare > 10 || line.ridership < 0 || line.fareRevenue < 0) {
+      failures.push(`Transit line ${line.id} has invalid fare or ridership data.`);
+    }
     for (const stop of line.stops) {
       if (stop.progress < 0 || stop.progress > 1) failures.push(`Transit stop ${stop.id} has invalid route progress.`);
+      if (
+        stop.waiting < 0
+        || stop.boardings < 0
+        || !Number.isInteger(stop.waiting)
+        || !Number.isInteger(stop.boardings)
+      ) {
+        failures.push(`Transit stop ${stop.id} has invalid queue or boarding data.`);
+      }
     }
   }
   for (const facility of world.parking) {
