@@ -30,6 +30,11 @@ import {
   type StreetIntersection
 } from "./streets";
 import { buildAccessibleRoute, nearestParkingFacility } from "./mobility";
+import {
+  trafficSignalAhead,
+  trafficSignalColor,
+  trafficVehiclePose
+} from "./traffic";
 
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
@@ -499,11 +504,7 @@ function updateTrafficSignals(force = false) {
     const axis = mesh.userData.signalAxis as "a" | "b";
     const color = mesh.userData.signalColor as "red" | "yellow" | "green";
     const state = states.get(intersectionId) ?? "all-red";
-    const activeColor = state === "all-red"
-      ? "red"
-      : state.startsWith(axis)
-        ? state.endsWith("yellow") ? "yellow" : "green"
-        : "red";
+    const activeColor = trafficSignalColor(state, axis);
     const active = color === activeColor;
     const value = mesh.userData.signalValue as number;
     mesh.material.color.setHex(active ? value : 0x17201b);
@@ -1431,8 +1432,21 @@ function renderCommutes() {
       );
       commuteGroup.add(trace);
     }
-    const point = pointAlongRoute(points, active.progress);
-    const next = pointAlongRoute(points, Math.min(1, active.progress + .015));
+    const centerPoint = pointAlongRoute(points, active.progress);
+    const roadLocation = nearestRoadLocation(explorerRoadPaths, centerPoint);
+    const laneOffset = roadLocation
+      ? Math.max(1.8, Math.min(3.3, roadLocation.width * .22))
+      : 2.1;
+    const vehiclePose = active.flow.mode === "car"
+      ? trafficVehiclePose(points, active.progress, streetIntersections, world.clock.elapsedMinutes, laneOffset)
+      : undefined;
+    const point = vehiclePose?.point ?? centerPoint;
+    const next = vehiclePose
+      ? {
+          x: point.x + vehiclePose.tangent.x,
+          z: point.z + vehiclePose.tangent.z
+        }
+      : pointAlongRoute(points, Math.min(1, active.progress + .015));
     const traveler = new THREE.Group();
     if (active.flow.mode === "car") {
       const palette = [0x4d7185, 0x9c6658, 0x8d845d, 0x5d7566, 0x6e657c];
@@ -1447,6 +1461,14 @@ function renderCommutes() {
       );
       roof.position.set(0, .88, -.08);
       traveler.add(body, roof);
+      for (const x of [-.42, .42]) {
+        const brakeLight = new THREE.Mesh(
+          new THREE.BoxGeometry(.18, .13, .06),
+          new THREE.MeshBasicMaterial({ color: vehiclePose?.stopped ? 0xff3b2f : 0x69251f })
+        );
+        brakeLight.position.set(x, .58, 1.14);
+        traveler.add(brakeLight);
+      }
     } else {
       const person = new THREE.Mesh(
         new THREE.CapsuleGeometry(.2, .58, 3, 7),
@@ -1457,6 +1479,7 @@ function renderCommutes() {
     }
     traveler.position.set(point.x, .18, point.z);
     traveler.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
+    traveler.userData.stoppedForSignal = vehiclePose?.stopped ?? false;
     traveler.scale.setScalar(active.flow.mode === "car" ? 1 : 1.15);
     commuteGroup.add(traveler);
   });
@@ -1931,15 +1954,29 @@ function setMode(next: Mode) {
 function updateExplorerContext() {
   if (mode !== "explore") return;
   if (explorerDriving) {
-    const road = nearestRoadLocation(explorerRoadPaths, {
+    const vehiclePosition = {
       x: explorerVehicleGroup.position.x,
       z: explorerVehicleGroup.position.z
-    });
+    };
+    const road = nearestRoadLocation(explorerRoadPaths, vehiclePosition);
     const onRoad = Boolean(road && road.distance <= road.width / 2 + 1.2);
+    const forward = {
+      x: -Math.sin(explorerVehicleHeading),
+      z: -Math.cos(explorerVehicleHeading)
+    };
+    const signal = trafficSignalAhead(
+      vehiclePosition,
+      forward,
+      streetIntersections,
+      world.clock.elapsedMinutes
+    );
+    const signalCopy = signal
+      ? ` Signal ${signal.color} in ${Math.max(1, Math.round(signal.distance))}m.`
+      : "";
     document.querySelector("#panel-kicker")!.textContent = "CITY EXPLORER";
     document.querySelector("#panel-title")!.textContent = `Driving ${road?.roadName ?? "the city"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."} Buildings, facilities, and shorelines remain solid.`;
+      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy} Buildings, facilities, and shorelines remain solid.`;
     return;
   }
   if (accessibleRouteSummary) {
