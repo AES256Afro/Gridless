@@ -32,23 +32,23 @@ The tunnel token allows a connector to run this tunnel. Treat it as a secret and
 The initial Gridless code is in draft PR 1. Before that PR is merged, use its branch:
 
 ```bash
-sudo install -d -o "$USER" -g "$USER" /chris/Projects
+mkdir -p "$HOME/Projects"
 git clone --branch codex/parking-accessibility \
   https://github.com/AES256Afro/Gridless.git \
-  /chris/Projects/Gridless
-cd /chris/Projects/Gridless
+  "$HOME/Projects/Gridless"
+cd "$HOME/Projects/Gridless"
 ```
 
 After PR 1 is merged, new installations should clone `main` instead:
 
 ```bash
-git clone https://github.com/AES256Afro/Gridless.git /chris/Projects/Gridless
+git clone https://github.com/AES256Afro/Gridless.git "$HOME/Projects/Gridless"
 ```
 
 Do not clone over an existing checkout. If the directory already exists, inspect it first:
 
 ```bash
-cd /chris/Projects/Gridless
+cd "$HOME/Projects/Gridless"
 git status -sb
 git remote -v
 git branch --show-current
@@ -57,7 +57,7 @@ git branch --show-current
 ## 2. Start the private web origin
 
 ```bash
-cd /chris/Projects/Gridless
+cd "$HOME/Projects/Gridless"
 chmod +x scripts/*.sh
 ./scripts/deploy-bigbox.sh
 ```
@@ -85,7 +85,7 @@ In Cloudflare:
 Store it without placing it in shell history:
 
 ```bash
-cd /chris/Projects/Gridless
+cd "$HOME/Projects/Gridless"
 ./scripts/store-tunnel-token.sh
 ```
 
@@ -109,7 +109,7 @@ Save the route. When created through the dashboard, Cloudflare should also creat
 ## 5. Start and verify the tunnel
 
 ```bash
-cd /chris/Projects/Gridless
+cd "$HOME/Projects/Gridless"
 docker compose --profile tunnel up -d tunnel
 docker compose --profile tunnel ps
 docker compose logs --tail=100 tunnel
@@ -129,7 +129,7 @@ The DNS response should be proxied by Cloudflare and the HTTPS request should re
 After PR 1 is merged and the checkout is on `main`:
 
 ```bash
-cd /chris/Projects/Gridless
+cd "$HOME/Projects/Gridless"
 git status -sb
 git pull --ff-only origin main
 docker compose build --pull gridless
@@ -151,7 +151,7 @@ docker compose --profile tunnel up -d tunnel
 After rotating the token in Cloudflare:
 
 ```bash
-cd /chris/Projects/Gridless
+cd "$HOME/Projects/Gridless"
 ./scripts/store-tunnel-token.sh
 docker compose --profile tunnel up -d --force-recreate tunnel
 ```
