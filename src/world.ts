@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NYC_TEMPLATE, WORLD_TEMPLATES } from "./templates";
 import { findRoadRoute, routeLength } from "./routing";
+import { initialTransitLines } from "./transit";
 
 export type Point2 = { x: number; z: number };
 
@@ -173,6 +174,23 @@ export type PlayerVehicle = {
   parkingId?: string;
 };
 
+export type TransitStop = {
+  id: string;
+  name: string;
+  position: Point2;
+  progress: number;
+};
+
+export type TransitLine = {
+  id: string;
+  name: string;
+  mode: "bus";
+  color: number;
+  route: Point2[];
+  stops: TransitStop[];
+  travelMinutes: number;
+};
+
 export type SimulationClock = {
   year: number;
   month: number;
@@ -238,6 +256,7 @@ export type WorldSnapshot = {
   commuteFlows?: CommuteFlow[];
   parking?: ParkingFacility[];
   playerVehicle?: PlayerVehicle;
+  transitLines?: TransitLine[];
 };
 
 export type CityEconomy = {
@@ -272,6 +291,7 @@ export class World {
   commuteFlows: CommuteFlow[] = [];
   parking: ParkingFacility[] = [];
   playerVehicle?: PlayerVehicle;
+  transitLines: TransitLine[] = [];
   lastDailyActivity = { households: 0, businesses: 0 };
   private history: WorldSnapshot[] = [];
 
@@ -280,6 +300,7 @@ export class World {
     this.areas = clone(NYC_TEMPLATE.areas);
     this.rebuildLots();
     this.parking = initialParking(this.roads);
+    this.transitLines = initialTransitLines(this.roads);
   }
 
   snapshot(): WorldSnapshot {
@@ -298,7 +319,8 @@ export class World {
       utilityFailures: this.utilityFailures,
       commuteFlows: this.commuteFlows,
       parking: this.parking,
-      playerVehicle: this.playerVehicle
+      playerVehicle: this.playerVehicle,
+      transitLines: this.transitLines
     });
   }
 
@@ -312,6 +334,7 @@ export class World {
     this.checkpoint();
     this.roads.push({ id: crypto.randomUUID(), points: clone(points), width, class: roadClass, name: `New ${roadClass}` });
     this.rebuildLots();
+    if (!this.transitLines.length) this.transitLines = initialTransitLines(this.roads);
   }
 
   zoneLot(lotId: string, zone: Zone) {
@@ -831,6 +854,7 @@ export class World {
     this.commuteFlows = [];
     this.parking = initialParking(this.roads);
     this.playerVehicle = undefined;
+    this.transitLines = initialTransitLines(this.roads);
     this.lastDailyActivity = { households: 0, businesses: 0 };
     this.rebuildLots();
     return true;
@@ -980,6 +1004,7 @@ export class World {
     this.commuteFlows = clone(snapshot.commuteFlows ?? []);
     this.parking = clone(snapshot.parking ?? initialParking(this.roads));
     this.playerVehicle = snapshot.playerVehicle ? clone(snapshot.playerVehicle) : undefined;
+    this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads));
     for (const incident of this.incidents) {
       if (incident.route?.length || !incident.responderServiceId) continue;
       const responder = this.services.find(service => service.id === incident.responderServiceId);

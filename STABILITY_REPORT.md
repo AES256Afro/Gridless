@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `6755a7fb`
+Deterministic signature: `2f0da1d7`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, persistent parking, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household.
+The gate creates a fixed NYC reference city with 296 lots, persistent parking and transit, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -29,9 +29,9 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Service staffing | 85% | 85% |
 | Resident wellbeing | 77% | 86% |
 | Completed resident actions | 0 | 14,399 |
-| Save snapshot | 257 KB | 272 KB |
+| Save snapshot | 257 KB | 271 KB |
 
-The largest observed snapshot was 278,854 bytes.
+The largest observed snapshot was 284,616 bytes.
 
 ## Load and recovery
 
@@ -53,13 +53,14 @@ The run found no:
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
 - broken home, incident, failure, service, utility, or commute references
+- duplicate or invalid transit lines, stops, routes, or schedules
 - calendar or monthly-budget boundary errors
 - runaway incident history, save size, population, or treasury behavior
 - deterministic difference between the two complete runs
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. A complete decade takes about 24 seconds on the development machine; the default gate takes about 48 seconds because it runs the decade twice.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. A complete decade takes about 25 seconds on the development machine; the default gate takes about 50 seconds because it runs the decade twice.
 
 ## Boundary
 

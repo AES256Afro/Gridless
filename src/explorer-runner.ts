@@ -13,6 +13,13 @@ import {
   trafficSignalColor,
   trafficVehiclePose
 } from "./traffic";
+import {
+  advanceTransitRide,
+  beginTransitRide,
+  nearestTransitStop,
+  requestTransitAlight,
+  scheduledTransitPose
+} from "./transit";
 import { World, type Area, type Lot, type ParkingFacility, type Road } from "./world";
 
 const road: Road = {
@@ -140,6 +147,42 @@ const curbParking: ParkingFacility = {
 check(nearestParkingFacility([garage, curbParking], { x: 0, z: 0 })?.id === curbParking.id, "Nearest available parking lookup failed.");
 const mobilityWorld = new World();
 check(mobilityWorld.parking.length === 3, "NYC template did not create its initial curb parking.");
+check(mobilityWorld.transitLines.length === 1, "NYC template did not create its initial transit line.");
+const transitLine = mobilityWorld.transitLines[0];
+check(transitLine.route.length >= 8, "Transit line route geometry is incomplete.");
+check(transitLine.stops.length >= 4, "Transit line did not create enough curbside stops.");
+check(
+  mobilityWorld.snapshot().transitLines?.[0].stops.length === transitLine.stops.length,
+  "Transit line and stops were not included in the world snapshot."
+);
+const nearestStop = nearestTransitStop(mobilityWorld.transitLines, transitLine.stops[0].position, 1);
+check(nearestStop?.stop.id === transitLine.stops[0].id, "Nearest transit stop lookup failed.");
+const outboundBus = scheduledTransitPose(transitLine, transitLine.travelMinutes * .25);
+const returningBus = scheduledTransitPose(
+  transitLine,
+  transitLine.travelMinutes + .75 + transitLine.travelMinutes * .25
+);
+check(
+  outboundBus.tangent.x * returningBus.tangent.x + outboundBus.tangent.z * returningBus.tangent.z < -.9,
+  "Scheduled transit did not reverse direction for its return trip."
+);
+const startedTransitRide = beginTransitRide(transitLine, transitLine.stops[0].id);
+check(Boolean(startedTransitRide), "Transit ride could not begin at a valid stop.");
+let transitRide = requestTransitAlight(startedTransitRide!, transitLine);
+check(
+  transitRide.alightStopId === transitLine.stops[1].id,
+  "Transit ride did not request the next stop in its direction of travel."
+);
+let arrivedTransitStop: string | undefined;
+for (let index = 0; index < 1000 && !arrivedTransitStop; index++) {
+  const advanced = advanceTransitRide(transitRide, transitLine, 10);
+  transitRide = advanced.ride;
+  arrivedTransitStop = advanced.arrivedStop?.id;
+}
+check(
+  arrivedTransitStop === transitLine.stops[1].id,
+  "Transit ride did not alight at its requested stop."
+);
 const placedParking = mobilityWorld.addParking("surface", { x: 24, z: -18 }, .4);
 check(placedParking.capacity === 18 && placedParking.accessibleSpaces === 2, "Surface parking capacity is incorrect.");
 check(mobilityWorld.parkPlayerVehicle(placedParking.id, placedParking.position, placedParking.rotation), "Player vehicle could not use available parking.");
@@ -165,6 +208,9 @@ console.log(JSON.stringify({
   ),
   accessibleRouteMeters: Math.round(accessibleRoute!.distance),
   rampedCrossings: accessibleRoute!.rampedCrossings,
+  transitLine: transitLine.name,
+  transitStops: transitLine.stops.length,
+  transitAlight: arrivedTransitStop,
   sidewalkDistance: Number(spawnLocation!.distance.toFixed(2)),
   buildingCollision: buildingMove.blocked,
   garageCollision: garageMove.blocked,

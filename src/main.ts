@@ -35,6 +35,16 @@ import {
   trafficSignalColor,
   trafficVehiclePose
 } from "./traffic";
+import {
+  advanceTransitRide,
+  beginTransitRide,
+  nearestTransitStop,
+  requestTransitAlight,
+  scheduledTransitPose,
+  transitPoseAtProgress,
+  type TransitRide,
+  type TransitVehiclePose
+} from "./transit";
 
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
@@ -221,17 +231,21 @@ const incidentGroup = new THREE.Group();
 const commuteGroup = new THREE.Group();
 const streetFurnitureGroup = new THREE.Group();
 const accessibleRouteGroup = new THREE.Group();
+const transitGroup = new THREE.Group();
 const explorerVehicleGroup = createExplorerVehicle();
+const transitVehicleGroup = createTransitVehicle();
 scene.add(
   terrainGroup,
   worldGroup,
   streetFurnitureGroup,
   accessibleRouteGroup,
+  transitGroup,
   previewGroup,
   homeGroup,
   incidentGroup,
   commuteGroup,
-  explorerVehicleGroup
+  explorerVehicleGroup,
+  transitVehicleGroup
 );
 const world = new World();
 const raycaster = new THREE.Raycaster();
@@ -264,6 +278,8 @@ let explorerVehicleParked = false;
 let explorerVehicleSpeed = 0;
 let explorerVehicleHeading = 0;
 let accessibleRouteSummary: { facilityId: string; distance: number; rampedCrossings: number } | null = null;
+let transitRide: TransitRide | null = null;
+let activeTransitVehicle: TransitRide | null = null;
 
 const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x303533, roughness: .94 });
 const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b4aa, roughness: .98 });
@@ -341,6 +357,48 @@ function createExplorerVehicle() {
     );
     headlight.position.set(x, .78, -1.94);
     vehicle.add(headlight);
+  }
+  return vehicle;
+}
+
+function createTransitVehicle() {
+  const vehicle = new THREE.Group();
+  vehicle.visible = false;
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x2d79a7, roughness: .58, metalness: .1 });
+  const windowMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb9d5db,
+    emissive: 0x263b43,
+    emissiveIntensity: .32,
+    roughness: .3,
+    metalness: .15
+  });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.45, 1.45, 7.6), bodyMaterial);
+  body.position.y = 1.05;
+  body.castShadow = body.receiveShadow = true;
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.28, 1.18, 6.9), windowMaterial);
+  cabin.position.set(0, 2.25, -.1);
+  cabin.castShadow = true;
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(2.34, .18, 7.15),
+    new THREE.MeshStandardMaterial({ color: 0xe6e5dc, roughness: .76 })
+  );
+  roof.position.set(0, 2.93, -.1);
+  const destination = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, .34, .06),
+    new THREE.MeshBasicMaterial({ color: 0xf0c75c })
+  );
+  destination.position.set(0, 2.48, -3.58);
+  vehicle.add(body, cabin, roof, destination);
+  for (const x of [-1.2, 1.2]) {
+    for (const z of [-2.45, 2.45]) {
+      const wheel = new THREE.Mesh(
+        new THREE.CylinderGeometry(.43, .43, .28, 16),
+        new THREE.MeshStandardMaterial({ color: 0x202321, roughness: .92 })
+      );
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, .56, z);
+      vehicle.add(wheel);
+    }
   }
   return vehicle;
 }
@@ -513,6 +571,166 @@ function updateTrafficSignals(force = false) {
   });
 }
 
+function renderTransitInfrastructure() {
+  transitGroup.clear();
+  for (const line of world.transitLines) {
+    if (line.route.length < 2) continue;
+    const routeGeometry = new THREE.BufferGeometry().setFromPoints(
+      line.route.map(point => new THREE.Vector3(point.x, .34, point.z))
+    );
+    const route = new THREE.Line(
+      routeGeometry,
+      new THREE.LineBasicMaterial({ color: line.color, transparent: true, opacity: .48 })
+    );
+    transitGroup.add(route);
+    for (const stop of line.stops) {
+      const marker = new THREE.Group();
+      marker.position.set(stop.position.x, .18, stop.position.z);
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(.07, .1, 2.7, 8),
+        new THREE.MeshStandardMaterial({ color: 0x4f5753, roughness: .72, metalness: .2 })
+      );
+      pole.position.y = 1.35;
+      const sign = new THREE.Mesh(
+        new THREE.BoxGeometry(.65, .82, .14),
+        new THREE.MeshStandardMaterial({ color: line.color, roughness: .62 })
+      );
+      sign.position.y = 2.55;
+      const platform = new THREE.Mesh(
+        new THREE.RingGeometry(.7, 1.02, 24),
+        new THREE.MeshBasicMaterial({ color: line.color, transparent: true, opacity: .68, side: THREE.DoubleSide })
+      );
+      platform.rotation.x = -Math.PI / 2;
+      platform.position.y = .05;
+      marker.add(pole, sign, platform);
+      marker.userData.transitStopId = stop.id;
+      transitGroup.add(marker);
+    }
+  }
+}
+
+function placeTransitVehicle(pose: TransitVehiclePose) {
+  transitVehicleGroup.position.set(pose.point.x, .18, pose.point.z);
+  transitVehicleGroup.rotation.y = Math.atan2(-pose.tangent.x, -pose.tangent.z);
+  transitVehicleGroup.visible = true;
+}
+
+function updateTransitVehicle(dt: number) {
+  const preferredLineId = transitRide?.lineId ?? activeTransitVehicle?.lineId;
+  const line = world.transitLines.find(item => item.id === preferredLineId) ?? world.transitLines[0];
+  if (!line) {
+    transitRide = null;
+    activeTransitVehicle = null;
+    transitVehicleGroup.visible = false;
+    return;
+  }
+  if (activeTransitVehicle && activeTransitVehicle.lineId !== line.id) activeTransitVehicle = null;
+  if (transitRide && transitRide.lineId !== line.id) transitRide = null;
+
+  let pose: TransitVehiclePose;
+  let arrivedStop: ReturnType<typeof advanceTransitRide>["arrivedStop"];
+  if (transitRide) {
+    const advanced = advanceTransitRide(transitRide, line, dt * 12);
+    transitRide = advanced.ride;
+    activeTransitVehicle = { ...advanced.ride, alightStopId: undefined };
+    arrivedStop = advanced.arrivedStop;
+    pose = transitPoseAtProgress(line, advanced.ride.progress, advanced.ride.direction, 2.5);
+  } else if (activeTransitVehicle) {
+    const advanced = advanceTransitRide(activeTransitVehicle, line, dt * 12);
+    activeTransitVehicle = { ...advanced.ride, alightStopId: undefined };
+    pose = transitPoseAtProgress(line, advanced.ride.progress, advanced.ride.direction, 2.5);
+  } else {
+    pose = scheduledTransitPose(line, world.clock.elapsedMinutes + simulationAccumulator, 2.5);
+  }
+  placeTransitVehicle(pose);
+
+  if (arrivedStop) {
+    completeTransitAlight(arrivedStop, pose);
+    return;
+  }
+  if (!transitRide || mode !== "explore") return;
+  const desiredCamera = new THREE.Vector3(
+    pose.point.x - pose.tangent.x * 12,
+    6.4,
+    pose.point.z - pose.tangent.z * 12
+  );
+  camera.position.lerp(desiredCamera, 1 - Math.exp(-5.5 * Math.max(dt, .001)));
+  camera.lookAt(
+    pose.point.x + pose.tangent.x * 7,
+    1.65,
+    pose.point.z + pose.tangent.z * 7
+  );
+  const nextFov = THREE.MathUtils.damp(camera.fov, 59, 5, dt);
+  if (Math.abs(nextFov - camera.fov) > .001) {
+    camera.fov = nextFov;
+    camera.updateProjectionMatrix();
+  }
+  updateExplorerMovementStatus(12);
+}
+
+function toggleTransitRide() {
+  if (mode !== "explore" || explorerDriving) return;
+  if (transitRide) {
+    const line = world.transitLines.find(item => item.id === transitRide!.lineId);
+    if (!line) return;
+    const requested = requestTransitAlight(transitRide, line);
+    transitRide = requested;
+    activeTransitVehicle = { ...requested, alightStopId: undefined };
+    const stop = line.stops.find(item => item.id === requested.alightStopId);
+    updateExplorerContext();
+    notice(stop ? `Stop requested: ${stop.name}` : "Stop requested");
+    return;
+  }
+  const nearest = nearestTransitStop(
+    world.transitLines,
+    { x: camera.position.x, z: camera.position.z },
+    14
+  );
+  if (!nearest) {
+    notice("Move closer to a marked bus stop");
+    return;
+  }
+  const ride = beginTransitRide(nearest.line, nearest.stop.id);
+  if (!ride) return;
+  transitRide = ride;
+  activeTransitVehicle = { ...ride };
+  clearAccessibleRoute();
+  explorerVelocity.set(0, 0, 0);
+  explorerVerticalOffset = 0;
+  explorerVerticalVelocity = 0;
+  explorerGrounded = true;
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  setPanel(
+    "CITY TRANSIT",
+    nearest.line.name,
+    `Boarded at ${nearest.stop.name}. Ride through the same streets and press T to request the next stop.`,
+    "T|Request next stop;Esc|Return to City Builder"
+  );
+  updateTransitVehicle(0);
+  updateExplorerContext();
+  notice(`Boarded ${nearest.line.name}`);
+}
+
+function completeTransitAlight(stop: NonNullable<ReturnType<typeof advanceTransitRide>["arrivedStop"]>, pose: TransitVehiclePose) {
+  transitRide = null;
+  const spawn = findExplorerSpawn(stop.position);
+  camera.position.set(spawn.x, 1.82, spawn.z);
+  yaw = Math.atan2(-pose.tangent.x, -pose.tangent.z);
+  pitch = -.05;
+  camera.fov = 55;
+  camera.updateProjectionMatrix();
+  requestExplorerPointerLock();
+  setPanel(
+    "CITY EXPLORER",
+    `Arrived at ${stop.name}`,
+    "You are back on the sidewalk. The bus continues along its route through the city.",
+    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+  );
+  updateExplorerMovementStatus(0);
+  updateExplorerContext();
+  notice(`Arrived at ${stop.name}`);
+}
+
 function explorerCollisionContext(playerRadius = .46) {
   return {
     landAreas: world.areas,
@@ -573,7 +791,7 @@ function clearAccessibleRoute() {
 }
 
 function toggleAccessibleRoute() {
-  if (mode !== "explore" || explorerDriving) return;
+  if (mode !== "explore" || explorerDriving || transitRide) return;
   if (accessibleRouteSummary) {
     clearAccessibleRoute();
     updateExplorerContext();
@@ -657,14 +875,14 @@ function parkExplorerVehicle() {
     "CITY EXPLORER",
     "Vehicle parked",
     `${parkingKindLabel(facility.kind)} has ${facility.capacity - facility.occupied} spaces available, including ${facility.accessibleSpaces} designated accessible spaces.`,
-    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;E|Drive;R|Accessible route;Esc|Return"
+    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
   );
   updateExplorerMovementStatus(0);
   notice(`Parked in ${parkingKindLabel(facility.kind).toLowerCase()}`);
 }
 
 function toggleExplorerVehicle() {
-  if (mode !== "explore") return;
+  if (mode !== "explore" || transitRide) return;
   if (explorerDriving) {
     explorerDriving = false;
     explorerVehicleSpeed = 0;
@@ -684,7 +902,7 @@ function toggleExplorerVehicle() {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;E|Drive;R|Accessible route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
     );
     updateExplorerContext();
     notice("Vehicle parked. Returned to the sidewalk");
@@ -731,30 +949,39 @@ function toggleExplorerVehicle() {
 
 function updateExplorerMovementStatus(speed: number) {
   if (mode !== "explore") return;
-  const position = explorerDriving
-    ? { x: explorerVehicleGroup.position.x, z: explorerVehicleGroup.position.z }
-    : { x: camera.position.x, z: camera.position.z };
+  const position = transitRide
+    ? { x: transitVehicleGroup.position.x, z: transitVehicleGroup.position.z }
+    : explorerDriving
+      ? { x: explorerVehicleGroup.position.x, z: explorerVehicleGroup.position.z }
+      : { x: camera.position.x, z: camera.position.z };
   const roadLocation = nearestRoadLocation(explorerRoadPaths, position);
   const park = world.areas.find(area => area.kind === "park" && pointInPolygon(position, area.points));
   const district = world.areas.find(area => area.kind === "district" && pointInPolygon(position, area.points));
   const surface = explorerSurface(roadLocation);
   const onRoad = Boolean(roadLocation && roadLocation.distance <= roadLocation.width / 2 + 1.2);
-  const surfaceLabel = explorerDriving
-    ? onRoad ? "Roadway" : "Off road"
-    : park && surface === "City block" ? "Park path" : surface;
+  const surfaceLabel = transitRide
+    ? "Public transit"
+    : explorerDriving
+      ? onRoad ? "Roadway" : "Off road"
+      : park && surface === "City block" ? "Park path" : surface;
   const nearbyRoad = roadLocation && roadLocation.distance <= roadLocation.width / 2 + 14;
-  const location = nearbyRoad ? roadLocation.roadName : park?.name ?? district?.name ?? "City block";
-  const pace = explorerDriving
-    ? `Driving ${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h`
-    : !explorerGrounded
-    ? "Airborne"
-    : explorerBlocked && speed < .4
-      ? "Blocked"
-      : speed < .35
-        ? "Standing"
-        : speed < 6.2
-          ? "Walking"
-          : "Sprinting";
+  const transitLine = transitRide
+    ? world.transitLines.find(line => line.id === transitRide!.lineId)
+    : undefined;
+  const location = transitLine?.name ?? (nearbyRoad ? roadLocation.roadName : park?.name ?? district?.name ?? "City block");
+  const pace = transitRide
+    ? "Riding bus"
+    : explorerDriving
+      ? `Driving ${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h`
+      : !explorerGrounded
+        ? "Airborne"
+        : explorerBlocked && speed < .4
+          ? "Blocked"
+          : speed < .35
+            ? "Standing"
+            : speed < 6.2
+              ? "Walking"
+              : "Sprinting";
   document.querySelector("#explorer-location")!.textContent = location;
   document.querySelector("#explorer-surface")!.textContent = surfaceLabel;
   document.querySelector("#explorer-pace")!.textContent = pace;
@@ -832,6 +1059,7 @@ function renderWorld() {
     explorerVehicleGroup.visible = mode === "explore";
   }
   rebuildExplorerRoadNavigation();
+  renderTransitInfrastructure();
   renderTerrain();
   worldGroup.clear();
   for (const road of world.roads) {
@@ -1864,6 +2092,7 @@ function setMode(next: Mode) {
     }, explorerVehicleHeading);
     explorerVehicleParked = true;
   }
+  if (mode === "explore" && next !== "explore") transitRide = null;
   mode = next;
   if (next !== "explore") {
     explorerDriving = false;
@@ -1918,6 +2147,8 @@ function setMode(next: Mode) {
     } else {
       preferred = { x: 0, z: 35 };
     }
+    const entryStop = nearestTransitStop(world.transitLines, preferred);
+    if (entryStop) preferred = entryStop.stop.position;
     const spawn = findExplorerSpawn(preferred);
     camera.position.set(spawn.x, 1.82, spawn.z);
     const roadLocation = nearestRoadLocation(explorerRoadPaths, spawn);
@@ -1930,7 +2161,7 @@ function setMode(next: Mode) {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;E|Drive;R|Accessible route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
     );
     updateExplorerContext();
     updateExplorerMovementStatus(0);
@@ -1953,6 +2184,17 @@ function setMode(next: Mode) {
 
 function updateExplorerContext() {
   if (mode !== "explore") return;
+  if (transitRide) {
+    const line = world.transitLines.find(item => item.id === transitRide!.lineId);
+    if (!line) return;
+    const requestedStop = line.stops.find(stop => stop.id === transitRide!.alightStopId);
+    document.querySelector("#panel-kicker")!.textContent = "CITY TRANSIT";
+    document.querySelector("#panel-title")!.textContent = line.name;
+    document.querySelector("#panel-copy")!.textContent = requestedStop
+      ? `Stop requested: ${requestedStop.name}. The bus is continuing along its persistent route through the live city.`
+      : "You are riding through the same streets built and simulated in City Builder. Press T to request the next stop.";
+    return;
+  }
   if (explorerDriving) {
     const vehiclePosition = {
       x: explorerVehicleGroup.position.x,
@@ -1985,6 +2227,18 @@ function updateExplorerContext() {
     document.querySelector("#panel-title")!.textContent = `Route to ${parkingKindLabel(facility?.kind ?? "curb").toLowerCase()}`;
     document.querySelector("#panel-copy")!.textContent =
       `${Math.round(accessibleRouteSummary.distance)}m along connected sidewalks and marked crossings. ${accessibleRouteSummary.rampedCrossings} ${accessibleRouteSummary.rampedCrossings === 1 ? "crossing uses" : "crossings use"} paired curb ramps.`;
+    return;
+  }
+  const nearbyStop = nearestTransitStop(
+    world.transitLines,
+    { x: camera.position.x, z: camera.position.z },
+    16
+  );
+  if (nearbyStop) {
+    document.querySelector("#panel-kicker")!.textContent = "CITY TRANSIT";
+    document.querySelector("#panel-title")!.textContent = nearbyStop.stop.name;
+    document.querySelector("#panel-copy")!.textContent =
+      `${nearbyStop.line.name} stops here. Press T to board and ride its full route through the city.`;
     return;
   }
   const home = selectedLot ? world.homes.find(item => item.lotId === selectedLot!.id) : undefined;
@@ -2297,6 +2551,10 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
+  if (mode === "explore" && event.code === "KeyT" && !event.repeat) {
+    event.preventDefault();
+    toggleTransitRide();
+  }
   if (mode === "explore" && event.code === "KeyE" && !event.repeat) {
     event.preventDefault();
     toggleExplorerVehicle();
@@ -2309,7 +2567,7 @@ addEventListener("keydown", event => {
     event.preventDefault();
     parkExplorerVehicle();
   }
-  if (mode === "explore" && !explorerDriving && event.code === "Space") {
+  if (mode === "explore" && !explorerDriving && !transitRide && event.code === "Space") {
     event.preventDefault();
     if (explorerGrounded && !event.repeat) {
       explorerGrounded = false;
@@ -2341,7 +2599,7 @@ addEventListener("keydown", event => {
 addEventListener("keyup", event => keys.delete(event.code));
 addEventListener("blur", () => keys.clear());
 addEventListener("mousemove", event => {
-  if (mode !== "explore" || explorerDriving || document.pointerLockElement !== renderer.domElement) return;
+  if (mode !== "explore" || explorerDriving || transitRide || document.pointerLockElement !== renderer.domElement) return;
   yaw -= event.movementX * .002;
   pitch = THREE.MathUtils.clamp(pitch - event.movementY * .002, -1.3, 1.3);
 });
@@ -2467,8 +2725,11 @@ function animate() {
       }
     }
   }
+  updateTransitVehicle(dt);
   if (mode === "explore") {
-    if (explorerDriving) {
+    if (transitRide) {
+      updateExplorerMovementStatus(12);
+    } else if (explorerDriving) {
       updateExplorerVehicle(dt);
     } else {
       const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
