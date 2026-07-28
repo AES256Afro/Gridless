@@ -33,6 +33,16 @@ import {
   type ExplorerRoadPath
 } from "./explorer";
 import {
+  homeEntryStatus,
+  interiorDoorways,
+  interiorEntryPoint,
+  interiorExteriorDoorway,
+  interiorRoomAt,
+  lotLocalToWorld,
+  resolveInteriorMovement,
+  worldToLotLocal
+} from "./interiors";
+import {
   detectStreetIntersections,
   trafficSignalState,
   type StreetIntersection
@@ -340,6 +350,8 @@ let explorerDriving = false;
 let explorerVehicleParked = false;
 let explorerVehicleSpeed = 0;
 let explorerVehicleHeading = 0;
+let explorerInteriorHomeId: string | null = null;
+let explorerExteriorReturn: { position: Point2; yaw: number } | null = null;
 let accessibleRouteSummary: {
   destinationId: string;
   destinationKind: AccessibilityDestinationKind;
@@ -917,7 +929,7 @@ function completeTransitAlight(stop: NonNullable<ReturnType<typeof advanceTransi
     "CITY EXPLORER",
     `Arrived at ${stop.name}`,
     "You are back on the sidewalk. The bus continues along its route through the city.",
-    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
+    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
   );
   updateExplorerMovementStatus(0);
   updateExplorerContext();
@@ -952,6 +964,115 @@ function findExplorerSpawn(preferred: Point2) {
     z: nearest.point.z - normal.z * offset * (nearest.signedDistance < 0 ? -1 : 1)
   };
   return isExplorerPositionValid(alternative, context) ? alternative : primary;
+}
+
+function setInteriorSceneVisibility(inside: boolean) {
+  water.visible = !inside;
+  terrainGroup.visible = !inside;
+  worldGroup.visible = !inside;
+  streetFurnitureGroup.visible = !inside;
+  accessibilityGroup.visible = !inside && mode === "explore";
+  accessibleRouteGroup.visible = !inside;
+  transitGroup.visible = !inside;
+  cityEventGroup.visible = !inside;
+  previewGroup.visible = !inside;
+  incidentGroup.visible = !inside;
+  commuteGroup.visible = !inside;
+  explorerVehicleGroup.visible = !inside && explorerVehicleParked;
+  transitVehicleGroup.visible = !inside && Boolean(transitRide);
+  transitFleetGroup.visible = !inside;
+  homeGroup.visible = inside || mode === "home";
+}
+
+function toggleHomeInterior() {
+  if (mode !== "explore" || explorerDriving || transitRide) return;
+  const activeInterior = currentExplorerInterior();
+  if (activeInterior) {
+    const entrance = world.accessibilityEntrances.find(
+      item => item.targetKind === "lot" && item.targetId === activeInterior.lot.id
+    );
+    const fallback = entrance?.position ?? activeInterior.lot.center;
+    const exit = explorerExteriorReturn?.position ?? findExplorerSpawn(fallback);
+    explorerInteriorHomeId = null;
+    selectedLot = activeInterior.lot;
+    setInteriorSceneVisibility(false);
+    renderWorld();
+    camera.position.set(exit.x, 1.82, exit.z);
+    yaw = explorerExteriorReturn?.yaw ?? activeInterior.lot.rotation + Math.PI;
+    pitch = -.05;
+    explorerExteriorReturn = null;
+    explorerVelocity.set(0, 0, 0);
+    setPanel(
+      "CITY EXPLORER",
+      `Outside ${activeInterior.home.name}`,
+      "You have returned to the street entrance. The home remains connected to this lot and its household simulation.",
+      "WASD|Walk;Mouse|Look;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+    );
+    updateExplorerMovementStatus(0);
+    updateExplorerContext();
+    requestExplorerPointerLock();
+    notice(`Exited ${activeInterior.home.name}`);
+    return;
+  }
+
+  const playerPosition = { x: camera.position.x, z: camera.position.z };
+  const nearby = world.accessibilityEntrances
+    .filter(entrance => entrance.targetKind === "lot")
+    .map(entrance => ({
+      entrance,
+      distance: Math.hypot(entrance.position.x - playerPosition.x, entrance.position.z - playerPosition.z)
+    }))
+    .filter(candidate => candidate.distance <= 6)
+    .sort((first, second) => first.distance - second.distance)[0];
+  if (!nearby) {
+    notice("Move closer to a home entrance to enter");
+    return;
+  }
+  const lot = world.lots.find(item => item.id === nearby.entrance.targetId);
+  const home = lot ? world.homes.find(item => item.lotId === lot.id) : undefined;
+  const status = homeEntryStatus(home, nearby.entrance);
+  if (!status.allowed || !lot || !home) {
+    notice(status.reason);
+    updateExplorerContext();
+    return;
+  }
+  const preferred = worldToLotLocal(nearby.entrance.position, lot);
+  const entry = interiorEntryPoint(home, preferred);
+  if (!entry) {
+    notice("The furnished floor plan has no clear place to enter");
+    return;
+  }
+  explorerExteriorReturn = {
+    position: { x: camera.position.x, z: camera.position.z },
+    yaw
+  };
+  explorerInteriorHomeId = home.id;
+  selectedLot = lot;
+  clearAccessibleRoute();
+  setInteriorSceneVisibility(true);
+  renderHome();
+  const worldEntry = lotLocalToWorld(entry, lot);
+  camera.position.set(worldEntry.x, 2.02, worldEntry.z);
+  const towardCenter = {
+    x: lot.center.x - worldEntry.x,
+    z: lot.center.z - worldEntry.z
+  };
+  yaw = Math.atan2(-towardCenter.x, -towardCenter.z);
+  pitch = -.04;
+  explorerVelocity.set(0, 0, 0);
+  explorerVerticalOffset = 0;
+  explorerVerticalVelocity = 0;
+  explorerGrounded = true;
+  setPanel(
+    "HOME INTERIOR",
+    home.name,
+    "Walk through the rooms and furniture designed in Home Simulator. Household activity, utilities, and city conditions continue while you are inside.",
+    "WASD|Walk;Mouse|Look;Shift|Move faster;F|Exit home;Esc|Return to City Builder"
+  );
+  updateExplorerMovementStatus(0);
+  updateExplorerContext();
+  requestExplorerPointerLock();
+  notice(`Entered ${home.name}`);
 }
 
 function requestExplorerPointerLock() {
@@ -1154,7 +1275,7 @@ function parkExplorerVehicle() {
     "CITY EXPLORER",
     "Vehicle parked",
     `${parkingKindLabel(facility.kind)} charges ${formatParkingRate(facility.hourlyRate)} and has ${facility.capacity - facility.occupied} spaces available. ${parkingPressureLabel(facility)}. ${facility.accessibleSpaces} spaces are designated accessible.`,
-    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
+    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
   );
   updateExplorerMovementStatus(0);
   notice(`Parked in ${parkingKindLabel(facility.kind).toLowerCase()} · ${formatParkingRate(facility.hourlyRate)}`);
@@ -1181,7 +1302,7 @@ function toggleExplorerVehicle() {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
     );
     updateExplorerContext();
     notice("Vehicle parked. Returned to the sidewalk");
@@ -1228,6 +1349,25 @@ function toggleExplorerVehicle() {
 
 function updateExplorerMovementStatus(speed: number) {
   if (mode !== "explore") return;
+  const interior = currentExplorerInterior();
+  if (interior) {
+    const local = worldToLotLocal(
+      { x: camera.position.x, z: camera.position.z },
+      interior.lot
+    );
+    const room = interiorRoomAt(interior.home, local);
+    const pace = explorerBlocked && speed < .4
+      ? "Blocked"
+      : speed < .35
+        ? "Standing"
+        : speed < 6.2
+          ? "Walking"
+          : "Moving quickly";
+    document.querySelector("#explorer-location")!.textContent = interior.home.name;
+    document.querySelector("#explorer-surface")!.textContent = room?.kind ?? "Interior doorway";
+    document.querySelector("#explorer-pace")!.textContent = pace;
+    return;
+  }
   const position = transitRide
     ? { x: transitVehicleGroup.position.x, z: transitVehicleGroup.position.z }
     : explorerDriving
@@ -1474,6 +1614,7 @@ function renderWorld() {
   )) {
     updateCityToolPanel(cityTool === "inspect" ? selectedLot ?? undefined : undefined);
   }
+  if (currentExplorerInterior()) setInteriorSceneVisibility(true);
 }
 
 function addBuildingWindows(lot: Lot, height: number, darkness: number, occupiedShare: number) {
@@ -1908,8 +2049,8 @@ function updateClockDisplay() {
   renderCommutes();
   updateTrafficSignals();
   if (mode === "explore") updateExplorerContext();
-  if (mode === "home") {
-    const home = currentHome();
+  if (mode === "home" || explorerInteriorHomeId) {
+    const home = mode === "home" ? currentHome() : currentExplorerInterior()?.home;
     const signature = home
       ? home.residents.map(resident =>
         `${resident.id}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
@@ -2381,13 +2522,16 @@ function currentHome() {
   return world.homes.find(home => home.lotId === selectedLot!.id) ?? null;
 }
 
+function currentExplorerInterior() {
+  if (!explorerInteriorHomeId) return null;
+  const home = world.homes.find(item => item.id === explorerInteriorHomeId);
+  if (!home) return null;
+  const lot = world.lots.find(item => item.id === home.lotId);
+  return lot ? { home, lot } : null;
+}
+
 function localToWorld(point: Point2, lot: Lot) {
-  const c = Math.cos(lot.rotation);
-  const s = Math.sin(lot.rotation);
-  return {
-    x: lot.center.x + c * point.x + s * point.z,
-    z: lot.center.z - s * point.x + c * point.z
-  };
+  return lotLocalToWorld(point, lot);
 }
 
 function worldToLocal(point: THREE.Vector3, lot: Lot) {
@@ -2403,17 +2547,19 @@ function worldToLocal(point: THREE.Vector3, lot: Lot) {
 
 function renderHome() {
   homeGroup.clear();
-  if (mode !== "home" || !selectedLot) return;
-  const home = currentHome();
-  if (!home) return;
+  const explorerInterior = currentExplorerInterior();
+  const lot = mode === "home" ? selectedLot : explorerInterior?.lot ?? null;
+  const home = mode === "home" ? currentHome() : explorerInterior?.home ?? null;
+  homeGroup.visible = Boolean(lot && home);
+  if (!lot || !home) return;
   lastHomeActionSignature = home.residents.map(resident =>
     `${resident.id}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
   ).join("|");
-  homeGroup.position.set(selectedLot.center.x, .2, selectedLot.center.z);
-  homeGroup.rotation.y = selectedLot.rotation;
+  homeGroup.position.set(lot.center.x, .2, lot.center.z);
+  homeGroup.rotation.y = lot.rotation;
 
   const foundation = new THREE.Mesh(
-    new THREE.BoxGeometry(selectedLot.width - 1, .18, selectedLot.depth - 1),
+    new THREE.BoxGeometry(lot.width - 1, .18, lot.depth - 1),
     new THREE.MeshStandardMaterial({ color: 0xcfbf91, roughness: .96 })
   );
   foundation.position.y = .09;
@@ -2421,6 +2567,12 @@ function renderHome() {
   foundation.userData.homeSurface = true;
   homeGroup.add(foundation);
 
+  const entrance = world.accessibilityEntrances.find(
+    item => item.targetKind === "lot" && item.targetId === lot.id
+  );
+  const exteriorDoorway = entrance
+    ? interiorExteriorDoorway(home, worldToLotLocal(entrance.position, lot))
+    : undefined;
   for (const room of home.rooms) {
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(room.width, room.depth),
@@ -2430,10 +2582,20 @@ function renderHome() {
     floor.position.set(room.x, .2, room.z);
     floor.receiveShadow = true;
     homeGroup.add(floor);
-    addWall(homeGroup, room.x, room.z - room.depth / 2, room.width, .18, 0);
-    addWall(homeGroup, room.x, room.z + room.depth / 2, room.width, .18, 0);
-    addWall(homeGroup, room.x - room.width / 2, room.z, room.depth, .18, Math.PI / 2);
-    addWall(homeGroup, room.x + room.width / 2, room.z, room.depth, .18, Math.PI / 2);
+    if (explorerInterior) {
+      const ceiling = new THREE.Mesh(
+        new THREE.PlaneGeometry(room.width, room.depth),
+        new THREE.MeshStandardMaterial({ color: 0xf6f1e5, roughness: .9, side: THREE.DoubleSide })
+      );
+      ceiling.rotation.x = Math.PI / 2;
+      ceiling.position.set(room.x, 3.02, room.z);
+      ceiling.receiveShadow = true;
+      homeGroup.add(ceiling);
+      const light = new THREE.PointLight(0xffd9a6, 1.05, Math.max(room.width, room.depth) * 1.3, 1.6);
+      light.position.set(room.x, 2.55, room.z);
+      homeGroup.add(light);
+    }
+    addHomeRoomWalls(home, room, exteriorDoorway);
   }
 
   for (const item of home.furniture) homeGroup.add(createFurniture(item));
@@ -2454,9 +2616,11 @@ function renderHome() {
     stateRing.rotation.x = -Math.PI / 2;
     stateRing.position.y = .025;
     person.add(body, stateRing);
-    const actionLabel = makeHomeLabel(`${resident.name} · ${world.residentActionLabel(resident)}`);
-    actionLabel.position.set(0, 2.05, 0);
-    person.add(actionLabel);
+    if (mode === "home") {
+      const actionLabel = makeHomeLabel(`${resident.name} · ${world.residentActionLabel(resident)}`);
+      actionLabel.position.set(0, 2.05, 0);
+      person.add(actionLabel);
+    }
     person.position.set(
       target ? target.x + (index % 2 ? .55 : -.55) : -1 + index * 1.1,
       .2,
@@ -2464,7 +2628,7 @@ function renderHome() {
     );
     homeGroup.add(person);
   });
-  updateHouseholdSummary(home);
+  if (mode === "home") updateHouseholdSummary(home);
 }
 
 function makeHomeLabel(text: string) {
@@ -2488,6 +2652,116 @@ function makeHomeLabel(text: string) {
   }));
   sprite.scale.set(5.6, 1.05, 1);
   return sprite;
+}
+
+function addHomeRoomWalls(
+  home: Home,
+  room: Home["rooms"][number],
+  exteriorDoorway?: ReturnType<typeof interiorExteriorDoorway>
+) {
+  const doorways = interiorDoorways(home).filter(doorway => doorway.roomIds.includes(room.id));
+  addSegmentedHomeWall(
+    room.x - room.width / 2,
+    room.x + room.width / 2,
+    room.z - room.depth / 2,
+    0,
+    doorways.find(doorway =>
+      doorway.orientation === "z" && Math.abs(doorway.boundary - (room.z - room.depth / 2)) < .2
+    ) ?? (exteriorDoorway?.roomId === room.id
+      && exteriorDoorway.orientation === "z"
+      && Math.abs(exteriorDoorway.boundary - (room.z - room.depth / 2)) < .2
+      ? exteriorDoorway
+      : undefined)
+  );
+  addSegmentedHomeWall(
+    room.x - room.width / 2,
+    room.x + room.width / 2,
+    room.z + room.depth / 2,
+    0,
+    doorways.find(doorway =>
+      doorway.orientation === "z" && Math.abs(doorway.boundary - (room.z + room.depth / 2)) < .2
+    ) ?? (exteriorDoorway?.roomId === room.id
+      && exteriorDoorway.orientation === "z"
+      && Math.abs(exteriorDoorway.boundary - (room.z + room.depth / 2)) < .2
+      ? exteriorDoorway
+      : undefined)
+  );
+  addSegmentedHomeWall(
+    room.z - room.depth / 2,
+    room.z + room.depth / 2,
+    room.x - room.width / 2,
+    Math.PI / 2,
+    doorways.find(doorway =>
+      doorway.orientation === "x" && Math.abs(doorway.boundary - (room.x - room.width / 2)) < .2
+    ) ?? (exteriorDoorway?.roomId === room.id
+      && exteriorDoorway.orientation === "x"
+      && Math.abs(exteriorDoorway.boundary - (room.x - room.width / 2)) < .2
+      ? exteriorDoorway
+      : undefined)
+  );
+  addSegmentedHomeWall(
+    room.z - room.depth / 2,
+    room.z + room.depth / 2,
+    room.x + room.width / 2,
+    Math.PI / 2,
+    doorways.find(doorway =>
+      doorway.orientation === "x" && Math.abs(doorway.boundary - (room.x + room.width / 2)) < .2
+    ) ?? (exteriorDoorway?.roomId === room.id
+      && exteriorDoorway.orientation === "x"
+      && Math.abs(exteriorDoorway.boundary - (room.x + room.width / 2)) < .2
+      ? exteriorDoorway
+      : undefined)
+  );
+}
+
+function addSegmentedHomeWall(
+  start: number,
+  end: number,
+  fixed: number,
+  rotation: number,
+  doorway?: {
+    orientation: "x" | "z";
+    boundary: number;
+    center: number;
+    width: number;
+  }
+) {
+  if (!doorway) {
+    const center = (start + end) / 2;
+    addWall(
+      homeGroup,
+      rotation ? fixed : center,
+      rotation ? center : fixed,
+      end - start,
+      .18,
+      rotation
+    );
+    return;
+  }
+  const openingStart = Math.max(start, doorway.center - doorway.width / 2);
+  const openingEnd = Math.min(end, doorway.center + doorway.width / 2);
+  const firstLength = openingStart - start;
+  const secondLength = end - openingEnd;
+  if (firstLength > .05) {
+    const center = start + firstLength / 2;
+    addWall(homeGroup, rotation ? fixed : center, rotation ? center : fixed, firstLength, .18, rotation);
+  }
+  if (secondLength > .05) {
+    const center = openingEnd + secondLength / 2;
+    addWall(homeGroup, rotation ? fixed : center, rotation ? center : fixed, secondLength, .18, rotation);
+  }
+  const header = new THREE.Mesh(
+    new THREE.BoxGeometry(doorway.width, .7, .18),
+    new THREE.MeshStandardMaterial({ color: 0xf2eee3, roughness: .82 })
+  );
+  header.position.set(
+    rotation ? fixed : doorway.center,
+    2.45,
+    rotation ? doorway.center : fixed
+  );
+  header.rotation.y = rotation;
+  header.castShadow = header.receiveShadow = true;
+  homeGroup.add(header);
 }
 
 function addWall(group: THREE.Group, x: number, z: number, length: number, thickness: number, rotation: number) {
@@ -2644,8 +2918,13 @@ function setMode(next: Mode) {
     }, explorerVehicleHeading);
     explorerVehicleParked = true;
   }
-  if (mode === "explore" && next !== "explore") transitRide = null;
+  if (mode === "explore" && next !== "explore") {
+    transitRide = null;
+    explorerInteriorHomeId = null;
+    explorerExteriorReturn = null;
+  }
   mode = next;
+  setInteriorSceneVisibility(false);
   if (next !== "explore") {
     explorerDriving = false;
     explorerVehicleSpeed = 0;
@@ -2685,13 +2964,23 @@ function setMode(next: Mode) {
     orbit.target.set(0, 0, 0);
     updateCityToolPanel(cityTool === "inspect" ? selectedLot ?? undefined : undefined);
   } else if (next === "explore") {
+    const selectedHome = selectedLot
+      ? world.homes.find(home => home.lotId === selectedLot!.id)
+      : undefined;
+    const selectedEntrance = selectedLot && selectedHome
+      ? world.accessibilityEntrances.find(
+          entrance => entrance.targetKind === "lot" && entrance.targetId === selectedLot!.id
+        )
+      : undefined;
     const activeCommutes = world.activeCommutes();
     const selectedCommute = selectedLot
       ? activeCommutes.find(commute => commute.flow.originLotId === selectedLot!.id)
       : undefined;
     const commute = selectedCommute ?? activeCommutes[0];
     let preferred: Point2;
-    if (commute) {
+    if (selectedEntrance) {
+      preferred = selectedEntrance.position;
+    } else if (commute) {
       const points = commute.direction === "outbound" ? commute.flow.route : [...commute.flow.route].reverse();
       const position = pointAlongRoute(points, commute.progress);
       preferred = { x: position.x, z: position.z };
@@ -2700,8 +2989,10 @@ function setMode(next: Mode) {
     } else {
       preferred = { x: 0, z: 35 };
     }
-    const entryStop = nearestTransitStop(world.transitLines, preferred);
-    if (entryStop) preferred = entryStop.stop.position;
+    if (!selectedEntrance) {
+      const entryStop = nearestTransitStop(world.transitLines, preferred);
+      if (entryStop) preferred = entryStop.stop.position;
+    }
     const spawn = findExplorerSpawn(preferred);
     camera.position.set(spawn.x, 1.82, spawn.z);
     const roadLocation = nearestRoadLocation(explorerRoadPaths, spawn);
@@ -2714,7 +3005,7 @@ function setMode(next: Mode) {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
     );
     updateExplorerContext();
     updateExplorerMovementStatus(0);
@@ -2737,6 +3028,36 @@ function setMode(next: Mode) {
 
 function updateExplorerContext() {
   if (mode !== "explore") return;
+  const interior = currentExplorerInterior();
+  if (interior) {
+    const local = worldToLotLocal(
+      { x: camera.position.x, z: camera.position.z },
+      interior.lot
+    );
+    const room = interiorRoomAt(interior.home, local);
+    const residentsAtHome = interior.home.residents.filter(
+      resident => world.residentStatus(resident) === "Home"
+    );
+    const activities = residentsAtHome.map(
+      resident => `${resident.name} is ${world.residentActionLabel(resident).toLowerCase()}`
+    );
+    const outages = world.utilityFailuresForLot(interior.lot);
+    const entrance = world.accessibilityEntrances.find(
+      item => item.targetKind === "lot" && item.targetId === interior.lot.id
+    );
+    const activityCopy = activities.length
+      ? ` ${activities.join(" and ")}.`
+      : " No household members are currently home.";
+    const outageCopy = outages.length
+      ? ` Active disruption: ${outages.map(failure => utilityKindLabel(failure.kind)).join(" and ")}.`
+      : " Utilities are operating normally.";
+    document.querySelector("#panel-kicker")!.textContent = "HOME INTERIOR";
+    document.querySelector("#panel-title")!.textContent =
+      `${interior.home.name} · ${room?.kind ?? "Doorway"}`;
+    document.querySelector("#panel-copy")!.textContent =
+      `${interior.home.rooms.length} rooms and ${interior.home.furniture.length} furnishings are part of the persistent Home Simulator plan.${activityCopy}${outageCopy} ${entrance ? entranceAccessLabel(entrance) : "Entrance not connected"}. Press F to return to the street.`;
+    return;
+  }
   if (transitRide) {
     const line = world.transitLines.find(item => item.id === transitRide!.lineId);
     if (!line) return;
@@ -2849,10 +3170,21 @@ function updateExplorerContext() {
   );
   if (nearbyEntrance) {
     const entrance = nearbyEntrance.entrance;
+    const home = entrance.targetKind === "lot"
+      ? world.homes.find(item => item.lotId === entrance.targetId)
+      : undefined;
+    const entry = entrance.targetKind === "lot"
+      ? homeEntryStatus(home, entrance)
+      : undefined;
+    const entryCopy = entry?.allowed
+      ? " Move within 6m and press F to enter the home."
+      : entry
+        ? ` Home entry is unavailable: ${entry.reason}`
+        : "";
     document.querySelector("#panel-kicker")!.textContent = "ACCESSIBLE ENTRANCE";
     document.querySelector("#panel-title")!.textContent = entranceDestinationName(entrance);
     document.querySelector("#panel-copy")!.textContent =
-      `${entranceAccessLabel(entrance)}. ${entrance.stepFree ? "Step-free approach" : "A step or curb blocks the entrance"} with ${entrance.doorWidth.toFixed(2)}m clear width.${entrance.tactileGuidance ? " Tactile guidance is installed." : " Tactile guidance is missing."} Press R to plan a complete accessible trip.`;
+      `${entranceAccessLabel(entrance)}. ${entrance.stepFree ? "Step-free approach" : "A step or curb blocks the entrance"} with ${entrance.doorWidth.toFixed(2)}m clear width.${entrance.tactileGuidance ? " Tactile guidance is installed." : " Tactile guidance is missing."}${entryCopy} Press R to plan a complete accessible trip.`;
     return;
   }
   const nearbyCurb = closestCurbFacility({ x: camera.position.x, z: camera.position.z }, 18);
@@ -3180,9 +3512,12 @@ renderer.domElement.addEventListener("pointerdown", event => {
         renderWorld();
       }
     } else if (homeTool !== "select") {
-      world.addFurniture(home.id, homeTool, point.x, point.z);
-      renderWorld();
-      notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed`);
+      if (world.addFurniture(home.id, homeTool, point.x, point.z)) {
+        renderWorld();
+        notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed`);
+      } else {
+        notice("Furniture must stay inside a room");
+      }
     }
     return;
   }
@@ -3373,15 +3708,19 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
-  if (mode === "explore" && event.code === "KeyT" && !event.repeat) {
+  if (mode === "explore" && event.code === "KeyF" && !event.repeat) {
+    event.preventDefault();
+    toggleHomeInterior();
+  }
+  if (mode === "explore" && !explorerInteriorHomeId && event.code === "KeyT" && !event.repeat) {
     event.preventDefault();
     toggleTransitRide();
   }
-  if (mode === "explore" && event.code === "KeyE" && !event.repeat) {
+  if (mode === "explore" && !explorerInteriorHomeId && event.code === "KeyE" && !event.repeat) {
     event.preventDefault();
     toggleExplorerVehicle();
   }
-  if (mode === "explore" && event.code === "KeyR" && !event.repeat) {
+  if (mode === "explore" && !explorerInteriorHomeId && event.code === "KeyR" && !event.repeat) {
     event.preventDefault();
     if (event.shiftKey) {
       clearAccessibleRoute();
@@ -3395,7 +3734,7 @@ addEventListener("keydown", event => {
     event.preventDefault();
     parkExplorerVehicle();
   }
-  if (mode === "explore" && !explorerDriving && !transitRide && event.code === "Space") {
+  if (mode === "explore" && !explorerInteriorHomeId && !explorerDriving && !transitRide && event.code === "Space") {
     event.preventDefault();
     if (explorerGrounded && !event.repeat) {
       explorerGrounded = false;
@@ -3631,7 +3970,18 @@ function animate() {
         x: current.x + explorerVelocity.x * dt,
         z: current.z + explorerVelocity.z * dt
       };
-      const movement = resolveExplorerMovement(current, candidate, explorerCollisionContext());
+      const interior = currentExplorerInterior();
+      const movement = interior
+        ? (() => {
+            const currentLocal = worldToLotLocal(current, interior.lot);
+            const candidateLocal = worldToLotLocal(candidate, interior.lot);
+            const resolved = resolveInteriorMovement(interior.home, currentLocal, candidateLocal);
+            return {
+              position: lotLocalToWorld(resolved.position, interior.lot),
+              blocked: resolved.blocked
+            };
+          })()
+        : resolveExplorerMovement(current, candidate, explorerCollisionContext());
       explorerBlocked = movement.blocked;
       if (Math.abs(movement.position.x - candidate.x) > .001) explorerVelocity.x = 0;
       if (Math.abs(movement.position.z - candidate.z) > .001) explorerVelocity.z = 0;
@@ -3656,7 +4006,7 @@ function animate() {
       const roll = explorerGrounded && movementSpeed > .3
         ? Math.sin(explorerStepPhase * .5) * (sprinting ? .009 : .004)
         : 0;
-      camera.position.y = 1.82 + explorerVerticalOffset + bob;
+      camera.position.y = (interior ? 2.02 : 1.82) + explorerVerticalOffset + bob;
       const targetFov = sprinting && movementSpeed > 5 ? 60 : 55;
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 7, dt);
       if (Math.abs(nextFov - camera.fov) > .001) {

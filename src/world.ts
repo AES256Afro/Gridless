@@ -1714,7 +1714,17 @@ export class World {
 
   addFurniture(homeId: string, kind: Home["furniture"][number]["kind"], x: number, z: number) {
     const home = this.homes.find(item => item.id === homeId);
-    if (!home) return false;
+    const size = {
+      sofa: { width: 2.2, depth: .85 },
+      table: { width: 1.6, depth: 1.6 },
+      bed: { width: 1.7, depth: 2.1 },
+      plant: { width: .65, depth: .65 }
+    }[kind];
+    const room = home?.rooms.find(item =>
+      Math.abs(x - item.x) <= item.width / 2 - size.width / 2 - .1
+      && Math.abs(z - item.z) <= item.depth / 2 - size.depth / 2 - .1
+    );
+    if (!home || !room) return false;
     this.checkpoint();
     home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0 });
     return true;

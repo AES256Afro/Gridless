@@ -4,6 +4,7 @@ import {
   type ServiceKind,
   type UtilityKind
 } from "./world";
+import { interiorEntryPoint } from "./interiors";
 
 export type StabilityCheckpoint = {
   year: number;
@@ -366,6 +367,22 @@ function integrityFailures(world: World) {
   }
   for (const home of world.homes) {
     if (!lotIds.has(home.lotId)) failures.push(`Home ${home.id} points to a missing lot.`);
+    if (!home.rooms.length) failures.push(`Home ${home.id} has no interior rooms.`);
+    if (!interiorEntryPoint(home)) failures.push(`Home ${home.id} has no clear interior entry position.`);
+    const roomIds = new Set(home.rooms.map(room => room.id));
+    const furnitureIds = new Set(home.furniture.map(item => item.id));
+    if (roomIds.size !== home.rooms.length) failures.push(`Home ${home.id} has duplicate room IDs.`);
+    if (furnitureIds.size !== home.furniture.length) failures.push(`Home ${home.id} has duplicate furniture IDs.`);
+    for (const room of home.rooms) {
+      if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
+    }
+    for (const item of home.furniture) {
+      const containingRoom = home.rooms.find(room =>
+        Math.abs(item.x - room.x) <= room.width / 2
+        && Math.abs(item.z - room.z) <= room.depth / 2
+      );
+      if (!containingRoom) failures.push(`Furniture ${item.id} is outside every room in home ${home.id}.`);
+    }
     for (const resident of home.residents) {
       for (const [name, value] of Object.entries({
         energy: resident.energy,
