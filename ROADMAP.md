@@ -161,9 +161,12 @@ Current vertical slice:
 - The pedestrian graph follows both sides of every sampled road, connects corners, and crosses roadways only at detected intersections with paired curb ramps.
 - Pressing `R` in City Explorer draws a visible accessible route to the nearest available parking facility with distance and ramped-crossing counts.
 - Garages participate in Explorer collision rather than behaving like decorative scenery.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, parking capacity and persistence, available-space lookup, and ramp-aware pedestrian routing.
+- Representative commuter cars occupy separate right-hand lanes in each direction instead of stacking on the road centerline.
+- AI traffic identifies signalized intersections along its actual route, holds behind the stop line during red and all-red phases, proceeds on yellow and green, and illuminates brake lights while stopped.
+- The City Explorer driving HUD reports the color and distance of the next signal ahead.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity and persistence, available-space lookup, and ramp-aware pedestrian routing.
 
-Next systems are vehicle traffic rules, the first usable transit ride, parking pricing and demand, and accessibility destinations beyond parking.
+Next systems are the first usable transit ride, parking pricing and demand, and accessibility destinations beyond parking.
 
 ## Milestone 3: Metropolitan scale
 

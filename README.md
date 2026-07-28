@@ -45,6 +45,7 @@ The current vertical slice proves:
 - One-key transition between planning and first-person exploration, with continuous spline-generated curbs, sidewalks, road markings, and intersection-aware sidewalk entry
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout
 - Detected street intersections with zebra crossings, curb-ramp pads, and deterministic two-direction traffic signals
+- Right-hand AI traffic lanes with red-light stopping, green-light movement, visible brake lights, and signal-ahead guidance while driving
 - A drivable street-level car with acceleration, braking, reverse, steering, handbrake, road-aware traction, collision, chase camera, and safe sidewalk exit
 - Persistent curb bays, surface lots, and structured garages with capacity, occupancy, designated accessible spaces, undo, and browser-save support
 - Accessibility-aware sidewalk routing to available parking, including marked crossings, paired curb ramps, visible street-level guidance, and distance reporting

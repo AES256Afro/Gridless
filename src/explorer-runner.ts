@@ -7,6 +7,12 @@ import {
 } from "./explorer";
 import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { buildAccessibleRoute, nearestParkingFacility } from "./mobility";
+import {
+  trafficSignalAhead,
+  trafficSignalApproaches,
+  trafficSignalColor,
+  trafficVehiclePose
+} from "./traffic";
 import { World, type Area, type Lot, type ParkingFacility, type Road } from "./world";
 
 const road: Road = {
@@ -45,6 +51,41 @@ const signalStates = new Set(Array.from({ length: 90 }, (_, minute) =>
   trafficSignalState(intersections[0].id, minute)
 ));
 check(signalStates.has("a-green") && signalStates.has("b-green") && signalStates.has("all-red"), "Traffic signal cycle is incomplete.");
+const vehicleRoute = crossingPaths.find(path => path.roadId === road.id)!.points;
+const signalApproaches = trafficSignalApproaches(vehicleRoute, intersections);
+check(signalApproaches.length === 1, "Vehicle route did not identify its signalized intersection.");
+const signalApproach = signalApproaches[0];
+const redMinute = Array.from({ length: 90 }, (_, minute) => minute)
+  .find(minute => trafficSignalColor(trafficSignalState(intersections[0].id, minute), signalApproach.axis) === "red");
+const greenMinute = Array.from({ length: 90 }, (_, minute) => minute)
+  .find(minute => trafficSignalColor(trafficSignalState(intersections[0].id, minute), signalApproach.axis) === "green");
+check(redMinute !== undefined && greenMinute !== undefined, "Vehicle traffic test could not find red and green phases.");
+const requestedTrafficProgress = Math.min(signalApproach.clearProgress, signalApproach.stopProgress + .015);
+const stoppedTraffic = trafficVehiclePose(vehicleRoute, requestedTrafficProgress, intersections, redMinute!, 2.1);
+const movingTraffic = trafficVehiclePose(vehicleRoute, requestedTrafficProgress, intersections, greenMinute!, 2.1);
+check(stoppedTraffic.stopped, "AI vehicle did not stop at a red signal.");
+check(stoppedTraffic.progress <= signalApproach.stopProgress, "AI vehicle crossed its red-signal stop line.");
+check(!movingTraffic.stopped && movingTraffic.progress === requestedTrafficProgress, "AI vehicle did not resume on green.");
+const approachingPose = trafficVehiclePose(
+  vehicleRoute,
+  Math.max(0, signalApproach.stopProgress - .04),
+  [],
+  redMinute!,
+  0
+);
+const signalAhead = trafficSignalAhead(
+  approachingPose.point,
+  approachingPose.tangent,
+  intersections,
+  redMinute!
+);
+check(signalAhead?.color === "red", "Explorer vehicle did not detect the red signal ahead.");
+const outboundLane = trafficVehiclePose(vehicleRoute, .08, [], greenMinute!, 2.1);
+const returningLane = trafficVehiclePose([...vehicleRoute].reverse(), .92, [], greenMinute!, 2.1);
+check(
+  Math.hypot(outboundLane.point.x - returningLane.point.x, outboundLane.point.z - returningLane.point.z) > 3.5,
+  "Opposing AI traffic did not occupy separate directional lanes."
+);
 const crossingNormal = { x: intersections[0].tangentA.z, z: -intersections[0].tangentA.x };
 const crossingOffset = intersections[0].roadAWidth / 2 + 1.1;
 const accessibleStart = {
@@ -117,6 +158,11 @@ console.log("Gridless Explorer movement checks: PASS");
 console.log(JSON.stringify({
   roadSamples: paths[0].points.length,
   intersections: intersections.length,
+  redSignalStop: stoppedTraffic.stopped,
+  greenSignalMovement: !movingTraffic.stopped,
+  directionalLaneSeparation: Number(
+    Math.hypot(outboundLane.point.x - returningLane.point.x, outboundLane.point.z - returningLane.point.z).toFixed(2)
+  ),
   accessibleRouteMeters: Math.round(accessibleRoute!.distance),
   rampedCrossings: accessibleRoute!.rampedCrossings,
   sidewalkDistance: Number(spawnLocation!.distance.toFixed(2)),
