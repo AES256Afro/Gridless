@@ -7,6 +7,7 @@ secret_file="$secret_dir/cloudflare-tunnel-token"
 
 umask 077
 mkdir -p "$secret_dir"
+chmod 700 "$secret_dir"
 
 read -r -s -p "Paste the Cloudflare Tunnel token: " tunnel_token
 printf "\n"
@@ -17,5 +18,5 @@ fi
 
 printf "%s" "$tunnel_token" > "$secret_file"
 unset tunnel_token
-chmod 600 "$secret_file"
+chmod 644 "$secret_file"
 echo "Tunnel token stored at $secret_file"
