@@ -164,6 +164,11 @@ Current vertical slice:
 - City Builder can apply free, economy, market, premium, or event pricing to existing facilities and sees live occupancy, demand pressure, and projected monthly net results above each facility.
 - City Explorer reports nearby price and availability while driving, walking, following accessible wayfinding, and completing a parking action.
 - Available-parking selection weighs walking distance, hourly price, and current occupancy instead of treating all open spaces as interchangeable.
+- City Builder can convert curb bays into flexible parking, commercial loading, no-parking restrictions, or special-event control with all-day, business-hour, rush-hour, or evening schedules.
+- Curb rules activate against the simulation clock. Inactive timed rules return the space to flexible parking, while active loading, restrictions, and events remove the curb from parking and accessibility destination selection.
+- Deterministic hourly curb operations generate commercial deliveries, queue blocked vehicles, serve loading demand, record violations, collect loading fees and fines, and contribute operating costs and projected revenue to the municipal budget.
+- Active curb uses receive distinct street markings, delivery vans, restriction cones, schedule-aware Builder labels, and Explorer guidance for walking, driving, and attempted parking.
+- Older saves receive safe flexible-parking curb defaults, while new NYC foundations include parking, business-hour loading, and evening event examples.
 - The pedestrian graph follows both sides of every sampled road, connects corners, and crosses roadways only at detected intersections with paired curb ramps.
 - Developed homes and businesses, parks, and transit stops receive persistent street-facing entrances with step-free state, clear width, tactile guidance, and automatic-door state.
 - City Builder's accessibility tool distinguishes universal, usable, and blocked entrances and funds complete upgrades for homes and shops, parks, or transit stops.
@@ -180,9 +185,9 @@ Current vertical slice:
 - Deterministic hourly operations generate passengers, process stop queues against available service, count stop boardings, and persist cumulative ridership and fare revenue.
 - City Explorer enters near the closest stop to its selected district or active commute. Stop context reports frequency, waiting passengers, average wait, fare, crowding, and access. Pressing `T` boards with the live passenger load, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
 - Transit line geometry, stop names, route progress, service plan, queues, boardings, ridership, and fare revenue persist in the world snapshot. Older saves receive safe operating defaults.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, event enforcement, curb revenue, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are curb restrictions for deliveries, loading, and events, accessibility-aware building interiors, and additional editable transit lines.
+Next systems are accessibility-aware building interiors, additional editable transit lines, and named city events that coordinate curb, traffic, and pedestrian demand.
 
 ## Milestone 3: Metropolitan scale
 

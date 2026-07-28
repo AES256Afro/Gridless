@@ -420,6 +420,25 @@ function integrityFailures(world: World) {
     if (facility.hourlyRate < 0 || facility.hourlyRate > 25 || facility.revenue < 0) {
       failures.push(`Parking facility ${facility.id} has invalid pricing or revenue data.`);
     }
+    if (facility.kind === "curb") {
+      if (
+        !["parking", "loading", "restricted", "event"].includes(facility.curbUse ?? "")
+        || !["all-day", "business-hours", "rush-hours", "evening"].includes(facility.curbSchedule ?? "")
+      ) {
+        failures.push(`Curb facility ${facility.id} has an invalid use or schedule.`);
+      }
+      if (
+        (facility.deliveriesWaiting ?? -1) < 0
+        || (facility.deliveriesServed ?? -1) < 0
+        || (facility.violations ?? -1) < 0
+        || (facility.curbRevenue ?? -1) < 0
+        || !Number.isInteger(facility.deliveriesWaiting)
+        || !Number.isInteger(facility.deliveriesServed)
+        || !Number.isInteger(facility.violations)
+      ) {
+        failures.push(`Curb facility ${facility.id} has invalid delivery or enforcement data.`);
+      }
+    }
   }
   for (const entrance of world.accessibilityEntrances) {
     const targetExists = entrance.targetKind === "lot"

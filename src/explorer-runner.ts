@@ -178,6 +178,68 @@ check(
 const mobilityWorld = new World();
 check(mobilityWorld.parking.length === 3, "NYC template did not create its initial curb parking.");
 check(mobilityWorld.transitLines.length === 1, "NYC template did not create its initial transit line.");
+const curbWorld = new World();
+const managedCurb = curbWorld.parking.find(item => item.kind === "curb")!;
+check(
+  curbWorld.parking.some(item => item.curbUse === "loading")
+    && curbWorld.parking.some(item => item.curbUse === "event"),
+  "NYC template did not create loading and event curb rules."
+);
+check(
+  curbWorld.setCurbRule(managedCurb.id, "loading", "business-hours"),
+  "Curb facility could not receive a timed loading rule."
+);
+check(
+  curbWorld.curbEffectiveUse(managedCurb, 2 * 60) === "parking"
+    && curbWorld.curbEffectiveUse(managedCurb, 8 * 60) === "loading",
+  "Business-hours curb rule did not return to flexible parking off hours."
+);
+check(
+  curbWorld.setCurbRule(managedCurb.id, "loading", "all-day"),
+  "Curb facility could not be converted to all-day loading."
+);
+check(curbWorld.curbRuleActive(managedCurb, 2 * 60), "All-day curb rule was not active overnight.");
+check(
+  curbWorld.curbEffectiveUse(managedCurb, 8 * 60) === "loading"
+    && !curbWorld.parkingPermitted(managedCurb, 8 * 60),
+  "Active loading rule did not disallow public parking."
+);
+check(curbWorld.curbLoadingDemand(managedCurb, 8 * 60) > 0, "Curb loading demand did not respond to nearby businesses.");
+curbWorld.advanceMinutes(60, curbWorld.cityEconomy().monthlyBalance);
+check(
+  (managedCurb.deliveriesServed ?? 0) > 0 && (managedCurb.curbRevenue ?? 0) > 0,
+  "Hourly curb simulation did not serve deliveries or collect loading revenue."
+);
+check(
+  curbWorld.setCurbRule(managedCurb.id, "event", "all-day"),
+  "Curb facility could not be converted to a special-event restriction."
+);
+check(
+  !curbWorld.parkPlayerVehicle(managedCurb.id, managedCurb.position, managedCurb.rotation),
+  "Player vehicle parked inside an active special-event restriction."
+);
+const curbViolationsBefore = managedCurb.violations ?? 0;
+curbWorld.advanceMinutes(180, curbWorld.cityEconomy().monthlyBalance);
+check(
+  (managedCurb.violations ?? 0) > curbViolationsBefore,
+  "Special-event curb enforcement did not record violations."
+);
+const curbEconomy = curbWorld.cityEconomy();
+check(
+  curbEconomy.curbRevenue > 0
+    && curbEconomy.curbCosts > 0
+    && curbEconomy.curbDeliveries >= (managedCurb.deliveriesServed ?? 0)
+    && curbEconomy.curbViolations >= (managedCurb.violations ?? 0),
+  "Curb operations were not included in the city economy."
+);
+const curbSnapshot = curbWorld.snapshot().parking?.find(item => item.id === managedCurb.id);
+check(
+  curbSnapshot?.curbUse === "event"
+    && curbSnapshot.curbSchedule === "all-day"
+    && curbSnapshot.deliveriesServed === managedCurb.deliveriesServed
+    && curbSnapshot.violations === managedCurb.violations,
+  "Curb rules, deliveries, and enforcement were not included in the world snapshot."
+);
 const zonedLots = mobilityWorld.lots.filter(item => item.zone !== "unassigned");
 const lotEntrances = mobilityWorld.accessibilityEntrances.filter(item => item.targetKind === "lot");
 check(lotEntrances.length === zonedLots.length, "Every developed parcel did not receive a street entrance.");
@@ -362,6 +424,9 @@ console.log(JSON.stringify({
   parkingPremiumDemand: Number(premiumDemand.toFixed(2)),
   parkingHourlyRevenue: placedParking.revenue,
   parkingMonthlyRevenue: parkingEconomy.parkingRevenue,
+  curbDeliveries: managedCurb.deliveriesServed,
+  curbViolations: managedCurb.violations,
+  curbMonthlyRevenue: curbEconomy.curbRevenue,
   sidewalkDistance: Number(spawnLocation!.distance.toFixed(2)),
   buildingCollision: buildingMove.blocked,
   garageCollision: garageMove.blocked,
