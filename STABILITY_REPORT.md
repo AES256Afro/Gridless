@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `e3083825`
+Deterministic signature: `964c1a6f`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, persistent priced parking and transit, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household.
+The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking and transit, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -29,9 +29,9 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Service staffing | 85% | 85% |
 | Resident wellbeing | 77% | 86% |
 | Completed resident actions | 0 | 14,399 |
-| Save snapshot | 257 KB | 271 KB |
+| Save snapshot | 324 KB | 338 KB |
 
-The largest observed snapshot was 284,712 bytes.
+The largest observed snapshot was 353,259 bytes.
 
 ## Load and recovery
 
@@ -55,13 +55,14 @@ The run found no:
 - broken home, incident, failure, service, utility, or commute references
 - duplicate or invalid transit lines, stops, routes, or schedules
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
+- duplicate accessibility entrances, missing entrance targets, invalid clear widths, or non-finite entrance positions
 - calendar or monthly-budget boundary errors
 - runaway incident history, save size, population, or treasury behavior
 - deterministic difference between the two complete runs
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover included, a complete decade takes about 32 seconds on the development machine; the default gate takes about 64 seconds because it runs the decade twice.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover and the saved entrance layer included, a complete decade takes about 34 seconds on the development machine; the default gate takes about 68 seconds because it runs the decade twice.
 
 ## Boundary
 

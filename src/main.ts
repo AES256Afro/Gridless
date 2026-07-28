@@ -2,6 +2,9 @@ import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
+  type AccessibilityDestination,
+  type AccessibilityDestinationKind,
+  type AccessibilityEntrance,
   type CityService,
   type Home,
   type Lot,
@@ -29,7 +32,11 @@ import {
   trafficSignalState,
   type StreetIntersection
 } from "./streets";
-import { buildAccessibleRoute, nearestParkingFacility } from "./mobility";
+import {
+  assessAccessibleTrip,
+  nearestAccessibilityDestination,
+  nearestParkingFacility
+} from "./mobility";
 import {
   trafficSignalAhead,
   trafficSignalColor,
@@ -48,7 +55,7 @@ import {
 
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
-type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | Exclude<Zone, "unassigned">;
+type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "access" | Exclude<Zone, "unassigned">;
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
@@ -166,6 +173,7 @@ app.innerHTML = `
         <option value="6" selected>Premium · $6/hr</option>
         <option value="10">Event · $10/hr</option>
       </select>
+      <button data-city-tool="access">Improve access</button>
     </div>
     <div class="home-tools" aria-label="Home building tools">
       <button data-home-tool="select" class="active">Inspect</button>
@@ -237,6 +245,7 @@ const homeGroup = new THREE.Group();
 const incidentGroup = new THREE.Group();
 const commuteGroup = new THREE.Group();
 const streetFurnitureGroup = new THREE.Group();
+const accessibilityGroup = new THREE.Group();
 const accessibleRouteGroup = new THREE.Group();
 const transitGroup = new THREE.Group();
 const explorerVehicleGroup = createExplorerVehicle();
@@ -245,6 +254,7 @@ scene.add(
   terrainGroup,
   worldGroup,
   streetFurnitureGroup,
+  accessibilityGroup,
   accessibleRouteGroup,
   transitGroup,
   previewGroup,
@@ -284,7 +294,18 @@ let explorerDriving = false;
 let explorerVehicleParked = false;
 let explorerVehicleSpeed = 0;
 let explorerVehicleHeading = 0;
-let accessibleRouteSummary: { facilityId: string; distance: number; rampedCrossings: number } | null = null;
+let accessibleRouteSummary: {
+  destinationId: string;
+  destinationKind: AccessibilityDestinationKind;
+  destinationName: string;
+  sourceId: string;
+  entranceId?: string;
+  distance?: number;
+  rampedCrossings: number;
+  usable: boolean;
+  barriers: string[];
+} | null = null;
+let accessibilityKindIndex = -1;
 let transitRide: TransitRide | null = null;
 let activeTransitVehicle: TransitRide | null = null;
 
@@ -616,6 +637,82 @@ function renderTransitInfrastructure() {
   }
 }
 
+function entranceAccessLabel(entrance: AccessibilityEntrance) {
+  if (world.entranceHasUniversalAccess(entrance)) return "Universal access";
+  if (world.entranceIsUsable(entrance)) return "Step-free, upgrade available";
+  return "Entrance barrier";
+}
+
+function entranceDestinationName(entrance: AccessibilityEntrance) {
+  return world.accessibilityDestinations().find(destination => destination.entranceId === entrance.id)?.name
+    ?? (entrance.targetKind === "park" ? "Park entrance" : entrance.targetKind === "transit" ? "Transit stop" : "Building entrance");
+}
+
+function closestAccessibilityEntrance(point: Point2, maximumDistance: number) {
+  return world.accessibilityEntrances
+    .map(entrance => ({
+      entrance,
+      distance: Math.hypot(entrance.position.x - point.x, entrance.position.z - point.z)
+    }))
+    .filter(candidate => candidate.distance <= maximumDistance)
+    .sort((a, b) => a.distance - b.distance)[0];
+}
+
+function renderAccessibilityEntrances() {
+  accessibilityGroup.clear();
+  const visible = mode === "explore" || mode === "city" && cityTool === "access";
+  accessibilityGroup.visible = visible;
+  if (!visible) return;
+  const cityFocus = mode === "city" && cityTool === "access";
+  for (const entrance of world.accessibilityEntrances) {
+    const universal = world.entranceHasUniversalAccess(entrance);
+    const usable = world.entranceIsUsable(entrance);
+    const color = universal ? 0x54c995 : usable ? 0x6caed1 : 0xe49b56;
+    const marker = new THREE.Group();
+    marker.position.set(entrance.position.x, .2, entrance.position.z);
+    const pad = new THREE.Mesh(
+      new THREE.CircleGeometry(cityFocus ? 2.8 : .72, 24),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: cityFocus ? .92 : .66,
+        side: THREE.DoubleSide
+      })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.y = .06;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(cityFocus ? 3.4 : .94, cityFocus ? .18 : .08, 8, 24),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = .08;
+    const hitTarget = new THREE.Mesh(
+      new THREE.CylinderGeometry(3, 3, 5, 12),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    );
+    hitTarget.position.y = 2.5;
+    marker.add(pad, ring, hitTarget);
+    if (cityFocus) {
+      const beacon = new THREE.Mesh(
+        new THREE.CylinderGeometry(.14, .22, 4.4, 8),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .9 })
+      );
+      beacon.position.y = 2.25;
+      const indicator = new THREE.Mesh(
+        new THREE.OctahedronGeometry(.72),
+        new THREE.MeshBasicMaterial({ color })
+      );
+      indicator.position.y = 4.8;
+      marker.add(beacon, indicator);
+    }
+    marker.traverse(object => {
+      object.userData.accessibilityEntranceId = entrance.id;
+    });
+    accessibilityGroup.add(marker);
+  }
+}
+
 function placeTransitVehicle(pose: TransitVehiclePose) {
   transitVehicleGroup.position.set(pose.point.x, .18, pose.point.z);
   transitVehicleGroup.rotation.y = Math.atan2(-pose.tangent.x, -pose.tangent.z);
@@ -731,7 +828,7 @@ function completeTransitAlight(stop: NonNullable<ReturnType<typeof advanceTransi
     "CITY EXPLORER",
     `Arrived at ${stop.name}`,
     "You are back on the sidewalk. The bus continues along its route through the city.",
-    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
   );
   updateExplorerMovementStatus(0);
   updateExplorerContext();
@@ -797,55 +894,128 @@ function clearAccessibleRoute() {
   accessibleRouteGroup.clear();
 }
 
+const accessibilityKindOrder: AccessibilityDestinationKind[] = [
+  "home",
+  "business",
+  "park",
+  "transit",
+  "parking"
+];
+
+function accessibilityKindLabel(kind: AccessibilityDestinationKind) {
+  return {
+    home: "home",
+    business: "business",
+    park: "park",
+    transit: "transit stop",
+    parking: "parking"
+  }[kind];
+}
+
+function accessibleDestinationCandidates(): AccessibilityDestination[] {
+  const destinations = world.accessibilityDestinations();
+  for (const facility of world.parking) {
+    if (facility.accessibleSpaces <= 0 || facility.occupied >= facility.capacity) continue;
+    const pose = parkingVehiclePose(facility);
+    const position = sidewalkSpawn(
+      explorerRoadPaths,
+      pose.position,
+      2.2,
+      candidate => isExplorerPositionValid(candidate, explorerCollisionContext())
+    );
+    destinations.push({
+      id: `access-destination-parking-${facility.id}`,
+      kind: "parking",
+      sourceId: facility.id,
+      entranceId: "",
+      name: parkingKindLabel(facility.kind),
+      position,
+      usable: true
+    });
+  }
+  return destinations;
+}
+
 function toggleAccessibleRoute() {
   if (mode !== "explore" || explorerDriving || transitRide) return;
-  if (accessibleRouteSummary) {
-    clearAccessibleRoute();
-    updateExplorerContext();
-    notice("Accessible route hidden");
-    return;
-  }
   const start = { x: camera.position.x, z: camera.position.z };
-  const facility = nearestParkingFacility(world.parking, start);
-  if (!facility) {
-    notice("Place a parking facility before planning a route");
+  const destinations = accessibleDestinationCandidates();
+  if (!destinations.length) {
+    notice("Build a home, business, park, transit stop, or parking facility before planning a route");
     return;
   }
-  const pose = parkingVehiclePose(facility);
-  const destination = sidewalkSpawn(
-    explorerRoadPaths,
-    pose.position,
-    2.2,
-    candidate => isExplorerPositionValid(candidate, explorerCollisionContext())
-  );
-  const route = buildAccessibleRoute(explorerRoadPaths, streetIntersections, start, destination);
-  if (!route || route.points.length < 2) {
-    notice("No connected accessible sidewalk route found");
-    return;
+
+  let destination: AccessibilityDestination | undefined;
+  if (!accessibleRouteSummary && selectedLot) {
+    destination = destinations.find(item =>
+      item.sourceId === selectedLot!.id && (item.kind === "home" || item.kind === "business")
+    );
+    if (destination) accessibilityKindIndex = accessibilityKindOrder.indexOf(destination.kind);
   }
+  if (!destination) {
+    for (let offset = 1; offset <= accessibilityKindOrder.length; offset++) {
+      const index = (accessibilityKindIndex + offset + accessibilityKindOrder.length) % accessibilityKindOrder.length;
+      const candidate = nearestAccessibilityDestination(destinations, start, accessibilityKindOrder[index]);
+      if (!candidate) continue;
+      accessibilityKindIndex = index;
+      destination = candidate.destination;
+      break;
+    }
+  }
+  if (!destination) return;
+
+  const assessment = assessAccessibleTrip(explorerRoadPaths, streetIntersections, start, destination);
+  const route = assessment.route;
+  const entrance = destination.entranceId
+    ? world.accessibilityEntrances.find(item => item.id === destination!.entranceId)
+    : undefined;
+  const barriers = [...assessment.barriers];
+  if (entrance && !entrance.tactileGuidance) barriers.push("No tactile guidance");
+
+  clearAccessibleRoute();
   accessibleRouteSummary = {
-    facilityId: facility.id,
-    distance: route.distance,
-    rampedCrossings: route.rampedCrossings
+    destinationId: destination.id,
+    destinationKind: destination.kind,
+    destinationName: destination.name,
+    sourceId: destination.sourceId,
+    entranceId: destination.entranceId || undefined,
+    distance: route?.distance,
+    rampedCrossings: route?.rampedCrossings ?? 0,
+    usable: assessment.usable,
+    barriers
   };
-  const curve = new THREE.CatmullRomCurve3(
-    route.points.map(point => new THREE.Vector3(point.x, .42, point.z)),
-    false,
-    "centripetal"
-  );
-  const routeMesh = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, Math.max(12, route.points.length * 2), .14, 7, false),
-    new THREE.MeshBasicMaterial({ color: 0x62d3ce, transparent: true, opacity: .92 })
-  );
+  if (route && route.points.length >= 2) {
+    const curve = new THREE.CatmullRomCurve3(
+      route.points.map(point => new THREE.Vector3(point.x, .42, point.z)),
+      false,
+      "centripetal"
+    );
+    const routeMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, Math.max(12, route.points.length * 2), .14, 7, false),
+      new THREE.MeshBasicMaterial({
+        color: assessment.usable ? 0x62d3ce : 0xe19a4e,
+        transparent: true,
+        opacity: .92
+      })
+    );
+    accessibleRouteGroup.add(routeMesh);
+  }
   const target = new THREE.Mesh(
     new THREE.RingGeometry(1.25, 1.75, 32),
-    new THREE.MeshBasicMaterial({ color: 0x8aeee5, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({
+      color: assessment.usable ? 0x8aeee5 : 0xf1ac5d,
+      side: THREE.DoubleSide
+    })
   );
   target.rotation.x = -Math.PI / 2;
-  target.position.set(destination.x, .46, destination.z);
-  accessibleRouteGroup.add(routeMesh, target);
+  target.position.set(destination.position.x, .46, destination.position.z);
+  accessibleRouteGroup.add(target);
   updateExplorerContext();
-  notice(`Accessible route ready · ${Math.round(route.distance)}m`);
+  notice(
+    assessment.usable
+      ? `Usable route to ${destination.name} · ${Math.round(route!.distance)}m`
+      : `Route review: ${barriers.join(" · ")}`
+  );
 }
 
 function parkExplorerVehicle() {
@@ -882,7 +1052,7 @@ function parkExplorerVehicle() {
     "CITY EXPLORER",
     "Vehicle parked",
     `${parkingKindLabel(facility.kind)} charges ${formatParkingRate(facility.hourlyRate)} and has ${facility.capacity - facility.occupied} spaces available. ${parkingPressureLabel(facility)}. ${facility.accessibleSpaces} spaces are designated accessible.`,
-    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+    "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
   );
   updateExplorerMovementStatus(0);
   notice(`Parked in ${parkingKindLabel(facility.kind).toLowerCase()} · ${formatParkingRate(facility.hourlyRate)}`);
@@ -909,7 +1079,7 @@ function toggleExplorerVehicle() {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
     );
     updateExplorerContext();
     notice("Vehicle parked. Returned to the sidewalk");
@@ -1187,6 +1357,7 @@ function renderWorld() {
       worldGroup.add(scaffold);
     }
   }
+  renderAccessibilityEntrances();
   document.querySelector("#lot-count")!.textContent = String(world.lots.length);
   updateCityStats();
   updateClockDisplay();
@@ -2057,11 +2228,15 @@ function updateHouseholdSummary(home: Home) {
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
+    const entrance = world.accessibilityEntrances.find(
+      item => item.targetKind === "lot" && item.targetId === selectedLot!.id
+    );
     details.innerHTML = `
       <div class="home-wellbeing-overview">
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Utilities</span><strong>${utility}%</strong></div>
         <div><span>Neighborhood</span><strong>${neighborhood}%</strong></div>
+        <div><span>Entrance</span><strong>${entrance ? entranceAccessLabel(entrance) : "Not connected"}</strong></div>
       </div>
       ${outages.length ? `
         <div class="home-outage">
@@ -2166,6 +2341,7 @@ function setMode(next: Mode) {
   document.querySelector(".hud")!.classList.toggle("home-editing", next === "home");
   document.querySelector(".hud")!.classList.toggle("city-editing", next === "city");
   orbit.enabled = next !== "explore";
+  renderAccessibilityEntrances();
   draft = [];
   homeDraft = null;
   renderDraft();
@@ -2204,7 +2380,7 @@ function setMode(next: Mode) {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;T|Ride transit;E|Drive;R|Next accessible destination;Shift R|Hide route;Esc|Return"
     );
     updateExplorerContext();
     updateExplorerMovementStatus(0);
@@ -2269,12 +2445,37 @@ function updateExplorerContext() {
     return;
   }
   if (accessibleRouteSummary) {
-    const facility = world.parking.find(item => item.id === accessibleRouteSummary!.facilityId);
     document.querySelector("#panel-kicker")!.textContent = "ACCESSIBLE WAYFINDING";
-    document.querySelector("#panel-title")!.textContent = `Route to ${parkingKindLabel(facility?.kind ?? "curb").toLowerCase()}`;
-    const availableSpaces = facility ? facility.capacity - facility.occupied : 0;
+    document.querySelector("#panel-title")!.textContent = `Route to ${accessibleRouteSummary.destinationName}`;
+    const distanceCopy = accessibleRouteSummary.distance === undefined
+      ? "No connected sidewalk path reaches this destination."
+      : `${Math.round(accessibleRouteSummary.distance)}m along connected sidewalks and marked crossings. ${accessibleRouteSummary.rampedCrossings} ${accessibleRouteSummary.rampedCrossings === 1 ? "crossing uses" : "crossings use"} paired curb ramps.`;
+    const entrance = accessibleRouteSummary.entranceId
+      ? world.accessibilityEntrances.find(item => item.id === accessibleRouteSummary!.entranceId)
+      : undefined;
+    const accessCopy = accessibleRouteSummary.usable
+      ? ` The complete trip is step-free.${entrance && world.entranceHasUniversalAccess(entrance) ? " The entrance also has tactile guidance and universal access." : ""}`
+      : ` The complete trip is not usable: ${accessibleRouteSummary.barriers.join("; ")}.`;
+    const facility = accessibleRouteSummary.destinationKind === "parking"
+      ? world.parking.find(item => item.id === accessibleRouteSummary!.sourceId)
+      : undefined;
+    const parkingCopy = facility
+      ? ` ${formatParkingRate(facility.hourlyRate)} with ${facility.capacity - facility.occupied} ${facility.capacity - facility.occupied === 1 ? "space" : "spaces"} available.`
+      : "";
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(accessibleRouteSummary.distance)}m along connected sidewalks and marked crossings. ${accessibleRouteSummary.rampedCrossings} ${accessibleRouteSummary.rampedCrossings === 1 ? "crossing uses" : "crossings use"} paired curb ramps.${facility ? ` Destination price is ${formatParkingRate(facility.hourlyRate)} with ${availableSpaces} ${availableSpaces === 1 ? "space" : "spaces"} available.` : ""}`;
+      `${distanceCopy}${accessCopy}${parkingCopy} Press R for the nearest ${accessibilityKindLabel(accessibilityKindOrder[(accessibilityKindIndex + 1) % accessibilityKindOrder.length])}, or Shift+R to hide the route.`;
+    return;
+  }
+  const nearbyEntrance = closestAccessibilityEntrance(
+    { x: camera.position.x, z: camera.position.z },
+    12
+  );
+  if (nearbyEntrance) {
+    const entrance = nearbyEntrance.entrance;
+    document.querySelector("#panel-kicker")!.textContent = "ACCESSIBLE ENTRANCE";
+    document.querySelector("#panel-title")!.textContent = entranceDestinationName(entrance);
+    document.querySelector("#panel-copy")!.textContent =
+      `${entranceAccessLabel(entrance)}. ${entrance.stepFree ? "Step-free approach" : "A step or curb blocks the entrance"} with ${entrance.doorWidth.toFixed(2)}m clear width.${entrance.tactileGuidance ? " Tactile guidance is installed." : " Tactile guidance is missing."} Press R to plan a complete accessible trip.`;
     return;
   }
   const nearbyStop = nearestTransitStop(
@@ -2368,6 +2569,9 @@ function renderParcelDetails(lot: Lot) {
   const lotWellbeing = world.lotWellbeing(lot);
   const lotWellbeingState = wellbeingLabel(lotWellbeing);
   const lotHome = world.homes.find(home => home.lotId === lot.id);
+  const accessibilityEntrance = world.accessibilityEntrances.find(
+    entrance => entrance.targetKind === "lot" && entrance.targetId === lot.id
+  );
   const commute = world.commuteForLot(lot);
   const commuteDestination = commute ? world.lots.find(item => item.id === commute.destinationLotId) : undefined;
   const commuteDestinationName = commuteDestination
@@ -2414,6 +2618,12 @@ function renderParcelDetails(lot: Lot) {
       <strong>${lotWellbeing}% · ${lotWellbeingState}</strong>
       <small>${world.lotUtilityReliability(lot)}% utilities · ${world.lotNeighborhoodSupport(lot)}% neighborhood support${lotHome?.residents.length ? ` · ${lotHome.residents.length} named ${lotHome.residents.length === 1 ? "resident" : "residents"}` : ""}</small>
     </div>
+    ${accessibilityEntrance ? `
+      <div class="parcel-line">
+        <span>Street entrance</span>
+        <strong>${entranceAccessLabel(accessibilityEntrance)} · ${accessibilityEntrance.doorWidth.toFixed(2)}m clear width${accessibilityEntrance.tactileGuidance ? " · tactile guidance" : " · no tactile guidance"}</strong>
+      </div>
+    ` : ""}
     ${lotHome?.residents.length ? `
       <div class="parcel-autonomy">
         <span>Named household activity</span>
@@ -2475,7 +2685,16 @@ function updateCityToolPanel(lot?: Lot) {
       "PARKING & ACCESS",
       `Place ${parkingKindLabel(kind).toLowerCase()}`,
       `${definition} New facilities charge ${formatParkingRate(currentParkingRate())}. Price changes alter demand, turnover, and projected municipal revenue.`,
-      "Click land|Place facility;Click parking|Apply selected price;R in Explorer|Accessible route;⌘ Z|Undo"
+      "Click land|Place facility;Click parking|Apply selected price;R in Explorer|Cycle destinations;⌘ Z|Undo"
+    );
+  } else if (cityTool === "access") {
+    const usable = world.accessibilityEntrances.filter(entrance => world.entranceIsUsable(entrance)).length;
+    const universal = world.accessibilityEntrances.filter(entrance => world.entranceHasUniversalAccess(entrance)).length;
+    setPanel(
+      "ACCESSIBILITY UPGRADES",
+      "Connect every destination",
+      `${usable}/${world.accessibilityEntrances.length} entrances are currently step-free and ${universal} have universal access. Green markers are complete, blue markers are usable but improvable, and orange markers have a barrier.`,
+      "Click entrance|Install full upgrade;Homes & shops|$45k;Parks|$70k;Transit stops|$25k;⌘ Z|Undo"
     );
   } else {
     const label = cityTool === "mixed" ? "mixed-use" : cityTool;
@@ -2534,6 +2753,37 @@ renderer.domElement.addEventListener("pointerdown", event => {
       renderWorld();
       notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed`);
     }
+    return;
+  }
+  if (mode === "city" && cityTool === "access") {
+    const entranceHit = raycaster
+      .intersectObjects(accessibilityGroup.children, true)
+      .find(item => item.object.userData.accessibilityEntranceId);
+    const groundHit = raycaster.intersectObject(ground)[0];
+    const nearbyEntrance = groundHit
+      ? closestAccessibilityEntrance({ x: groundHit.point.x, z: groundHit.point.z }, 14)?.entrance
+      : undefined;
+    const entranceId = (entranceHit?.object.userData.accessibilityEntranceId as string | undefined)
+      ?? nearbyEntrance?.id;
+    const entrance = world.accessibilityEntrances.find(item => item.id === entranceId);
+    if (!entrance) {
+      notice("Choose a marked building, park, or transit entrance");
+      return;
+    }
+    const name = entranceDestinationName(entrance);
+    const cost = world.accessibilityUpgradeCost(entrance);
+    if (world.entranceHasUniversalAccess(entrance)) {
+      notice(`${name} already has universal access`);
+      return;
+    }
+    if (world.clock.treasury < cost) {
+      notice(`The city needs $${cost.toLocaleString()} for this upgrade`);
+      return;
+    }
+    world.upgradeAccessibility(entrance.id);
+    renderWorld();
+    updateCityToolPanel();
+    notice(`${name} upgraded for $${cost.toLocaleString()}`);
     return;
   }
   if (mode === "city" && cityTool === "service") {
@@ -2600,7 +2850,14 @@ renderer.domElement.addEventListener("pointerdown", event => {
     notice(`${draft.length} utility points`);
     return;
   }
-  if (mode === "city" && cityTool !== "road" && cityTool !== "service" && cityTool !== "utility" && cityTool !== "parking") {
+  if (
+    mode === "city"
+    && cityTool !== "road"
+    && cityTool !== "service"
+    && cityTool !== "utility"
+    && cityTool !== "parking"
+    && cityTool !== "access"
+  ) {
     const lotHit = raycaster.intersectObjects(worldGroup.children).find(item => item.object.userData.lotId);
     if (!lotHit) {
       notice("Choose a parcel");
@@ -2640,7 +2897,13 @@ addEventListener("keydown", event => {
   }
   if (mode === "explore" && event.code === "KeyR" && !event.repeat) {
     event.preventDefault();
-    toggleAccessibleRoute();
+    if (event.shiftKey) {
+      clearAccessibleRoute();
+      updateExplorerContext();
+      notice("Accessible route hidden");
+    } else {
+      toggleAccessibleRoute();
+    }
   }
   if (mode === "explore" && explorerDriving && event.code === "KeyP" && !event.repeat) {
     event.preventDefault();
@@ -2694,6 +2957,7 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
   draft = [];
   renderDraft();
   document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(item => item.classList.toggle("active", item === button));
+  renderAccessibilityEntrances();
   updateCityToolPanel(cityTool === "inspect" ? selectedLot ?? undefined : undefined);
   notice(
     cityTool === "road"
@@ -2706,6 +2970,8 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
             ? "Choose utility network points"
             : cityTool === "parking"
               ? `Place ${parkingKindLabel(currentParkingKind()).toLowerCase()}`
+              : cityTool === "access"
+                ? "Choose an entrance to upgrade"
           : `Zoning brush: ${cityTool}`
   );
 }));

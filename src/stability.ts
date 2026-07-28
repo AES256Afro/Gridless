@@ -332,16 +332,21 @@ function integrityFailures(world: World) {
   }
 
   const lotIds = new Set(world.lots.map(lot => lot.id));
+  const areaIds = new Set(world.areas.map(area => area.id));
   const serviceIds = new Set(world.services.map(service => service.id));
   const utilityIds = new Set(world.utilities.map(utility => utility.id));
   const transitLineIds = new Set(world.transitLines.map(line => line.id));
   const transitStopIds = new Set(world.transitLines.flatMap(line => line.stops.map(stop => stop.id)));
+  const accessibilityEntranceIds = new Set(world.accessibilityEntrances.map(entrance => entrance.id));
   if (lotIds.size !== world.lots.length) failures.push("Duplicate lot IDs were found.");
   if (serviceIds.size !== world.services.length) failures.push("Duplicate service IDs were found.");
   if (utilityIds.size !== world.utilities.length) failures.push("Duplicate utility IDs were found.");
   if (transitLineIds.size !== world.transitLines.length) failures.push("Duplicate transit line IDs were found.");
   if (transitStopIds.size !== world.transitLines.flatMap(line => line.stops).length) {
     failures.push("Duplicate transit stop IDs were found.");
+  }
+  if (accessibilityEntranceIds.size !== world.accessibilityEntrances.length) {
+    failures.push("Duplicate accessibility entrance IDs were found.");
   }
 
   for (const lot of world.lots) {
@@ -400,6 +405,17 @@ function integrityFailures(world: World) {
     }
     if (facility.hourlyRate < 0 || facility.hourlyRate > 25 || facility.revenue < 0) {
       failures.push(`Parking facility ${facility.id} has invalid pricing or revenue data.`);
+    }
+  }
+  for (const entrance of world.accessibilityEntrances) {
+    const targetExists = entrance.targetKind === "lot"
+      ? lotIds.has(entrance.targetId)
+      : entrance.targetKind === "park"
+        ? areaIds.has(entrance.targetId)
+        : transitStopIds.has(entrance.targetId);
+    if (!targetExists) failures.push(`Accessibility entrance ${entrance.id} points to a missing target.`);
+    if (entrance.doorWidth < .6 || entrance.doorWidth > 4) {
+      failures.push(`Accessibility entrance ${entrance.id} has invalid clear width.`);
     }
   }
   return unique(failures);

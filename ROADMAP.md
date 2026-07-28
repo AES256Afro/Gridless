@@ -165,7 +165,11 @@ Current vertical slice:
 - City Explorer reports nearby price and availability while driving, walking, following accessible wayfinding, and completing a parking action.
 - Available-parking selection weighs walking distance, hourly price, and current occupancy instead of treating all open spaces as interchangeable.
 - The pedestrian graph follows both sides of every sampled road, connects corners, and crosses roadways only at detected intersections with paired curb ramps.
-- Pressing `R` in City Explorer draws a visible accessible route to the nearest available parking facility with distance and ramped-crossing counts.
+- Developed homes and businesses, parks, and transit stops receive persistent street-facing entrances with step-free state, clear width, tactile guidance, and automatic-door state.
+- City Builder's accessibility tool distinguishes universal, usable, and blocked entrances and funds complete upgrades for homes and shops, parks, or transit stops.
+- Pressing `R` in City Explorer cycles the nearest home, business, park, transit stop, and available parking destination. `Shift+R` hides the route.
+- Complete-trip wayfinding reports connected sidewalk distance, ramped-crossing counts, final-entrance usability, and any remaining barrier instead of stopping its analysis at the curb.
+- Home Simulator and the parcel inspector expose the same entrance condition used by street-level routing.
 - Garages participate in Explorer collision rather than behaving like decorative scenery.
 - Representative commuter cars occupy separate right-hand lanes in each direction instead of stacking on the road centerline.
 - AI traffic identifies signalized intersections along its actual route, holds behind the stop line during red and all-red phases, proceeds on yellow and green, and illuminates brake lights while stopped.
@@ -174,9 +178,9 @@ Current vertical slice:
 - A visible bus follows a deterministic two-direction schedule, reverses at its terminals, and remains in the same 3D city used by traffic, pedestrians, and construction.
 - City Explorer enters near the closest stop to its selected district or active commute. Pressing `T` boards the bus, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
 - Transit line geometry, stop names, route progress, and scheduled travel time persist in the world snapshot, while older saves generate the line from their existing road network.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, ramp-aware pedestrian routing, transit generation, bidirectional service, boarding, stop requests, and alighting.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional service, boarding, stop requests, and alighting.
 
-Next systems are accessibility destinations beyond parking, transit service frequency and ridership, and curb restrictions for deliveries, loading, and events.
+Next systems are transit service frequency and ridership, curb restrictions for deliveries, loading, and events, and accessibility-aware building interiors.
 
 ## Milestone 3: Metropolitan scale
 
