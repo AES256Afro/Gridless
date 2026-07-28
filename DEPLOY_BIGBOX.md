@@ -91,6 +91,10 @@ cd "$HOME/Projects/Gridless"
 
 Paste the token at the hidden prompt.
 
+The `secrets` directory is accessible only to the host account that created it.
+The token file inside it is readable by the non-root `cloudflared` container
+after Docker bind-mounts that file into the container.
+
 ## 4. Add the published application
 
 Inside the `bigbox-gridless` tunnel, add a published application:
