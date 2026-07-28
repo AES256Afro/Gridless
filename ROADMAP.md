@@ -175,12 +175,14 @@ Current vertical slice:
 - AI traffic identifies signalized intersections along its actual route, holds behind the stop line during red and all-red phases, proceeds on yellow and green, and illuminates brake lights while stopped.
 - The City Explorer driving HUD reports the color and distance of the next signal ahead.
 - The NYC foundation generates a persistent Broadway Local B1 bus line with seven named curbside stops attached to the actual arterial geometry.
-- A visible bus follows a deterministic two-direction schedule, reverses at its terminals, and remains in the same 3D city used by traffic, pedestrians, and construction.
-- City Explorer enters near the closest stop to its selected district or active commute. Pressing `T` boards the bus, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
-- Transit line geometry, stop names, route progress, and scheduled travel time persist in the world snapshot, while older saves generate the line from their existing road network.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional service, boarding, stop requests, and alighting.
+- Service frequency determines the active bus fleet. Every vehicle follows a deterministic two-direction schedule, reverses at its terminals, and remains in the same 3D city used by traffic, pedestrians, and construction.
+- City Builder can choose basic, frequent, or rapid service and a fare-free, standard, or premium policy. Those choices change fleet size, average wait, passenger demand, crowding, operating cost, and projected monthly revenue.
+- Deterministic hourly operations generate passengers, process stop queues against available service, count stop boardings, and persist cumulative ridership and fare revenue.
+- City Explorer enters near the closest stop to its selected district or active commute. Stop context reports frequency, waiting passengers, average wait, fare, crowding, and access. Pressing `T` boards with the live passenger load, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
+- Transit line geometry, stop names, route progress, service plan, queues, boardings, ridership, and fare revenue persist in the world snapshot. Older saves receive safe operating defaults.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are transit service frequency and ridership, curb restrictions for deliveries, loading, and events, and accessibility-aware building interiors.
+Next systems are curb restrictions for deliveries, loading, and events, accessibility-aware building interiors, and additional editable transit lines.
 
 ## Milestone 3: Metropolitan scale
 
