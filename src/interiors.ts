@@ -1,4 +1,10 @@
-import type { AccessibilityEntrance, Home, Lot, Point2 } from "./world";
+import type {
+  AccessibilityEntrance,
+  Home,
+  Lot,
+  Point2,
+  ResidentActionKind
+} from "./world";
 
 export type InteriorDoorway = {
   orientation: "x" | "z";
@@ -26,6 +32,19 @@ const FURNITURE_SIZE: Record<Home["furniture"][number]["kind"], { width: number;
   table: { width: 1.6, depth: 1.6 },
   bed: { width: 1.7, depth: 2.1 },
   plant: { width: .65, depth: .65 }
+};
+
+export type FurnitureInteraction = {
+  action: ResidentActionKind;
+  label: string;
+  effect: string;
+};
+
+const FURNITURE_INTERACTIONS: Record<Home["furniture"][number]["kind"], FurnitureInteraction> = {
+  bed: { action: "sleep", label: "Sleep", effect: "Restores energy and health" },
+  sofa: { action: "relax", label: "Relax", effect: "Improves comfort and reduces stress" },
+  table: { action: "eat", label: "Have a meal", effect: "Restores energy, comfort, and health" },
+  plant: { action: "tend-plants", label: "Tend plant", effect: "Improves health, comfort, and calm" }
 };
 
 export function lotLocalToWorld(point: Point2, lot: Lot): Point2 {
@@ -173,6 +192,28 @@ export function interiorRoomAt(home: Home, point: Point2) {
     Math.abs(point.x - room.x) <= room.width / 2
     && Math.abs(point.z - room.z) <= room.depth / 2
   );
+}
+
+export function furnitureInteraction(
+  kind: Home["furniture"][number]["kind"]
+): FurnitureInteraction {
+  return FURNITURE_INTERACTIONS[kind];
+}
+
+export function nearestInteriorFurniture(home: Home, point: Point2, maximumDistance = 2.6) {
+  const room = interiorRoomAt(home, point);
+  return home.furniture
+    .filter(item => {
+      const itemRoom = interiorRoomAt(home, item);
+      return !room || !itemRoom || room.id === itemRoom.id;
+    })
+    .map(item => ({
+      item,
+      distance: Math.hypot(item.x - point.x, item.z - point.z),
+      interaction: furnitureInteraction(item.kind)
+    }))
+    .filter(candidate => candidate.distance <= maximumDistance)
+    .sort((first, second) => first.distance - second.distance)[0];
 }
 
 export function isInteriorPositionValid(home: Home, point: Point2, playerRadius = .34) {
