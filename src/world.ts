@@ -157,6 +157,8 @@ export type CityService = {
 };
 
 export type ParkingKind = "curb" | "surface" | "garage";
+export type CurbUse = "parking" | "loading" | "restricted" | "event";
+export type CurbSchedule = "all-day" | "business-hours" | "rush-hours" | "evening";
 
 export type ParkingFacility = {
   id: string;
@@ -168,6 +170,12 @@ export type ParkingFacility = {
   occupied: number;
   hourlyRate: number;
   revenue: number;
+  curbUse?: CurbUse;
+  curbSchedule?: CurbSchedule;
+  deliveriesWaiting?: number;
+  deliveriesServed?: number;
+  violations?: number;
+  curbRevenue?: number;
 };
 
 export type AccessibilityTargetKind = "lot" | "park" | "transit";
@@ -312,6 +320,10 @@ export type CityEconomy = {
   transitRevenue: number;
   transitCosts: number;
   transitRidership: number;
+  curbRevenue: number;
+  curbCosts: number;
+  curbDeliveries: number;
+  curbViolations: number;
 };
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -431,9 +443,22 @@ export class World {
       occupied: kind === "curb" ? 0 : Math.floor(definition.capacity * .42),
       hourlyRate: normalizeParkingRate(hourlyRate),
       revenue: 0,
+      curbUse: kind === "curb" ? "parking" : undefined,
+      curbSchedule: kind === "curb" ? "all-day" : undefined,
+      deliveriesWaiting: kind === "curb" ? 0 : undefined,
+      deliveriesServed: kind === "curb" ? 0 : undefined,
+      violations: kind === "curb" ? 0 : undefined,
+      curbRevenue: kind === "curb" ? 0 : undefined,
       ...definition
     };
     this.parking.push(facility);
+    return facility;
+  }
+
+  addCurbZone(position: Point2, rotation: number, use: CurbUse, schedule: CurbSchedule) {
+    const facility = this.addParking("curb", position, rotation, defaultParkingRate("curb"));
+    facility.curbUse = use;
+    facility.curbSchedule = schedule;
     return facility;
   }
 
@@ -445,6 +470,83 @@ export class World {
     this.checkpoint();
     facility.hourlyRate = normalized;
     return true;
+  }
+
+  setCurbRule(parkingId: string, use: CurbUse, schedule: CurbSchedule) {
+    const facility = this.parking.find(item => item.id === parkingId && item.kind === "curb");
+    if (!facility) return false;
+    if (facility.curbUse === use && facility.curbSchedule === schedule) return false;
+    this.checkpoint();
+    facility.curbUse = use;
+    facility.curbSchedule = schedule;
+    facility.deliveriesWaiting ??= 0;
+    facility.deliveriesServed ??= 0;
+    facility.violations ??= 0;
+    facility.curbRevenue ??= 0;
+    return true;
+  }
+
+  curbRuleActive(facility: ParkingFacility, minute = this.clock.minute) {
+    if (facility.kind !== "curb") return false;
+    const hour = positiveModulo(minute, 24 * 60) / 60;
+    const schedule = facility.curbSchedule ?? "all-day";
+    if (schedule === "all-day") return true;
+    if (schedule === "business-hours") return hour >= 7 && hour < 19;
+    if (schedule === "rush-hours") return (hour >= 7 && hour < 10) || (hour >= 16 && hour < 19);
+    return hour >= 17 && hour < 23;
+  }
+
+  curbEffectiveUse(facility: ParkingFacility, minute = this.clock.minute): CurbUse {
+    if (facility.kind !== "curb") return "parking";
+    return this.curbRuleActive(facility, minute) ? facility.curbUse ?? "parking" : "parking";
+  }
+
+  parkingPermitted(facility: ParkingFacility, minute = this.clock.minute) {
+    return facility.kind !== "curb" || this.curbEffectiveUse(facility, minute) === "parking";
+  }
+
+  curbLoadingDemand(facility: ParkingFacility, minute = this.clock.minute) {
+    if (facility.kind !== "curb") return 0;
+    const hour = positiveModulo(minute, 24 * 60) / 60;
+    const timeFactor = hour >= 7 && hour < 11
+      ? 1.25
+      : hour >= 11 && hour < 19
+        ? 1
+        : hour >= 19 && hour < 23
+          ? .42
+          : .16;
+    const localDemand = this.lots.reduce((total, lot) => {
+      if (this.constructionProgress(lot) < 1) return total;
+      const localDistance = distance(lot.center, facility.position);
+      if (localDistance > 190) return total;
+      const proximity = 1 - localDistance / 190;
+      return total + proximity * (
+        this.lotJobs(lot) * .00042
+        + lot.businesses * .045
+        + (lot.zone === "industrial" ? .38 : 0)
+      );
+    }, 0);
+    return Math.max(0, localDemand * timeFactor);
+  }
+
+  curbMonthlyProjection(facility: ParkingFacility) {
+    if (facility.kind !== "curb") return 0;
+    const hourlyRevenue = [2, 8, 12, 17, 21].reduce((total, hour) => {
+      const minute = hour * 60;
+      const use = this.curbEffectiveUse(facility, minute);
+      const demand = this.curbLoadingDemand(facility, minute);
+      if (use === "loading") return total + Math.min(demand, facility.capacity * 3) * 6;
+      if (use === "restricted") return total + demand * .12 * 115;
+      if (use === "event") return total + demand * .18 * 185;
+      return total;
+    }, 0) / 5;
+    return Math.round(hourlyRevenue * 24 * 30);
+  }
+
+  curbMonthlyCost(facility: ParkingFacility) {
+    if (facility.kind !== "curb") return 0;
+    const use = facility.curbUse ?? "parking";
+    return use === "event" ? 1_800 : use === "loading" ? 1_200 : use === "restricted" ? 900 : 450;
   }
 
   setTransitOperations(lineId: string, headwayMinutes: number, fare: number) {
@@ -630,9 +732,10 @@ export class World {
   }
 
   parkingDemand(facility: ParkingFacility, minute = this.clock.minute) {
+    if (!this.parkingPermitted(facility, minute)) return 0;
     const hour = positiveModulo(minute, 24 * 60) / 60;
     const localCapacity = Math.max(2, this.parking
-      .filter(item => distance(item.position, facility.position) <= 180)
+      .filter(item => this.parkingPermitted(item, minute) && distance(item.position, facility.position) <= 180)
       .reduce((total, item) => total + item.capacity, 0));
     const demandUnits = this.lots.reduce((total, lot) => {
       if (this.constructionProgress(lot) < 1) return total;
@@ -671,7 +774,7 @@ export class World {
 
   parkPlayerVehicle(parkingId: string, position: Point2, heading: number) {
     const facility = this.parking.find(item => item.id === parkingId);
-    if (!facility || facility.occupied >= facility.capacity) return false;
+    if (!facility || !this.parkingPermitted(facility) || facility.occupied >= facility.capacity) return false;
     if (this.playerVehicle?.parkingId && this.playerVehicle.parkingId !== parkingId) {
       const previous = this.parking.find(item => item.id === this.playerVehicle!.parkingId);
       if (previous) previous.occupied = Math.max(0, previous.occupied - 1);
@@ -744,11 +847,27 @@ export class World {
       (total, line) => total + line.ridership,
       0
     );
-    const monthlyRevenue = population * 118 + businesses * 4_800 + parkingRevenue + transitRevenue;
+    const curbRevenue = this.parking.reduce(
+      (total, facility) => total + this.curbMonthlyProjection(facility),
+      0
+    );
+    const curbCosts = this.parking.reduce(
+      (total, facility) => total + this.curbMonthlyCost(facility),
+      0
+    );
+    const curbDeliveries = this.parking.reduce(
+      (total, facility) => total + (facility.deliveriesServed ?? 0),
+      0
+    );
+    const curbViolations = this.parking.reduce(
+      (total, facility) => total + (facility.violations ?? 0),
+      0
+    );
+    const monthlyRevenue = population * 118 + businesses * 4_800 + parkingRevenue + transitRevenue + curbRevenue;
     const monthlyCosts = this.services.reduce(
       (total, service) => total + service.monthlyCost * (.4 + this.serviceFunding * .6),
       0
-    ) + parkingCosts + transitCosts;
+    ) + parkingCosts + transitCosts + curbCosts;
     return {
       completedLots: completedLots.length,
       households,
@@ -766,7 +885,11 @@ export class World {
       parkingCosts,
       transitRevenue,
       transitCosts,
-      transitRidership
+      transitRidership,
+      curbRevenue,
+      curbCosts,
+      curbDeliveries,
+      curbViolations
     };
   }
 
@@ -1105,6 +1228,7 @@ export class World {
     const lastParkingBoundary = Math.floor(this.clock.elapsedMinutes / 60);
     for (let boundary = firstParkingBoundary; boundary <= lastParkingBoundary; boundary++) {
       this.updateParkingActivity(boundary * 60);
+      this.updateCurbActivity(boundary * 60);
       this.updateTransitActivity(boundary * 60);
     }
     this.incidents = this.incidents
@@ -1122,14 +1246,50 @@ export class World {
   private updateParkingActivity(elapsedMinute: number) {
     const minuteOfDay = positiveModulo(8 * 60 + elapsedMinute, 24 * 60);
     for (const facility of this.parking) {
-      facility.revenue = Math.round((facility.revenue + facility.occupied * facility.hourlyRate) * 100) / 100;
+      const parkingAllowed = this.parkingPermitted(facility, minuteOfDay);
+      if (parkingAllowed) {
+        facility.revenue = Math.round((facility.revenue + facility.occupied * facility.hourlyRate) * 100) / 100;
+      }
       const playerSpaces = this.playerVehicle?.parkingId === facility.id ? 1 : 0;
       const publicCapacity = Math.max(0, facility.capacity - playerSpaces);
       const currentPublic = Math.max(0, facility.occupied - playerSpaces);
       const variation = (hashString(`${facility.id}:${Math.floor(elapsedMinute / 60)}`) % 9 - 4) / 100;
-      const target = Math.round(publicCapacity * clamp(this.parkingDemand(facility, minuteOfDay) + variation, 0, 1));
+      const target = parkingAllowed
+        ? Math.round(publicCapacity * clamp(this.parkingDemand(facility, minuteOfDay) + variation, 0, 1))
+        : 0;
       const nextPublic = Math.round(currentPublic * .55 + target * .45);
       facility.occupied = Math.round(clamp(nextPublic + playerSpaces, playerSpaces, facility.capacity));
+    }
+  }
+
+  private updateCurbActivity(elapsedMinute: number) {
+    const minuteOfDay = positiveModulo(8 * 60 + elapsedMinute, 24 * 60);
+    for (const facility of this.parking.filter(item => item.kind === "curb")) {
+      const use = this.curbEffectiveUse(facility, minuteOfDay);
+      const playerSpaces = this.playerVehicle?.parkingId === facility.id ? 1 : 0;
+      const waiting = Math.max(0, Math.round(facility.deliveriesWaiting ?? 0));
+      const demand = this.curbLoadingDemand(facility, minuteOfDay);
+      const variation = (hashString(`${facility.id}:curb:${Math.floor(elapsedMinute / 60)}`) % 21 - 10) / 100;
+      const arrivals = Math.max(0, Math.round(demand * (1 + variation)));
+      if (use === "loading") {
+        const serviceCapacity = facility.capacity * 3;
+        const queue = Math.min(80, waiting + arrivals);
+        const served = Math.min(queue, serviceCapacity);
+        facility.deliveriesWaiting = queue - served;
+        facility.deliveriesServed = (facility.deliveriesServed ?? 0) + served;
+        facility.curbRevenue = Math.round(((facility.curbRevenue ?? 0) + served * 6) * 100) / 100;
+        facility.occupied = Math.min(facility.capacity, playerSpaces + Math.ceil(served / 3));
+      } else if (use === "restricted" || use === "event") {
+        const violationRate = use === "event" ? .28 : .18;
+        const fine = use === "event" ? 185 : 115;
+        const violations = Math.max(playerSpaces, Math.round(arrivals * violationRate));
+        facility.violations = (facility.violations ?? 0) + violations;
+        facility.curbRevenue = Math.round(((facility.curbRevenue ?? 0) + violations * fine) * 100) / 100;
+        facility.deliveriesWaiting = Math.min(80, waiting + Math.round(arrivals * .65));
+        facility.occupied = playerSpaces;
+      } else {
+        facility.deliveriesWaiting = Math.max(0, waiting - facility.capacity);
+      }
     }
   }
 
@@ -1348,7 +1508,13 @@ export class World {
     this.parking = clone(snapshot.parking ?? initialParking(this.roads)).map(facility => ({
       ...facility,
       hourlyRate: normalizeParkingRate(facility.hourlyRate ?? defaultParkingRate(facility.kind)),
-      revenue: facility.revenue ?? 0
+      revenue: facility.revenue ?? 0,
+      curbUse: facility.kind === "curb" ? facility.curbUse ?? "parking" : undefined,
+      curbSchedule: facility.kind === "curb" ? facility.curbSchedule ?? "all-day" : undefined,
+      deliveriesWaiting: facility.kind === "curb" ? Math.max(0, Math.round(facility.deliveriesWaiting ?? 0)) : undefined,
+      deliveriesServed: facility.kind === "curb" ? Math.max(0, Math.round(facility.deliveriesServed ?? 0)) : undefined,
+      violations: facility.kind === "curb" ? Math.max(0, Math.round(facility.violations ?? 0)) : undefined,
+      curbRevenue: facility.kind === "curb" ? Math.max(0, facility.curbRevenue ?? 0) : undefined
     }));
     this.playerVehicle = snapshot.playerVehicle ? clone(snapshot.playerVehicle) : undefined;
     this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads)).map(line => ({
@@ -2227,7 +2393,13 @@ function initialParking(roads: Road[]): ParkingFacility[] {
       accessibleSpaces: 1,
       occupied: index % 2,
       hourlyRate: defaultParkingRate("curb"),
-      revenue: 0
+      revenue: 0,
+      curbUse: (["parking", "loading", "event"] as CurbUse[])[index],
+      curbSchedule: (["all-day", "business-hours", "evening"] as CurbSchedule[])[index],
+      deliveriesWaiting: 0,
+      deliveriesServed: 0,
+      violations: 0,
+      curbRevenue: 0
     }];
   });
 }

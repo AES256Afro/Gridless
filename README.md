@@ -50,6 +50,7 @@ The current vertical slice proves:
 - A persistent Broadway Local B1 bus line with seven named curbside stops, frequency-driven active fleets, passenger demand, stop queues, crowding, fares, ridership revenue, stop-side Explorer entry, and `T` controls for boarding, requesting the next stop, and alighting
 - Persistent curb bays, surface lots, and structured garages with capacity, occupancy, designated accessible spaces, undo, and browser-save support
 - Player-controlled hourly parking prices with time-aware local demand, deterministic turnover, persistent revenue, operating costs, projected monthly net results, and price-aware facility selection
+- Programmable curb space with flexible parking, commercial loading, rush-hour restrictions, and evening event control, plus timed schedules, delivery queues, enforcement, fines, and street-level guidance
 - Accessibility-aware sidewalk routing to available parking, including marked crossings, paired curb ramps, visible street-level guidance, and distance reporting
 - Persistent street-facing entrances for homes, businesses, parks, and transit stops with step-free access, clear width, tactile guidance, automatic-door state, and saved upgrades
 - City-funded accessibility upgrades plus complete-trip Explorer routing that cycles destination types and reports sidewalk, crossing, and final-entrance barriers

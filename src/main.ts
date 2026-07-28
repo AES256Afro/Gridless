@@ -6,6 +6,8 @@ import {
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
   type CityService,
+  type CurbSchedule,
+  type CurbUse,
   type Home,
   type Lot,
   type ParkingFacility,
@@ -56,7 +58,7 @@ import {
 
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
-type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "transit" | "access" | Exclude<Zone, "unassigned">;
+type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "transit" | "access" | Exclude<Zone, "unassigned">;
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
@@ -173,6 +175,19 @@ app.innerHTML = `
         <option value="4">Market · $4/hr</option>
         <option value="6" selected>Premium · $6/hr</option>
         <option value="10">Event · $10/hr</option>
+      </select>
+      <button data-city-tool="curb">Manage curb</button>
+      <select id="curb-use" aria-label="Curb use">
+        <option value="parking">Flexible parking</option>
+        <option value="loading">Commercial loading</option>
+        <option value="restricted">No parking</option>
+        <option value="event">Special event</option>
+      </select>
+      <select id="curb-schedule" aria-label="Curb schedule">
+        <option value="all-day">All day</option>
+        <option value="business-hours" selected>Business hours · 7–19</option>
+        <option value="rush-hours">Rush hours · 7–10 / 16–19</option>
+        <option value="evening">Evening event · 17–23</option>
       </select>
       <button data-city-tool="transit">Transit operations</button>
       <select id="transit-frequency" aria-label="Transit service frequency">
@@ -972,7 +987,11 @@ function accessibilityKindLabel(kind: AccessibilityDestinationKind) {
 function accessibleDestinationCandidates(): AccessibilityDestination[] {
   const destinations = world.accessibilityDestinations();
   for (const facility of world.parking) {
-    if (facility.accessibleSpaces <= 0 || facility.occupied >= facility.capacity) continue;
+    if (
+      facility.accessibleSpaces <= 0
+      || facility.occupied >= facility.capacity
+      || !world.parkingPermitted(facility)
+    ) continue;
     const pose = parkingVehiclePose(facility);
     const position = sidewalkSpawn(
       explorerRoadPaths,
@@ -1085,9 +1104,18 @@ function parkExplorerVehicle() {
     x: explorerVehicleGroup.position.x,
     z: explorerVehicleGroup.position.z
   };
-  const facility = nearestParkingFacility(world.parking, position, 18);
+  const facility = nearestParkingFacility(
+    world.parking.filter(item => world.parkingPermitted(item)),
+    position,
+    18
+  );
   if (!facility) {
-    notice("Move closer to an available parking bay or garage");
+    const restrictedCurb = closestCurbFacility(position, 18);
+    notice(
+      restrictedCurb && !world.parkingPermitted(restrictedCurb.facility)
+        ? `${curbUseLabel(world.curbEffectiveUse(restrictedCurb.facility))} is active here. Parking is prohibited.`
+        : "Move closer to an available parking bay or garage"
+    );
     return;
   }
   const pose = parkingVehiclePose(facility);
@@ -1420,7 +1448,7 @@ function renderWorld() {
   updateClockDisplay();
   renderHome();
   renderIncidents();
-  if (mode === "city" && (cityTool === "inspect" || cityTool === "transit")) {
+  if (mode === "city" && (cityTool === "inspect" || cityTool === "transit" || cityTool === "curb")) {
     updateCityToolPanel(cityTool === "inspect" ? selectedLot ?? undefined : undefined);
   }
 }
@@ -1508,6 +1536,18 @@ function parkingKindLabel(kind: ParkingKind) {
 
 function closestParkingFacility(point: Point2, maximumDistance: number) {
   return world.parking
+    .filter(facility => world.parkingPermitted(facility))
+    .map(facility => ({
+      facility,
+      distance: Math.hypot(facility.position.x - point.x, facility.position.z - point.z)
+    }))
+    .filter(candidate => candidate.distance <= maximumDistance)
+    .sort((a, b) => a.distance - b.distance)[0];
+}
+
+function closestCurbFacility(point: Point2, maximumDistance: number) {
+  return world.parking
+    .filter(facility => facility.kind === "curb")
     .map(facility => ({
       facility,
       distance: Math.hypot(facility.position.x - point.x, facility.position.z - point.z)
@@ -1523,6 +1563,38 @@ function formatParkingRate(hourlyRate: number) {
 function parkingPressureLabel(facility: ParkingFacility) {
   const demand = world.parkingDemand(facility);
   return demand >= .86 ? "Very high demand" : demand >= .66 ? "High demand" : demand >= .4 ? "Balanced demand" : "Low demand";
+}
+
+function curbUseLabel(use: CurbUse) {
+  return use === "parking"
+    ? "Flexible parking"
+    : use === "loading"
+      ? "Commercial loading"
+      : use === "restricted"
+        ? "No parking"
+        : "Special event";
+}
+
+function curbScheduleLabel(schedule: CurbSchedule) {
+  return schedule === "all-day"
+    ? "all day"
+    : schedule === "business-hours"
+      ? "7:00–19:00"
+      : schedule === "rush-hours"
+        ? "7:00–10:00 and 16:00–19:00"
+        : "17:00–23:00";
+}
+
+function curbStatusLabel(facility: ParkingFacility) {
+  const configured = facility.curbUse ?? "parking";
+  const effective = world.curbEffectiveUse(facility);
+  return effective === configured
+    ? `${curbUseLabel(effective)} active`
+    : `Flexible parking now · ${curbUseLabel(configured)} ${curbScheduleLabel(facility.curbSchedule ?? "all-day")}`;
+}
+
+function curbUseColor(use: CurbUse) {
+  return use === "parking" ? 0x397eb6 : use === "loading" ? 0xe4b44f : use === "restricted" ? 0xd05b4d : 0x9b6bc4;
 }
 
 function formatTransitFare(fare: number) {
@@ -1553,19 +1625,44 @@ function createParkingFacility(facility: ParkingFacility) {
   const accessible = new THREE.MeshBasicMaterial({ color: 0x397eb6 });
 
   if (facility.kind === "curb") {
+    const effectiveUse = world.curbEffectiveUse(facility);
+    const curbColor = curbUseColor(effectiveUse);
+    const curbStripe = new THREE.MeshBasicMaterial({ color: curbColor });
     const bay = new THREE.Mesh(new THREE.PlaneGeometry(2.75, 6.4), asphalt);
     bay.rotation.x = -Math.PI / 2;
     bay.position.y = .07;
     group.add(bay);
     for (const z of [-3.1, 3.1]) {
-      const edge = new THREE.Mesh(new THREE.BoxGeometry(2.8, .035, .12), stripe);
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(2.8, .05, .16), curbStripe);
       edge.position.set(0, .1, z);
       group.add(edge);
     }
-    const accessMark = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), accessible);
-    accessMark.rotation.x = -Math.PI / 2;
-    accessMark.position.set(0, .105, 1.7);
-    group.add(accessMark);
+    const useMark = new THREE.Mesh(
+      new THREE.PlaneGeometry(effectiveUse === "parking" ? 1.2 : 1.7, effectiveUse === "parking" ? 1.2 : 3.2),
+      new THREE.MeshBasicMaterial({ color: curbColor, transparent: true, opacity: .82 })
+    );
+    useMark.rotation.x = -Math.PI / 2;
+    useMark.position.set(0, .105, effectiveUse === "parking" ? 1.7 : 0);
+    group.add(useMark);
+    if (effectiveUse === "loading" && facility.occupied > 0) {
+      const van = new THREE.Mesh(
+        new THREE.BoxGeometry(2.1, 1.75, 4.6),
+        new THREE.MeshStandardMaterial({ color: 0xe9e5d8, roughness: .7 })
+      );
+      van.position.y = 1;
+      van.castShadow = true;
+      group.add(van);
+    }
+    if (effectiveUse === "restricted" || effectiveUse === "event") {
+      for (const z of [-2.4, -.8, .8, 2.4]) {
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(.24, .72, 10),
+          new THREE.MeshBasicMaterial({ color: curbColor })
+        );
+        cone.position.set(0, .42, z);
+        group.add(cone);
+      }
+    }
   } else if (facility.kind === "surface") {
     const lot = new THREE.Mesh(new THREE.PlaneGeometry(18, 22), asphalt);
     lot.rotation.x = -Math.PI / 2;
@@ -1613,10 +1710,21 @@ function createParkingFacility(facility: ParkingFacility) {
     const projectedRevenue = world.parkingMonthlyProjection(facility);
     const projectedNet = projectedRevenue - world.parkingMonthlyCost(facility);
     const label = makeLabel(
-      `${parkingKindLabel(facility.kind)} · ${formatParkingRate(facility.hourlyRate)} · ${facility.occupied}/${facility.capacity} occupied · ${parkingPressureLabel(facility)} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
+      facility.kind === "curb" && !world.parkingPermitted(facility)
+        ? `${parkingKindLabel(facility.kind)} · unavailable · ${curbStatusLabel(facility)}`
+        : `${parkingKindLabel(facility.kind)} · ${formatParkingRate(facility.hourlyRate)} · ${facility.occupied}/${facility.capacity} occupied · ${parkingPressureLabel(facility)} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
     );
     label.position.y = facility.kind === "garage" ? 14 : 4.2;
     label.scale.set(82, 8, 1);
+    group.add(label);
+  }
+  if (mode === "city" && cityTool === "curb" && facility.kind === "curb") {
+    const projectedNet = world.curbMonthlyProjection(facility) - world.curbMonthlyCost(facility);
+    const label = makeLabel(
+      `${curbStatusLabel(facility)} · ${curbScheduleLabel(facility.curbSchedule ?? "all-day")} · ${world.curbLoadingDemand(facility).toFixed(1)} deliveries/h · ${facility.deliveriesWaiting ?? 0} waiting · ${facility.deliveriesServed ?? 0} served · ${facility.violations ?? 0} violations · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
+    );
+    label.position.y = 5.3;
+    label.scale.set(112, 8, 1);
     group.add(label);
   }
   group.traverse(object => {
@@ -1647,7 +1755,11 @@ function updateCityStats() {
     parkingCosts,
     transitRevenue,
     transitCosts,
-    transitRidership
+    transitRidership,
+    curbRevenue,
+    curbCosts,
+    curbDeliveries,
+    curbViolations
   } = world.cityEconomy();
   document.querySelector("#population")!.textContent = population.toLocaleString();
   lastMonthlyBalance = balance;
@@ -1696,7 +1808,7 @@ function updateCityStats() {
         ? "Available jobs are increasing demand for nearby housing."
         : "Demand reflects current households, jobs, and available land.";
   document.querySelector("#economy-summary")!.textContent =
-    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides`;
+    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
   const transitLine = world.transitLines[0];
   if (transitLine) {
@@ -2095,6 +2207,14 @@ function currentParkingKind() {
 
 function currentParkingRate() {
   return Number((document.querySelector("#parking-price") as HTMLSelectElement).value);
+}
+
+function currentCurbUse() {
+  return (document.querySelector("#curb-use") as HTMLSelectElement).value as CurbUse;
+}
+
+function currentCurbSchedule() {
+  return (document.querySelector("#curb-schedule") as HTMLSelectElement).value as CurbSchedule;
 }
 
 function currentTransitHeadway() {
@@ -2524,13 +2644,17 @@ function updateExplorerContext() {
       ? ` Signal ${signal.color} in ${Math.max(1, Math.round(signal.distance))}m.`
       : "";
     const parkingOffer = closestParkingFacility(vehiclePosition, 34);
+    const curbOffer = closestCurbFacility(vehiclePosition, 34);
+    const curbCopy = curbOffer && world.curbEffectiveUse(curbOffer.facility) !== "parking"
+      ? ` Curb ahead in ${Math.max(1, Math.round(curbOffer.distance))}m: ${curbStatusLabel(curbOffer.facility)}. Parking is prohibited.`
+      : "";
     const parkingCopy = parkingOffer
       ? ` ${parkingKindLabel(parkingOffer.facility.kind)} in ${Math.max(1, Math.round(parkingOffer.distance))}m: ${formatParkingRate(parkingOffer.facility.hourlyRate)}, ${parkingOffer.facility.capacity - parkingOffer.facility.occupied} spaces available.`
       : "";
     document.querySelector("#panel-kicker")!.textContent = "CITY EXPLORER";
     document.querySelector("#panel-title")!.textContent = `Driving ${road?.roadName ?? "the city"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
+      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${curbCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
     return;
   }
   if (accessibleRouteSummary) {
@@ -2581,6 +2705,19 @@ function updateExplorerContext() {
     document.querySelector("#panel-title")!.textContent = entranceDestinationName(entrance);
     document.querySelector("#panel-copy")!.textContent =
       `${entranceAccessLabel(entrance)}. ${entrance.stepFree ? "Step-free approach" : "A step or curb blocks the entrance"} with ${entrance.doorWidth.toFixed(2)}m clear width.${entrance.tactileGuidance ? " Tactile guidance is installed." : " Tactile guidance is missing."} Press R to plan a complete accessible trip.`;
+    return;
+  }
+  const nearbyCurb = closestCurbFacility({ x: camera.position.x, z: camera.position.z }, 18);
+  if (nearbyCurb) {
+    const facility = nearbyCurb.facility;
+    const effectiveUse = world.curbEffectiveUse(facility);
+    const parkingCopy = effectiveUse === "parking"
+      ? `${formatParkingRate(facility.hourlyRate)} parking is currently allowed with ${facility.capacity - facility.occupied} spaces available.`
+      : "Parking is currently prohibited.";
+    document.querySelector("#panel-kicker")!.textContent = "CURB MANAGEMENT";
+    document.querySelector("#panel-title")!.textContent = curbUseLabel(effectiveUse);
+    document.querySelector("#panel-copy")!.textContent =
+      `${curbStatusLabel(facility)} · scheduled ${curbScheduleLabel(facility.curbSchedule ?? "all-day")}. ${parkingCopy} ${world.curbLoadingDemand(facility).toFixed(1)} deliveries per hour nearby · ${facility.deliveriesWaiting ?? 0} waiting · ${facility.deliveriesServed ?? 0} served · ${facility.violations ?? 0} violations.`;
     return;
   }
   const nearbyParking = closestParkingFacility({ x: camera.position.x, z: camera.position.z }, 22);
@@ -2780,6 +2917,22 @@ function updateCityToolPanel(lot?: Lot) {
       `${definition} New facilities charge ${formatParkingRate(currentParkingRate())}. Price changes alter demand, turnover, and projected municipal revenue.`,
       "Click land|Place facility;Click parking|Apply selected price;R in Explorer|Cycle destinations;⌘ Z|Undo"
     );
+  } else if (cityTool === "curb") {
+    const curbFacilities = world.parking.filter(facility => facility.kind === "curb");
+    const activeRules = curbFacilities.filter(facility => world.curbEffectiveUse(facility) !== "parking").length;
+    const waiting = curbFacilities.reduce((total, facility) => total + (facility.deliveriesWaiting ?? 0), 0);
+    const served = curbFacilities.reduce((total, facility) => total + (facility.deliveriesServed ?? 0), 0);
+    const violations = curbFacilities.reduce((total, facility) => total + (facility.violations ?? 0), 0);
+    const projectedNet = curbFacilities.reduce(
+      (total, facility) => total + world.curbMonthlyProjection(facility) - world.curbMonthlyCost(facility),
+      0
+    );
+    setPanel(
+      "CURB MANAGEMENT",
+      `${curbUseLabel(currentCurbUse())} · ${curbScheduleLabel(currentCurbSchedule())}`,
+      `${curbFacilities.length} managed curb spaces · ${activeRules} restrictions active now · ${waiting} deliveries waiting · ${served} completed deliveries · ${violations} violations · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click an existing curb bay to apply the selected rule, or click a road edge to create one.`,
+      "Curb use|Parking, loading, restriction, event;Schedule|Time window;Click curb|Apply rule;Click road edge|Create zone;⌘ Z|Undo"
+    );
   } else if (cityTool === "transit") {
     const line = world.transitLines[0];
     if (!line) {
@@ -2904,6 +3057,44 @@ renderer.domElement.addEventListener("pointerdown", event => {
     notice(`${serviceDescription(kind).title} placed`);
     return;
   }
+  if (mode === "city" && cityTool === "curb") {
+    const hit = raycaster.intersectObject(ground)[0];
+    if (!hit) return;
+    const facilityHit = raycaster
+      .intersectObjects(worldGroup.children, true)
+      .find(item => item.object.userData.parkingId);
+    const hitFacility = world.parking.find(
+      facility => facility.id === facilityHit?.object.userData.parkingId && facility.kind === "curb"
+    );
+    const groundCurb = closestCurbFacility({ x: hit.point.x, z: hit.point.z }, 14)?.facility;
+    const facility = hitFacility ?? groundCurb;
+    if (facility) {
+      if (world.setCurbRule(facility.id, currentCurbUse(), currentCurbSchedule())) {
+        renderWorld();
+        notice(`${curbUseLabel(facility.curbUse ?? "parking")} scheduled ${curbScheduleLabel(facility.curbSchedule ?? "all-day")}`);
+      } else {
+        notice("That curb already uses the selected rule");
+      }
+      return;
+    }
+    const road = nearestRoadLocation(explorerRoadPaths, { x: hit.point.x, z: hit.point.z });
+    if (!road) {
+      notice("Build a nearby road before creating a curb zone");
+      return;
+    }
+    const normal = { x: road.tangent.z, z: -road.tangent.x };
+    const side = road.signedDistance < 0 ? -1 : 1;
+    const offset = Math.max(1.6, road.width / 2 - 1.35) * side;
+    const position = {
+      x: road.point.x + normal.x * offset,
+      z: road.point.z + normal.z * offset
+    };
+    const heading = Math.atan2(-road.tangent.x, -road.tangent.z);
+    const created = world.addCurbZone(position, heading, currentCurbUse(), currentCurbSchedule());
+    renderWorld();
+    notice(`${curbUseLabel(created.curbUse ?? "parking")} curb created · ${curbScheduleLabel(created.curbSchedule ?? "all-day")}`);
+    return;
+  }
   if (mode === "city" && cityTool === "parking") {
     const hit = raycaster.intersectObject(ground)[0];
     if (!hit) return;
@@ -2966,6 +3157,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     && cityTool !== "service"
     && cityTool !== "utility"
     && cityTool !== "parking"
+    && cityTool !== "curb"
     && cityTool !== "transit"
     && cityTool !== "access"
   ) {
@@ -3082,6 +3274,8 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
             ? "Choose utility network points"
             : cityTool === "parking"
               ? `Place ${parkingKindLabel(currentParkingKind()).toLowerCase()}`
+              : cityTool === "curb"
+                ? "Choose a curb bay or road edge"
               : cityTool === "transit"
                 ? "Adjust route frequency and fare"
               : cityTool === "access"
@@ -3115,6 +3309,20 @@ document.querySelector("#parking-kind")!.addEventListener("change", () => {
 document.querySelector("#parking-price")!.addEventListener("change", () => {
   if (cityTool === "parking") updateCityToolPanel();
   notice(`Parking price set to ${formatParkingRate(currentParkingRate())}`);
+});
+document.querySelector("#curb-use")!.addEventListener("change", () => {
+  if (cityTool === "curb") {
+    renderWorld();
+    updateCityToolPanel();
+  }
+  notice(`${curbUseLabel(currentCurbUse())} selected`);
+});
+document.querySelector("#curb-schedule")!.addEventListener("change", () => {
+  if (cityTool === "curb") {
+    renderWorld();
+    updateCityToolPanel();
+  }
+  notice(`Curb schedule set to ${curbScheduleLabel(currentCurbSchedule())}`);
 });
 document.querySelector("#transit-frequency")!.addEventListener("change", () => {
   const line = world.transitLines[0];
