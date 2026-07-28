@@ -2,9 +2,12 @@ import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
+  CITY_EVENT_DEFINITIONS,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
+  type CityEventKind,
+  type CityEventTiming,
   type CityService,
   type CurbSchedule,
   type CurbUse,
@@ -58,7 +61,7 @@ import {
 
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
-type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "transit" | "access" | Exclude<Zone, "unassigned">;
+type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
@@ -189,6 +192,18 @@ app.innerHTML = `
         <option value="rush-hours">Rush hours · 7–10 / 16–19</option>
         <option value="evening">Evening event · 17–23</option>
       </select>
+      <button data-city-tool="event">Plan city event</button>
+      <select id="event-kind" aria-label="City event type">
+        <option value="market">Street market</option>
+        <option value="concert">Outdoor concert</option>
+        <option value="parade">City parade</option>
+        <option value="sports">City match</option>
+      </select>
+      <select id="event-timing" aria-label="City event timing">
+        <option value="now">Start now</option>
+        <option value="tonight" selected>Next event time</option>
+        <option value="tomorrow">Tomorrow</option>
+      </select>
       <button data-city-tool="transit">Transit operations</button>
       <select id="transit-frequency" aria-label="Transit service frequency">
         <option value="18">Basic service · 18m</option>
@@ -275,6 +290,7 @@ const streetFurnitureGroup = new THREE.Group();
 const accessibilityGroup = new THREE.Group();
 const accessibleRouteGroup = new THREE.Group();
 const transitGroup = new THREE.Group();
+const cityEventGroup = new THREE.Group();
 const explorerVehicleGroup = createExplorerVehicle();
 const transitVehicleGroup = createTransitVehicle();
 const transitFleetGroup = new THREE.Group();
@@ -285,6 +301,7 @@ scene.add(
   accessibilityGroup,
   accessibleRouteGroup,
   transitGroup,
+  cityEventGroup,
   previewGroup,
   homeGroup,
   incidentGroup,
@@ -1443,12 +1460,18 @@ function renderWorld() {
     }
   }
   renderAccessibilityEntrances();
+  renderCityEvents();
   document.querySelector("#lot-count")!.textContent = String(world.lots.length);
   updateCityStats();
   updateClockDisplay();
   renderHome();
   renderIncidents();
-  if (mode === "city" && (cityTool === "inspect" || cityTool === "transit" || cityTool === "curb")) {
+  if (mode === "city" && (
+    cityTool === "inspect"
+    || cityTool === "transit"
+    || cityTool === "curb"
+    || cityTool === "event"
+  )) {
     updateCityToolPanel(cityTool === "inspect" ? selectedLot ?? undefined : undefined);
   }
 }
@@ -1556,6 +1579,16 @@ function closestCurbFacility(point: Point2, maximumDistance: number) {
     .sort((a, b) => a.distance - b.distance)[0];
 }
 
+function closestActiveCityEvent(point: Point2, maximumDistance: number) {
+  return world.activeCityEvents()
+    .map(event => ({
+      event,
+      distance: Math.hypot(event.position.x - point.x, event.position.z - point.z)
+    }))
+    .filter(candidate => candidate.distance <= maximumDistance)
+    .sort((a, b) => a.distance - b.distance)[0];
+}
+
 function formatParkingRate(hourlyRate: number) {
   return hourlyRate > 0 ? `$${hourlyRate.toFixed(hourlyRate % 1 ? 2 : 0)}/hr` : "Free";
 }
@@ -1586,6 +1619,8 @@ function curbScheduleLabel(schedule: CurbSchedule) {
 }
 
 function curbStatusLabel(facility: ParkingFacility) {
+  const event = world.cityEventCurbOverride(facility);
+  if (event) return `Event control · ${event.name}`;
   const configured = facility.curbUse ?? "parking";
   const effective = world.curbEffectiveUse(facility);
   return effective === configured
@@ -1759,7 +1794,11 @@ function updateCityStats() {
     curbRevenue,
     curbCosts,
     curbDeliveries,
-    curbViolations
+    curbViolations,
+    eventRevenue,
+    eventCosts,
+    eventAttendance,
+    activeEvents
   } = world.cityEconomy();
   document.querySelector("#population")!.textContent = population.toLocaleString();
   lastMonthlyBalance = balance;
@@ -1777,9 +1816,11 @@ function updateCityStats() {
     : `${Math.round(coverage * 100)}%`;
   const activeCommuters = world.activeCommutes().reduce((total, commute) => total + commute.flow.travelers, 0);
   const congestion = Math.round(world.congestionLevel() * 100);
-  document.querySelector("#mobility")!.textContent = activeCommuters
-    ? `${congestion}% · ${activeCommuters.toLocaleString()}`
-    : "Quiet";
+  document.querySelector("#mobility")!.textContent = activeEvents
+    ? `${congestion}% · ${activeEvents} event${activeEvents === 1 ? "" : "s"}`
+    : activeCommuters
+      ? `${congestion}% · ${activeCommuters.toLocaleString()}`
+      : "Quiet";
   const wellbeing = world.cityWellbeing();
   document.querySelector("#wellbeing")!.textContent = wellbeing
     ? `${wellbeing}% · ${wellbeingLabel(wellbeing)}`
@@ -1808,7 +1849,7 @@ function updateCityStats() {
         ? "Available jobs are increasing demand for nearby housing."
         : "Demand reflects current households, jobs, and available land.";
   document.querySelector("#economy-summary")!.textContent =
-    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides`;
+    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
   const transitLine = world.transitLines[0];
   if (transitLine) {
@@ -1928,13 +1969,19 @@ function renderIncidents() {
   incidentGroup.clear();
   const active = world.activeIncidents();
   const utilityFailures = world.activeUtilityFailures();
+  const activeEvents = world.activeCityEvents();
   const panel = document.querySelector("#incident-panel")!;
-  const activeOperations = active.length + utilityFailures.length;
+  const activeOperations = active.length + utilityFailures.length + activeEvents.length;
   panel.classList.toggle("visible", activeOperations > 0);
   document.querySelector("#incident-title")!.textContent = activeOperations
-    ? `${active.length} ${active.length === 1 ? "call" : "calls"} · ${utilityFailures.length} ${utilityFailures.length === 1 ? "repair" : "repairs"}`
+    ? `${active.length} ${active.length === 1 ? "call" : "calls"} · ${utilityFailures.length} ${utilityFailures.length === 1 ? "repair" : "repairs"} · ${activeEvents.length} ${activeEvents.length === 1 ? "event" : "events"}`
     : "All clear";
   const entries: string[] = [];
+  for (const event of activeEvents.slice(0, 2)) {
+    entries.push(
+      `<div class="city-event-operation"><b>EVENT</b><span>${event.name}</span><small>${world.cityEventExpectedAttendance(event).toLocaleString()} attending · ${Math.round(world.cityEventTrafficPressure() * 100)}% city event traffic pressure</small></div>`
+    );
+  }
   for (const incident of active.slice(0, utilityFailures.length ? 2 : 4)) {
     const lot = world.lots.find(item => item.id === incident.lotId);
     if (!lot) continue;
@@ -2114,6 +2161,65 @@ function renderCommutes() {
   });
 }
 
+function renderCityEvents() {
+  cityEventGroup.clear();
+  for (const event of world.cityEvents) {
+    const active = world.cityEventActiveAt(event);
+    if (!active && !(mode === "city" && cityTool === "event")) continue;
+    const color = cityEventColor(event.kind);
+    const group = new THREE.Group();
+    group.position.set(event.position.x, .24, event.position.z);
+    const radius = active ? 14 : 8;
+    const beacon = new THREE.Mesh(
+      new THREE.RingGeometry(radius - .8, radius, 48),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: active ? .72 : .34,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    beacon.rotation.x = -Math.PI / 2;
+    group.add(beacon);
+    const venue = new THREE.Mesh(
+      new THREE.CylinderGeometry(4.2, 5.2, active ? 1.2 : .45, 20),
+      new THREE.MeshStandardMaterial({ color, roughness: .7, emissive: color, emissiveIntensity: active ? .18 : .04 })
+    );
+    venue.position.y = active ? .6 : .22;
+    group.add(venue);
+    const attendance = world.cityEventExpectedAttendance(event);
+    if (active) {
+      const pedestrianDemand = attendance * CITY_EVENT_DEFINITIONS[event.kind].pedestrianShare;
+      const crowdCount = Math.min(58, Math.max(12, Math.round(pedestrianDemand / 95)));
+      for (let index = 0; index < crowdCount; index++) {
+        const seed = hash(`${event.id}:crowd:${index}`);
+        const angle = seed % 628 / 100;
+        const distance = 5.5 + (Math.floor(seed / 7) % 850) / 100;
+        const person = new THREE.Mesh(
+          new THREE.CapsuleGeometry(.16, .45, 2, 5),
+          new THREE.MeshStandardMaterial({
+            color: [0x4f776c, 0x7f695d, 0x6c6685, 0x9a8056, 0x4f6980][seed % 5],
+            roughness: .9
+          })
+        );
+        person.position.set(Math.cos(angle) * distance, .68, Math.sin(angle) * distance);
+        group.add(person);
+      }
+    }
+    const label = makeLabel(
+      `${event.name} · ${active ? `${attendance.toLocaleString()} attending` : world.cityEventStatus(event)}`
+    );
+    label.position.y = active ? 9.2 : 5.6;
+    label.scale.set(96, 11, 1);
+    group.add(label);
+    group.traverse(object => {
+      object.userData.cityEventId = event.id;
+    });
+    cityEventGroup.add(group);
+  }
+}
+
 function pointAlongRoute(points: Point2[], progress: number) {
   if (points.length < 2) return points[0] ?? { x: 0, z: 0 };
   const lengths = points.slice(0, -1).map((point, index) =>
@@ -2215,6 +2321,27 @@ function currentCurbUse() {
 
 function currentCurbSchedule() {
   return (document.querySelector("#curb-schedule") as HTMLSelectElement).value as CurbSchedule;
+}
+
+function currentCityEventKind() {
+  return (document.querySelector("#event-kind") as HTMLSelectElement).value as CityEventKind;
+}
+
+function currentCityEventTiming() {
+  return (document.querySelector("#event-timing") as HTMLSelectElement).value as CityEventTiming;
+}
+
+function cityEventColor(kind: CityEventKind) {
+  return {
+    concert: 0xc77bd6,
+    market: 0xe2a64d,
+    parade: 0x5fc7b4,
+    sports: 0x6e96dc
+  }[kind];
+}
+
+function cityEventTimingLabel(timing: CityEventTiming) {
+  return timing === "now" ? "starting now" : timing === "tomorrow" ? "tomorrow" : "at its next event time";
 }
 
 function currentTransitHeadway() {
@@ -2643,6 +2770,10 @@ function updateExplorerContext() {
     const signalCopy = signal
       ? ` Signal ${signal.color} in ${Math.max(1, Math.round(signal.distance))}m.`
       : "";
+    const nearbyEvent = closestActiveCityEvent(vehiclePosition, 180);
+    const eventCopy = nearbyEvent
+      ? ` ${nearbyEvent.event.name} is active ${Math.max(1, Math.round(nearbyEvent.distance))}m away with ${world.cityEventExpectedAttendance(nearbyEvent.event).toLocaleString()} attendees and event traffic controls.`
+      : "";
     const parkingOffer = closestParkingFacility(vehiclePosition, 34);
     const curbOffer = closestCurbFacility(vehiclePosition, 34);
     const curbCopy = curbOffer && world.curbEffectiveUse(curbOffer.facility) !== "parking"
@@ -2654,7 +2785,7 @@ function updateExplorerContext() {
     document.querySelector("#panel-kicker")!.textContent = "CITY EXPLORER";
     document.querySelector("#panel-title")!.textContent = `Driving ${road?.roadName ?? "the city"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${curbCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
+      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${eventCopy}${curbCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
     return;
   }
   if (accessibleRouteSummary) {
@@ -2689,10 +2820,27 @@ function updateExplorerContext() {
       entrance => entrance.targetKind === "transit" && entrance.targetId === nearbyStop.stop.id
     );
     const access = stopEntrance ? entranceAccessLabel(stopEntrance) : "Access not assessed";
+    const stopEvent = closestActiveCityEvent(nearbyStop.stop.position, 220);
+    const eventCopy = stopEvent
+      ? ` ${stopEvent.event.name} is adding event demand at this stop.`
+      : "";
     document.querySelector("#panel-kicker")!.textContent = "CITY TRANSIT";
     document.querySelector("#panel-title")!.textContent = nearbyStop.stop.name;
     document.querySelector("#panel-copy")!.textContent =
-      `${nearbyStop.line.name} · every ${nearbyStop.line.headwayMinutes}m · about ${world.transitAverageWait(nearbyStop.line).toFixed(1)}m average wait · ${nearbyStop.stop.waiting} waiting · ${transitFarePolicyLabel(nearbyStop.line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(nearbyStop.line))}. ${access}. Press T to board.`;
+      `${nearbyStop.line.name} · every ${nearbyStop.line.headwayMinutes}m · about ${world.transitAverageWait(nearbyStop.line).toFixed(1)}m average wait · ${nearbyStop.stop.waiting} waiting · ${transitFarePolicyLabel(nearbyStop.line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(nearbyStop.line))}. ${access}.${eventCopy} Press T to board.`;
+    return;
+  }
+  const nearbyEvent = closestActiveCityEvent({ x: camera.position.x, z: camera.position.z }, 115);
+  if (nearbyEvent) {
+    const event = nearbyEvent.event;
+    const definition = CITY_EVENT_DEFINITIONS[event.kind];
+    const affectedCurbs = world.parking.filter(
+      facility => facility.kind === "curb" && world.cityEventCurbOverride(facility)
+    ).length;
+    document.querySelector("#panel-kicker")!.textContent = "CITY EVENT";
+    document.querySelector("#panel-title")!.textContent = event.name;
+    document.querySelector("#panel-copy")!.textContent =
+      `${definition.label} with ${world.cityEventExpectedAttendance(event).toLocaleString()} attendees. ${world.cityEventStatus(event)} · ${affectedCurbs} nearby curbs under event control · ${Math.round(world.cityEventTrafficPressure() * 100)}% city event traffic pressure. Transit queues and pedestrian activity respond to the same event.`;
     return;
   }
   const nearbyEntrance = closestAccessibilityEntrance(
@@ -2933,6 +3081,27 @@ function updateCityToolPanel(lot?: Lot) {
       `${curbFacilities.length} managed curb spaces · ${activeRules} restrictions active now · ${waiting} deliveries waiting · ${served} completed deliveries · ${violations} violations · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click an existing curb bay to apply the selected rule, or click a road edge to create one.`,
       "Curb use|Parking, loading, restriction, event;Schedule|Time window;Click curb|Apply rule;Click road edge|Create zone;⌘ Z|Undo"
     );
+  } else if (cityTool === "event") {
+    const kind = currentCityEventKind();
+    const definition = CITY_EVENT_DEFINITIONS[kind];
+    const active = world.activeCityEvents();
+    const projectedAttendance = world.cityEvents.reduce(
+      (total, event) => total + world.cityEventExpectedAttendance(event),
+      0
+    );
+    const projectedNet = world.cityEvents.reduce(
+      (total, event) => total + world.cityEventMonthlyProjection(event) - event.monthlyCost,
+      0
+    );
+    const affectedCurbs = world.parking.filter(
+      facility => facility.kind === "curb" && world.cityEventCurbOverride(facility)
+    ).length;
+    setPanel(
+      "CITY EVENTS",
+      `${definition.label} · ${cityEventTimingLabel(currentCityEventTiming())}`,
+      `${world.cityEvents.length} recurring monthly events · ${active.length} active now · ${projectedAttendance.toLocaleString()} projected attendees · ${affectedCurbs} event-controlled curbs · ${Math.round(world.cityEventTrafficPressure() * 100)}% event traffic pressure · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click near a street to create a named event that coordinates curb access, traffic, transit demand, and pedestrian crowds.`,
+      "Event type|Demand pattern;Timing|First occurrence;Click city|Place recurring event;Explorer|Walk or drive to it;⌘ Z|Undo"
+    );
   } else if (cityTool === "transit") {
     const line = world.transitLines[0];
     if (!line) {
@@ -3048,6 +3217,19 @@ renderer.domElement.addEventListener("pointerdown", event => {
     notice(`${name} upgraded for $${cost.toLocaleString()}`);
     return;
   }
+  if (mode === "city" && cityTool === "event") {
+    const hit = raycaster.intersectObject(ground)[0];
+    if (!hit) return;
+    const road = nearestRoadLocation(explorerRoadPaths, { x: hit.point.x, z: hit.point.z });
+    if (!road || road.distance > 70) {
+      notice("Choose a location near the street network");
+      return;
+    }
+    const event = world.addCityEvent(currentCityEventKind(), road.point, currentCityEventTiming());
+    renderWorld();
+    notice(`${event.name} scheduled ${cityEventTimingLabel(currentCityEventTiming())}`);
+    return;
+  }
   if (mode === "city" && cityTool === "service") {
     const hit = raycaster.intersectObject(ground)[0];
     if (!hit) return;
@@ -3158,6 +3340,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     && cityTool !== "utility"
     && cityTool !== "parking"
     && cityTool !== "curb"
+    && cityTool !== "event"
     && cityTool !== "transit"
     && cityTool !== "access"
   ) {
@@ -3276,6 +3459,8 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
               ? `Place ${parkingKindLabel(currentParkingKind()).toLowerCase()}`
               : cityTool === "curb"
                 ? "Choose a curb bay or road edge"
+              : cityTool === "event"
+                ? "Choose a street location for the event"
               : cityTool === "transit"
                 ? "Adjust route frequency and fare"
               : cityTool === "access"
@@ -3323,6 +3508,17 @@ document.querySelector("#curb-schedule")!.addEventListener("change", () => {
     updateCityToolPanel();
   }
   notice(`Curb schedule set to ${curbScheduleLabel(currentCurbSchedule())}`);
+});
+document.querySelector("#event-kind")!.addEventListener("change", () => {
+  if (cityTool === "event") {
+    renderWorld();
+    updateCityToolPanel();
+  }
+  notice(`${CITY_EVENT_DEFINITIONS[currentCityEventKind()].label} selected`);
+});
+document.querySelector("#event-timing")!.addEventListener("change", () => {
+  if (cityTool === "event") updateCityToolPanel();
+  notice(`Event timing set to ${cityEventTimingLabel(currentCityEventTiming())}`);
 });
 document.querySelector("#transit-frequency")!.addEventListener("change", () => {
   const line = world.transitLines[0];

@@ -233,6 +233,103 @@ export type TransitLine = {
   fareRevenue: number;
 };
 
+export type CityEventKind = "concert" | "market" | "parade" | "sports";
+export type CityEventTiming = "now" | "tonight" | "tomorrow";
+
+export type CityEvent = {
+  id: string;
+  name: string;
+  kind: CityEventKind;
+  position: Point2;
+  startAt: number;
+  durationMinutes: number;
+  intervalMinutes: number;
+  capacity: number;
+  cityFeePerAttendee: number;
+  monthlyCost: number;
+  occurrences: number;
+  totalAttendance: number;
+  revenue: number;
+  lastProcessedOccurrence?: number;
+};
+
+export const CITY_EVENT_DEFINITIONS: Record<CityEventKind, {
+  label: string;
+  nameSuffix: string;
+  defaultStartMinute: number;
+  durationMinutes: number;
+  capacity: number;
+  attendanceBase: number;
+  populationShare: number;
+  cityFeePerAttendee: number;
+  monthlyCost: number;
+  trafficImpact: number;
+  transitShare: number;
+  pedestrianShare: number;
+  curbRadius: number;
+}> = {
+  concert: {
+    label: "Outdoor concert",
+    nameSuffix: "Live",
+    defaultStartMinute: 19 * 60,
+    durationMinutes: 240,
+    capacity: 5_000,
+    attendanceBase: 650,
+    populationShare: .16,
+    cityFeePerAttendee: 14,
+    monthlyCost: 82_000,
+    trafficImpact: .3,
+    transitShare: .46,
+    pedestrianShare: .72,
+    curbRadius: 90
+  },
+  market: {
+    label: "Street market",
+    nameSuffix: "Night Market",
+    defaultStartMinute: 18 * 60,
+    durationMinutes: 300,
+    capacity: 2_800,
+    attendanceBase: 420,
+    populationShare: .09,
+    cityFeePerAttendee: 8,
+    monthlyCost: 28_000,
+    trafficImpact: .16,
+    transitShare: .3,
+    pedestrianShare: .82,
+    curbRadius: 58
+  },
+  parade: {
+    label: "City parade",
+    nameSuffix: "Parade",
+    defaultStartMinute: 11 * 60,
+    durationMinutes: 180,
+    capacity: 7_500,
+    attendanceBase: 900,
+    populationShare: .23,
+    cityFeePerAttendee: 6,
+    monthlyCost: 118_000,
+    trafficImpact: .46,
+    transitShare: .4,
+    pedestrianShare: .9,
+    curbRadius: 125
+  },
+  sports: {
+    label: "City match",
+    nameSuffix: "City Match",
+    defaultStartMinute: 18 * 60,
+    durationMinutes: 210,
+    capacity: 12_000,
+    attendanceBase: 1_100,
+    populationShare: .32,
+    cityFeePerAttendee: 12,
+    monthlyCost: 145_000,
+    trafficImpact: .58,
+    transitShare: .62,
+    pedestrianShare: .68,
+    curbRadius: 105
+  }
+};
+
 export type SimulationClock = {
   year: number;
   month: number;
@@ -299,6 +396,7 @@ export type WorldSnapshot = {
   parking?: ParkingFacility[];
   playerVehicle?: PlayerVehicle;
   transitLines?: TransitLine[];
+  cityEvents?: CityEvent[];
   accessibilityEntrances?: AccessibilityEntrance[];
 };
 
@@ -324,6 +422,10 @@ export type CityEconomy = {
   curbCosts: number;
   curbDeliveries: number;
   curbViolations: number;
+  eventRevenue: number;
+  eventCosts: number;
+  eventAttendance: number;
+  activeEvents: number;
 };
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -344,6 +446,7 @@ export class World {
   parking: ParkingFacility[] = [];
   playerVehicle?: PlayerVehicle;
   transitLines: TransitLine[] = [];
+  cityEvents: CityEvent[] = [];
   accessibilityEntrances: AccessibilityEntrance[] = [];
   lastDailyActivity = { households: 0, businesses: 0 };
   private history: WorldSnapshot[] = [];
@@ -354,6 +457,7 @@ export class World {
     this.rebuildLots();
     this.parking = initialParking(this.roads);
     this.transitLines = initialTransitLines(this.roads);
+    this.cityEvents = initialCityEvents(this.roads);
     this.rebuildAccessibilityEntrances();
   }
 
@@ -375,6 +479,7 @@ export class World {
       parking: this.parking,
       playerVehicle: this.playerVehicle,
       transitLines: this.transitLines,
+      cityEvents: this.cityEvents,
       accessibilityEntrances: this.accessibilityEntrances
     });
   }
@@ -486,6 +591,124 @@ export class World {
     return true;
   }
 
+  addCityEvent(kind: CityEventKind, position: Point2, timing: CityEventTiming) {
+    const definition = CITY_EVENT_DEFINITIONS[kind];
+    const startAt = this.cityEventStartForTiming(definition.defaultStartMinute, timing);
+    const road = this.roads
+      .map(item => ({ item, distance: distanceToPolyline(position, item.points) }))
+      .sort((a, b) => a.distance - b.distance)[0]?.item;
+    const placeName = road?.name ?? this.areas
+      .filter(area => area.kind === "district")
+      .map(area => ({ area, distance: distance(position, polygonCenter(area.points)) }))
+      .sort((a, b) => a.distance - b.distance)[0]?.area.name
+      ?? "Gridless";
+    this.checkpoint();
+    const event: CityEvent = {
+      id: crypto.randomUUID(),
+      name: `${placeName} ${definition.nameSuffix}`,
+      kind,
+      position: clone(position),
+      startAt,
+      durationMinutes: definition.durationMinutes,
+      intervalMinutes: 30 * 24 * 60,
+      capacity: definition.capacity,
+      cityFeePerAttendee: definition.cityFeePerAttendee,
+      monthlyCost: definition.monthlyCost,
+      occurrences: 0,
+      totalAttendance: 0,
+      revenue: 0
+    };
+    this.cityEvents.push(event);
+    return event;
+  }
+
+  cityEventActiveAt(event: CityEvent, elapsedMinute = this.clock.elapsedMinutes) {
+    if (elapsedMinute < event.startAt) return false;
+    const phase = positiveModulo(elapsedMinute - event.startAt, event.intervalMinutes);
+    return phase < event.durationMinutes;
+  }
+
+  activeCityEvents(elapsedMinute = this.clock.elapsedMinutes) {
+    if (elapsedMinute < 0) return [];
+    return this.cityEvents.filter(event => this.cityEventActiveAt(event, elapsedMinute));
+  }
+
+  cityEventOccurrence(event: CityEvent, elapsedMinute = this.clock.elapsedMinutes) {
+    if (elapsedMinute < event.startAt) return -1;
+    return Math.floor((elapsedMinute - event.startAt) / event.intervalMinutes);
+  }
+
+  cityEventExpectedAttendance(event: CityEvent, occurrence = Math.max(0, this.cityEventOccurrence(event))) {
+    const definition = CITY_EVENT_DEFINITIONS[event.kind];
+    const population = this.lots.reduce((total, lot) => total + this.lotPopulation(lot), 0);
+    const variation = .88 + (hashString(`${event.id}:attendance:${occurrence}`) % 25) / 100;
+    return Math.min(
+      event.capacity,
+      Math.max(1, Math.round((definition.attendanceBase + population * definition.populationShare) * variation))
+    );
+  }
+
+  cityEventStatus(event: CityEvent) {
+    const elapsed = this.clock.elapsedMinutes;
+    if (this.cityEventActiveAt(event, elapsed)) {
+      const occurrence = this.cityEventOccurrence(event, elapsed);
+      const endAt = event.startAt + occurrence * event.intervalMinutes + event.durationMinutes;
+      return `Active · ${Math.max(1, Math.ceil((endAt - elapsed) / 60))}h remaining`;
+    }
+    const nextStart = this.cityEventNextStart(event, elapsed);
+    const minutes = Math.max(0, nextStart - elapsed);
+    if (minutes < 24 * 60) return `Starts in ${Math.max(1, Math.ceil(minutes / 60))}h`;
+    return `Starts in ${Math.ceil(minutes / (24 * 60))}d`;
+  }
+
+  cityEventTrafficPressure(elapsedMinute = this.clock.elapsedMinutes) {
+    return clamp(this.activeCityEvents(elapsedMinute).reduce((total, event) => {
+      const definition = CITY_EVENT_DEFINITIONS[event.kind];
+      const attendance = this.cityEventExpectedAttendance(event, this.cityEventOccurrence(event, elapsedMinute));
+      return total + definition.trafficImpact * attendance / Math.max(1, event.capacity);
+    }, 0), 0, .72);
+  }
+
+  cityEventTransitDemand(position: Point2, elapsedMinute = this.clock.elapsedMinutes) {
+    return this.activeCityEvents(elapsedMinute).reduce((total, event) => {
+      const localDistance = distance(position, event.position);
+      if (localDistance > 220) return total;
+      const definition = CITY_EVENT_DEFINITIONS[event.kind];
+      const attendance = this.cityEventExpectedAttendance(event, this.cityEventOccurrence(event, elapsedMinute));
+      const hourlyArrivals = attendance * definition.transitShare / Math.max(1, event.durationMinutes / 60);
+      return total + hourlyArrivals * (1 - localDistance / 220) / 6;
+    }, 0);
+  }
+
+  cityEventCurbOverride(facility: ParkingFacility, elapsedMinute = this.clock.elapsedMinutes) {
+    if (facility.kind !== "curb" || elapsedMinute < 0) return undefined;
+    return this.activeCityEvents(elapsedMinute).find(event =>
+      distance(event.position, facility.position) <= CITY_EVENT_DEFINITIONS[event.kind].curbRadius
+    );
+  }
+
+  cityEventMonthlyProjection(event: CityEvent) {
+    return Math.round(this.cityEventExpectedAttendance(event) * event.cityFeePerAttendee);
+  }
+
+  private cityEventStartForTiming(defaultStartMinute: number, timing: CityEventTiming) {
+    if (timing === "now") return this.clock.elapsedMinutes;
+    if (timing === "tomorrow") {
+      return this.clock.elapsedMinutes + (24 * 60 - this.clock.minute) + defaultStartMinute;
+    }
+    let delay = defaultStartMinute - this.clock.minute;
+    if (delay <= 15) delay += 24 * 60;
+    return this.clock.elapsedMinutes + delay;
+  }
+
+  private cityEventNextStart(event: CityEvent, elapsedMinute: number) {
+    if (elapsedMinute <= event.startAt) return event.startAt;
+    const occurrence = Math.floor((elapsedMinute - event.startAt) / event.intervalMinutes);
+    const currentStart = event.startAt + occurrence * event.intervalMinutes;
+    if (elapsedMinute < currentStart + event.durationMinutes) return currentStart;
+    return currentStart + event.intervalMinutes;
+  }
+
   curbRuleActive(facility: ParkingFacility, minute = this.clock.minute) {
     if (facility.kind !== "curb") return false;
     const hour = positiveModulo(minute, 24 * 60) / 60;
@@ -496,13 +719,22 @@ export class World {
     return hour >= 17 && hour < 23;
   }
 
-  curbEffectiveUse(facility: ParkingFacility, minute = this.clock.minute): CurbUse {
+  curbEffectiveUse(
+    facility: ParkingFacility,
+    minute = this.clock.minute,
+    elapsedMinute = this.clock.elapsedMinutes
+  ): CurbUse {
     if (facility.kind !== "curb") return "parking";
+    if (this.cityEventCurbOverride(facility, elapsedMinute)) return "event";
     return this.curbRuleActive(facility, minute) ? facility.curbUse ?? "parking" : "parking";
   }
 
-  parkingPermitted(facility: ParkingFacility, minute = this.clock.minute) {
-    return facility.kind !== "curb" || this.curbEffectiveUse(facility, minute) === "parking";
+  parkingPermitted(
+    facility: ParkingFacility,
+    minute = this.clock.minute,
+    elapsedMinute = this.clock.elapsedMinutes
+  ) {
+    return facility.kind !== "curb" || this.curbEffectiveUse(facility, minute, elapsedMinute) === "parking";
   }
 
   curbLoadingDemand(facility: ParkingFacility, minute = this.clock.minute) {
@@ -533,7 +765,7 @@ export class World {
     if (facility.kind !== "curb") return 0;
     const hourlyRevenue = [2, 8, 12, 17, 21].reduce((total, hour) => {
       const minute = hour * 60;
-      const use = this.curbEffectiveUse(facility, minute);
+      const use = this.curbEffectiveUse(facility, minute, -1);
       const demand = this.curbLoadingDemand(facility, minute);
       if (use === "loading") return total + Math.min(demand, facility.capacity * 3) * 6;
       if (use === "restricted") return total + demand * .12 * 115;
@@ -561,7 +793,12 @@ export class World {
     return true;
   }
 
-  transitStopDemand(line: TransitLine, stop: TransitStop, minute = this.clock.minute) {
+  transitStopDemand(
+    line: TransitLine,
+    stop: TransitStop,
+    minute = this.clock.minute,
+    elapsedMinute = this.clock.elapsedMinutes
+  ) {
     const hour = positiveModulo(minute, 24 * 60) / 60;
     const timeFactor = hour >= 6 && hour < 10
       ? 1.34
@@ -587,12 +824,17 @@ export class World {
       item => item.targetKind === "transit" && item.targetId === stop.id
     );
     const accessFactor = entrance && this.entranceIsUsable(entrance) ? 1 : .72;
-    return Math.max(0, localDemand * timeFactor * frequencyFactor * fareFactor * accessFactor);
+    const eventDemand = elapsedMinute < 0 ? 0 : this.cityEventTransitDemand(stop.position, elapsedMinute);
+    return Math.max(0, (localDemand * timeFactor + eventDemand) * frequencyFactor * fareFactor * accessFactor);
   }
 
-  transitLineDemand(line: TransitLine, minute = this.clock.minute) {
+  transitLineDemand(
+    line: TransitLine,
+    minute = this.clock.minute,
+    elapsedMinute = this.clock.elapsedMinutes
+  ) {
     return line.stops.reduce(
-      (total, stop) => total + this.transitStopDemand(line, stop, minute),
+      (total, stop) => total + this.transitStopDemand(line, stop, minute, elapsedMinute),
       0
     );
   }
@@ -621,11 +863,21 @@ export class World {
   }
 
   transitMonthlyProjection(line: TransitLine) {
-    const averageHourlyDemand = [2, 7, 9, 12, 17, 21].reduce(
-      (total, hour) => total + this.transitLineDemand(line, hour * 60),
+    const baseHourlyDemand = [2, 7, 9, 12, 17, 21].reduce(
+      (total, hour) => total + this.transitLineDemand(line, hour * 60, -1),
       0
     ) / 6;
-    return Math.round(averageHourlyDemand * 24 * 30 * line.fare * .82);
+    const eventRides = this.cityEvents.reduce((total, event) => {
+      const nearestStopDistance = Math.min(
+        ...line.stops.map(stop => distance(stop.position, event.position))
+      );
+      const access = clamp(1 - nearestStopDistance / 320, 0, 1);
+      return total
+        + this.cityEventExpectedAttendance(event)
+        * CITY_EVENT_DEFINITIONS[event.kind].transitShare
+        * access;
+    }, 0);
+    return Math.round(baseHourlyDemand * 24 * 30 * line.fare * .82 + eventRides * line.fare);
   }
 
   transitMonthlyCost(line: TransitLine) {
@@ -863,11 +1115,29 @@ export class World {
       (total, facility) => total + (facility.violations ?? 0),
       0
     );
-    const monthlyRevenue = population * 118 + businesses * 4_800 + parkingRevenue + transitRevenue + curbRevenue;
+    const eventRevenue = this.cityEvents.reduce(
+      (total, event) => total + this.cityEventMonthlyProjection(event),
+      0
+    );
+    const eventCosts = this.cityEvents.reduce(
+      (total, event) => total + event.monthlyCost,
+      0
+    );
+    const eventAttendance = this.cityEvents.reduce(
+      (total, event) => total + event.totalAttendance,
+      0
+    );
+    const activeEvents = this.activeCityEvents().length;
+    const monthlyRevenue = population * 118
+      + businesses * 4_800
+      + parkingRevenue
+      + transitRevenue
+      + curbRevenue
+      + eventRevenue;
     const monthlyCosts = this.services.reduce(
       (total, service) => total + service.monthlyCost * (.4 + this.serviceFunding * .6),
       0
-    ) + parkingCosts + transitCosts + curbCosts;
+    ) + parkingCosts + transitCosts + curbCosts + eventCosts;
     return {
       completedLots: completedLots.length,
       households,
@@ -889,7 +1159,11 @@ export class World {
       curbRevenue,
       curbCosts,
       curbDeliveries,
-      curbViolations
+      curbViolations,
+      eventRevenue,
+      eventCosts,
+      eventAttendance,
+      activeEvents
     };
   }
 
@@ -963,7 +1237,7 @@ export class World {
 
   activeCommutes(): ActiveCommute[] {
     const minute = this.clock.minute;
-    const travelMultiplier = 1 + this.commuteCongestionAt(minute) * 1.35;
+    const travelMultiplier = 1 + this.congestionLevel() * 1.35;
     const active: ActiveCommute[] = [];
     for (const flow of this.commuteFlows) {
       const duration = flow.travelMinutes * travelMultiplier;
@@ -979,7 +1253,11 @@ export class World {
   }
 
   congestionLevel() {
-    return this.commuteCongestionAt(this.clock.minute);
+    return clamp(
+      this.commuteCongestionAt(this.clock.minute) + this.cityEventTrafficPressure(),
+      0,
+      1
+    );
   }
 
   trafficMultiplier() {
@@ -1230,6 +1508,7 @@ export class World {
       this.updateParkingActivity(boundary * 60);
       this.updateCurbActivity(boundary * 60);
       this.updateTransitActivity(boundary * 60);
+      this.updateCityEventActivity(boundary * 60);
     }
     this.incidents = this.incidents
       .filter(incident => incident.resolvedAt === undefined || this.clock.elapsedMinutes - incident.resolvedAt < 3 * 24 * 60)
@@ -1246,7 +1525,7 @@ export class World {
   private updateParkingActivity(elapsedMinute: number) {
     const minuteOfDay = positiveModulo(8 * 60 + elapsedMinute, 24 * 60);
     for (const facility of this.parking) {
-      const parkingAllowed = this.parkingPermitted(facility, minuteOfDay);
+      const parkingAllowed = this.parkingPermitted(facility, minuteOfDay, elapsedMinute);
       if (parkingAllowed) {
         facility.revenue = Math.round((facility.revenue + facility.occupied * facility.hourlyRate) * 100) / 100;
       }
@@ -1265,7 +1544,7 @@ export class World {
   private updateCurbActivity(elapsedMinute: number) {
     const minuteOfDay = positiveModulo(8 * 60 + elapsedMinute, 24 * 60);
     for (const facility of this.parking.filter(item => item.kind === "curb")) {
-      const use = this.curbEffectiveUse(facility, minuteOfDay);
+      const use = this.curbEffectiveUse(facility, minuteOfDay, elapsedMinute);
       const playerSpaces = this.playerVehicle?.parkingId === facility.id ? 1 : 0;
       const waiting = Math.max(0, Math.round(facility.deliveriesWaiting ?? 0));
       const demand = this.curbLoadingDemand(facility, minuteOfDay);
@@ -1300,7 +1579,10 @@ export class World {
       const stopThroughput = Math.max(1, Math.floor(hourlyThroughput / Math.max(1, line.stops.length)));
       for (const stop of line.stops) {
         const variation = (hashString(`${line.id}:${stop.id}:${Math.floor(elapsedMinute / 60)}`) % 17 - 8) / 100;
-        const arrivals = Math.max(0, Math.round(this.transitStopDemand(line, stop, minuteOfDay) * (1 + variation)));
+        const arrivals = Math.max(
+          0,
+          Math.round(this.transitStopDemand(line, stop, minuteOfDay, elapsedMinute) * (1 + variation))
+        );
         const queue = Math.min(line.vehicleCapacity * 12, stop.waiting + arrivals);
         const boarded = Math.min(queue, stopThroughput);
         stop.waiting = Math.max(0, queue - boarded);
@@ -1308,6 +1590,18 @@ export class World {
         line.ridership += boarded;
         line.fareRevenue = Math.round((line.fareRevenue + boarded * line.fare) * 100) / 100;
       }
+    }
+  }
+
+  private updateCityEventActivity(elapsedMinute: number) {
+    for (const event of this.activeCityEvents(elapsedMinute)) {
+      const occurrence = this.cityEventOccurrence(event, elapsedMinute);
+      if (event.lastProcessedOccurrence === occurrence) continue;
+      const attendance = this.cityEventExpectedAttendance(event, occurrence);
+      event.lastProcessedOccurrence = occurrence;
+      event.occurrences += 1;
+      event.totalAttendance += attendance;
+      event.revenue = Math.round((event.revenue + attendance * event.cityFeePerAttendee) * 100) / 100;
     }
   }
 
@@ -1357,6 +1651,7 @@ export class World {
     this.parking = initialParking(this.roads);
     this.playerVehicle = undefined;
     this.transitLines = initialTransitLines(this.roads);
+    this.cityEvents = initialCityEvents(this.roads);
     this.lastDailyActivity = { households: 0, businesses: 0 };
     this.rebuildLots();
     this.rebuildAccessibilityEntrances();
@@ -1530,6 +1825,27 @@ export class World {
         boardings: Math.max(0, Math.round(stop.boardings ?? 0))
       }))
     }));
+    this.cityEvents = clone(snapshot.cityEvents ?? initialCityEvents(this.roads)).map(event => {
+      const kind = Object.prototype.hasOwnProperty.call(CITY_EVENT_DEFINITIONS, event.kind)
+        ? event.kind
+        : "market";
+      const definition = CITY_EVENT_DEFINITIONS[kind];
+      return {
+        ...event,
+        kind,
+        durationMinutes: Math.max(60, Math.round(event.durationMinutes ?? definition.durationMinutes)),
+        intervalMinutes: Math.max(24 * 60, Math.round(event.intervalMinutes ?? 30 * 24 * 60)),
+        capacity: Math.max(1, Math.round(event.capacity ?? definition.capacity)),
+        cityFeePerAttendee: Math.max(0, event.cityFeePerAttendee ?? definition.cityFeePerAttendee),
+        monthlyCost: Math.max(0, event.monthlyCost ?? definition.monthlyCost),
+        occurrences: Math.max(0, Math.round(event.occurrences ?? 0)),
+        totalAttendance: Math.max(0, Math.round(event.totalAttendance ?? 0)),
+        revenue: Math.max(0, event.revenue ?? 0),
+        lastProcessedOccurrence: event.lastProcessedOccurrence === undefined
+          ? undefined
+          : Math.max(0, Math.round(event.lastProcessedOccurrence))
+      };
+    });
     this.accessibilityEntrances = clone(snapshot.accessibilityEntrances ?? []);
     for (const incident of this.incidents) {
       if (incident.route?.length || !incident.responderServiceId) continue;
@@ -2191,6 +2507,14 @@ function distance(a: Point2, b: Point2) {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
+function polygonCenter(points: Point2[]) {
+  if (!points.length) return { x: 0, z: 0 };
+  return points.reduce(
+    (total, point) => ({ x: total.x + point.x / points.length, z: total.z + point.z / points.length }),
+    { x: 0, z: 0 }
+  );
+}
+
 function positiveModulo(value: number, divisor: number) {
   return ((value % divisor) + divisor) % divisor;
 }
@@ -2353,6 +2677,28 @@ function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number
   if (z < 72) return Math.abs(x) < 62 ? "commercial" : "mixed";
   if (z > 315) return "residential";
   return "residential";
+}
+
+function initialCityEvents(roads: Road[]): CityEvent[] {
+  const road = roads.find(item => item.id === "nyc-broadway");
+  if (!road?.points.length) return [];
+  const definition = CITY_EVENT_DEFINITIONS.market;
+  const position = clone(road.points[Math.floor(road.points.length / 2)]);
+  return [{
+    id: "template-event-broadway-market",
+    name: "Broadway Night Market",
+    kind: "market",
+    position,
+    startAt: 10 * 60,
+    durationMinutes: definition.durationMinutes,
+    intervalMinutes: 30 * 24 * 60,
+    capacity: definition.capacity,
+    cityFeePerAttendee: definition.cityFeePerAttendee,
+    monthlyCost: definition.monthlyCost,
+    occurrences: 0,
+    totalAttendance: 0,
+    revenue: 0
+  }];
 }
 
 function initialParking(roads: Road[]): ParkingFacility[] {

@@ -240,6 +240,66 @@ check(
     && curbSnapshot.violations === managedCurb.violations,
   "Curb rules, deliveries, and enforcement were not included in the world snapshot."
 );
+const eventWorld = new World();
+check(eventWorld.cityEvents.length === 1, "NYC template did not create its named city event.");
+const cityEvent = eventWorld.cityEvents[0];
+const eventCurb = eventWorld.addCurbZone(cityEvent.position, 0, "parking", "all-day");
+const eventLine = eventWorld.transitLines[0];
+const eventStop = [...eventLine.stops].sort((a, b) =>
+  Math.hypot(a.position.x - cityEvent.position.x, a.position.z - cityEvent.position.z)
+  - Math.hypot(b.position.x - cityEvent.position.x, b.position.z - cityEvent.position.z)
+)[0];
+const transitDemandWithoutEvent = eventWorld.transitStopDemand(eventLine, eventStop, 18 * 60, -1);
+check(!eventWorld.cityEventActiveAt(cityEvent), "Template city event started before its scheduled time.");
+check(eventWorld.parkingPermitted(eventCurb), "Scheduled city event restricted its curb before starting.");
+eventWorld.advanceMinutes(cityEvent.startAt, eventWorld.cityEconomy().monthlyBalance);
+check(eventWorld.cityEventActiveAt(cityEvent), "Named city event did not activate on schedule.");
+check(eventWorld.cityEventTrafficPressure() > 0, "Active city event did not add traffic pressure.");
+check(
+  eventWorld.curbEffectiveUse(eventCurb) === "event" && !eventWorld.parkingPermitted(eventCurb),
+  "Active city event did not place its nearby curb under event control."
+);
+const transitDemandWithEvent = eventWorld.transitStopDemand(
+  eventLine,
+  eventStop,
+  eventWorld.clock.minute,
+  eventWorld.clock.elapsedMinutes
+);
+check(
+  transitDemandWithEvent > transitDemandWithoutEvent,
+  "Active city event did not increase nearby transit demand."
+);
+check(
+  cityEvent.occurrences === 1 && cityEvent.totalAttendance > 0 && cityEvent.revenue > 0,
+  "City event occurrence did not record attendance and revenue."
+);
+const recurringEventPressure = eventWorld.cityEventTrafficPressure();
+const recurringEventEconomy = eventWorld.cityEconomy();
+check(
+  eventWorld.cityEventActiveAt(cityEvent, cityEvent.startAt + cityEvent.intervalMinutes + 1),
+  "Recurring city event did not reactivate in the next monthly interval."
+);
+const concert = eventWorld.addCityEvent("concert", cityEvent.position, "now");
+check(
+  concert.name.endsWith("Live") && eventWorld.cityEventActiveAt(concert),
+  "Builder-created city event was not named or started with the selected timing."
+);
+const eventEconomy = eventWorld.cityEconomy();
+check(
+  eventEconomy.eventRevenue > 0
+    && eventEconomy.eventCosts > 0
+    && eventEconomy.eventAttendance === cityEvent.totalAttendance
+    && eventEconomy.activeEvents === 2,
+  "Named city events were not included in the city economy."
+);
+const eventSnapshot = eventWorld.snapshot().cityEvents?.find(item => item.id === cityEvent.id);
+check(
+  eventSnapshot?.kind === "market"
+    && eventSnapshot.occurrences === cityEvent.occurrences
+    && eventSnapshot.totalAttendance === cityEvent.totalAttendance
+    && eventSnapshot.revenue === cityEvent.revenue,
+  "City event schedule, attendance, and revenue were not included in the world snapshot."
+);
 const zonedLots = mobilityWorld.lots.filter(item => item.zone !== "unassigned");
 const lotEntrances = mobilityWorld.accessibilityEntrances.filter(item => item.targetKind === "lot");
 check(lotEntrances.length === zonedLots.length, "Every developed parcel did not receive a street entrance.");
@@ -427,6 +487,11 @@ console.log(JSON.stringify({
   curbDeliveries: managedCurb.deliveriesServed,
   curbViolations: managedCurb.violations,
   curbMonthlyRevenue: curbEconomy.curbRevenue,
+  cityEvent: cityEvent.name,
+  cityEventAttendance: cityEvent.totalAttendance,
+  cityEventTrafficPressure: Number(recurringEventPressure.toFixed(2)),
+  cityEventTransitDemand: Number(transitDemandWithEvent.toFixed(2)),
+  cityEventMonthlyNet: recurringEventEconomy.eventRevenue - recurringEventEconomy.eventCosts,
   sidewalkDistance: Number(spawnLocation!.distance.toFixed(2)),
   buildingCollision: buildingMove.blocked,
   garageCollision: garageMove.blocked,

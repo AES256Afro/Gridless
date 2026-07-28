@@ -169,6 +169,13 @@ Current vertical slice:
 - Deterministic hourly curb operations generate commercial deliveries, queue blocked vehicles, serve loading demand, record violations, collect loading fees and fines, and contribute operating costs and projected revenue to the municipal budget.
 - Active curb uses receive distinct street markings, delivery vans, restriction cones, schedule-aware Builder labels, and Explorer guidance for walking, driving, and attempted parking.
 - Older saves receive safe flexible-parking curb defaults, while new NYC foundations include parking, business-hour loading, and evening event examples.
+- The NYC foundation includes a recurring Broadway Night Market, and City Builder can schedule named street markets, outdoor concerts, parades, or city matches to start now, at their next natural event time, or tomorrow.
+- Each event persists its location, recurring monthly schedule, capacity, expected and cumulative attendance, city fees, costs, occurrence count, and revenue. Older saves receive a safe NYC event default without invalidating their existing city state.
+- Active events place nearby curbs under temporary event control without overwriting the player's underlying curb rules. Parking and accessible-destination selection react to the temporary restriction automatically.
+- Event attendance adds deterministic traffic pressure to the same congestion model used by commuters, emergency response, utility repair, and household commute burden.
+- Transit stops near active events receive added passenger demand based on attendance, event type, distance, frequency, fare, and accessibility. Event-driven riders contribute to queues, boardings, crowding, and fare revenue.
+- Active events render a named venue, crowd, event radius, operations-panel status, and Explorer context for drivers, pedestrians, and nearby transit stops.
+- Monthly event fees and operating costs join the municipal budget, while completed occurrences retain cumulative attendance and revenue without creating unbounded event-history objects.
 - The pedestrian graph follows both sides of every sampled road, connects corners, and crosses roadways only at detected intersections with paired curb ramps.
 - Developed homes and businesses, parks, and transit stops receive persistent street-facing entrances with step-free state, clear width, tactile guidance, and automatic-door state.
 - City Builder's accessibility tool distinguishes universal, usable, and blocked entrances and funds complete upgrades for homes and shops, parks, or transit stops.
@@ -185,9 +192,9 @@ Current vertical slice:
 - Deterministic hourly operations generate passengers, process stop queues against available service, count stop boardings, and persist cumulative ridership and fare revenue.
 - City Explorer enters near the closest stop to its selected district or active commute. Stop context reports frequency, waiting passengers, average wait, fare, crowding, and access. Pressing `T` boards with the live passenger load, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
 - Transit line geometry, stop names, route progress, service plan, queues, boardings, ridership, and fare revenue persist in the world snapshot. Older saves receive safe operating defaults.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, event enforcement, curb revenue, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, curb enforcement and revenue, named event scheduling and recurrence, attendance, event-controlled curbs, traffic pressure, event transit demand, event finance and persistence, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are accessibility-aware building interiors, additional editable transit lines, and named city events that coordinate curb, traffic, and pedestrian demand.
+Next systems are accessibility-aware building interiors, additional editable transit lines, and district-scale event routing with road closures and temporary transit service.
 
 ## Milestone 3: Metropolitan scale
 
