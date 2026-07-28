@@ -47,6 +47,7 @@ The current vertical slice proves:
 - Detected street intersections with zebra crossings, curb-ramp pads, and deterministic two-direction traffic signals
 - Right-hand AI traffic lanes with red-light stopping, green-light movement, visible brake lights, and signal-ahead guidance while driving
 - A drivable street-level car with acceleration, braking, reverse, steering, handbrake, road-aware traction, collision, chase camera, and safe sidewalk exit
+- A persistent Broadway Local B1 bus line with seven named curbside stops, a visible bidirectional vehicle, stop-side Explorer entry, and `T` controls for boarding, requesting the next stop, and alighting
 - Persistent curb bays, surface lots, and structured garages with capacity, occupancy, designated accessible spaces, undo, and browser-save support
 - Accessibility-aware sidewalk routing to available parking, including marked crossings, paired curb ramps, visible street-level guidance, and distance reporting
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk

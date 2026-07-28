@@ -164,9 +164,13 @@ Current vertical slice:
 - Representative commuter cars occupy separate right-hand lanes in each direction instead of stacking on the road centerline.
 - AI traffic identifies signalized intersections along its actual route, holds behind the stop line during red and all-red phases, proceeds on yellow and green, and illuminates brake lights while stopped.
 - The City Explorer driving HUD reports the color and distance of the next signal ahead.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity and persistence, available-space lookup, and ramp-aware pedestrian routing.
+- The NYC foundation generates a persistent Broadway Local B1 bus line with seven named curbside stops attached to the actual arterial geometry.
+- A visible bus follows a deterministic two-direction schedule, reverses at its terminals, and remains in the same 3D city used by traffic, pedestrians, and construction.
+- City Explorer enters near the closest stop to its selected district or active commute. Pressing `T` boards the bus, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
+- Transit line geometry, stop names, route progress, and scheduled travel time persist in the world snapshot, while older saves generate the line from their existing road network.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity and persistence, available-space lookup, ramp-aware pedestrian routing, transit generation, bidirectional service, boarding, stop requests, and alighting.
 
-Next systems are the first usable transit ride, parking pricing and demand, and accessibility destinations beyond parking.
+Next systems are parking pricing and demand, accessibility destinations beyond parking, and transit service frequency and ridership.
 
 ## Milestone 3: Metropolitan scale
 

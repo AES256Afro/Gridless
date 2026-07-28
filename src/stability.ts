@@ -326,6 +326,7 @@ function integrityFailures(world: World) {
   if (world.incidents.length > 24) failures.push(`Retained incident history grew to ${world.incidents.length}.`);
   if (world.utilityFailures.length > 18) failures.push(`Retained utility-failure history grew to ${world.utilityFailures.length}.`);
   if (world.commuteFlows.length > 72) failures.push(`Commute representative set grew to ${world.commuteFlows.length}.`);
+  if (world.transitLines.length > 8) failures.push(`Transit line set grew to ${world.transitLines.length}.`);
   if (world.clock.month < 1 || world.clock.month > 12 || world.clock.day < 1 || world.clock.day > 30) {
     failures.push("Calendar fields are outside their valid ranges.");
   }
@@ -333,9 +334,15 @@ function integrityFailures(world: World) {
   const lotIds = new Set(world.lots.map(lot => lot.id));
   const serviceIds = new Set(world.services.map(service => service.id));
   const utilityIds = new Set(world.utilities.map(utility => utility.id));
+  const transitLineIds = new Set(world.transitLines.map(line => line.id));
+  const transitStopIds = new Set(world.transitLines.flatMap(line => line.stops.map(stop => stop.id)));
   if (lotIds.size !== world.lots.length) failures.push("Duplicate lot IDs were found.");
   if (serviceIds.size !== world.services.length) failures.push("Duplicate service IDs were found.");
   if (utilityIds.size !== world.utilities.length) failures.push("Duplicate utility IDs were found.");
+  if (transitLineIds.size !== world.transitLines.length) failures.push("Duplicate transit line IDs were found.");
+  if (transitStopIds.size !== world.transitLines.flatMap(line => line.stops).length) {
+    failures.push("Duplicate transit stop IDs were found.");
+  }
 
   for (const lot of world.lots) {
     if (!Number.isInteger(lot.households) || lot.households < 0) failures.push(`Lot ${lot.id} has invalid household count.`);
@@ -375,6 +382,14 @@ function integrityFailures(world: World) {
   for (const commute of world.commuteFlows) {
     if (!lotIds.has(commute.originLotId) || !lotIds.has(commute.destinationLotId)) failures.push(`Commute ${commute.id} points to a missing lot.`);
     if (commute.route.length < 2 || commute.distance < 0 || commute.travelMinutes <= 0) failures.push(`Commute ${commute.id} has invalid routing data.`);
+  }
+  for (const line of world.transitLines) {
+    if (line.route.length < 2 || line.stops.length < 2 || line.travelMinutes <= 0) {
+      failures.push(`Transit line ${line.id} has invalid route, stop, or schedule data.`);
+    }
+    for (const stop of line.stops) {
+      if (stop.progress < 0 || stop.progress > 1) failures.push(`Transit stop ${stop.id} has invalid route progress.`);
+    }
   }
   return unique(failures);
 }
