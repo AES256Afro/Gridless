@@ -126,7 +126,7 @@ Current vertical slice:
 - In-progress actions, targets, partners, timing, and completed-action counts persist through save and reload.
 - `npm run test:stability` advances a fixed serviced NYC reference city for ten years in 14,400 six-hour steps, then repeats the full decade and requires an identical deterministic signature.
 - The gate checks calendar and budget boundaries, resident needs, household and business cohorts, commute references, service and utility state, incident backlogs, save growth, finite numbers, and bounded population change.
-- The verified baseline ends at 29,090 residents, 1,576 businesses, 74% city wellbeing, an 85% staffed service network, and a positive $1.91 million monthly balance.
+- The verified baseline ends at 29,090 residents, 1,576 businesses, 74% city wellbeing, an 85% staffed service network, and a positive $1.92 million monthly balance.
 - Across the baseline decade, 10,799 of 10,800 emergency incidents and 7,199 of 7,200 utility failures resolve before the cutoff. The remaining incident and failure are active events generated immediately before the final timestamp.
 - The stability work removed redundant citywide population and staffing calculations from every lot-service evaluation, keeping the long-run gate practical while preserving the simulation result.
 
@@ -158,6 +158,12 @@ Current vertical slice:
 - Driving uses a dedicated chase camera and live speed and road-surface readout. The vehicle retains its parked position and heading in the world save.
 - City Builder places persistent road-aligned curb bays, surface lots, and structured garages with explicit total capacity, live occupancy, and designated accessible spaces.
 - City Explorer can park at a nearby facility at low speed. Entering the vehicle releases its occupied space and parking in a full facility is rejected.
+- Curb bays, surface lots, and garages now have distinct default hourly prices, operating costs, demand profiles, and projected municipal revenue.
+- Parking demand responds to nearby residents, jobs, open businesses, time of day, congestion, facility type, local supply, and the player-selected price.
+- Deterministic hourly turnover changes occupancy and collects persistent revenue while reserving the player's occupied space until the vehicle leaves.
+- City Builder can apply free, economy, market, premium, or event pricing to existing facilities and sees live occupancy, demand pressure, and projected monthly net results above each facility.
+- City Explorer reports nearby price and availability while driving, walking, following accessible wayfinding, and completing a parking action.
+- Available-parking selection weighs walking distance, hourly price, and current occupancy instead of treating all open spaces as interchangeable.
 - The pedestrian graph follows both sides of every sampled road, connects corners, and crosses roadways only at detected intersections with paired curb ramps.
 - Pressing `R` in City Explorer draws a visible accessible route to the nearest available parking facility with distance and ramped-crossing counts.
 - Garages participate in Explorer collision rather than behaving like decorative scenery.
@@ -168,9 +174,9 @@ Current vertical slice:
 - A visible bus follows a deterministic two-direction schedule, reverses at its terminals, and remains in the same 3D city used by traffic, pedestrians, and construction.
 - City Explorer enters near the closest stop to its selected district or active commute. Pressing `T` boards the bus, pressing it again requests the next stop, and arrival returns the player to a safe sidewalk position.
 - Transit line geometry, stop names, route progress, and scheduled travel time persist in the world snapshot, while older saves generate the line from their existing road network.
-- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity and persistence, available-space lookup, ramp-aware pedestrian routing, transit generation, bidirectional service, boarding, stop requests, and alighting.
+- `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, ramp-aware pedestrian routing, transit generation, bidirectional service, boarding, stop requests, and alighting.
 
-Next systems are parking pricing and demand, accessibility destinations beyond parking, and transit service frequency and ridership.
+Next systems are accessibility destinations beyond parking, transit service frequency and ridership, and curb restrictions for deliveries, loading, and events.
 
 ## Milestone 3: Metropolitan scale
 

@@ -133,7 +133,9 @@ const garage: ParkingFacility = {
   rotation: Math.PI / 6,
   capacity: 84,
   accessibleSpaces: 5,
-  occupied: 36
+  occupied: 36,
+  hourlyRate: 4,
+  revenue: 0
 };
 const curbParking: ParkingFacility = {
   id: "test-curb",
@@ -142,9 +144,17 @@ const curbParking: ParkingFacility = {
   rotation: 0,
   capacity: 2,
   accessibleSpaces: 1,
-  occupied: 0
+  occupied: 0,
+  hourlyRate: 6,
+  revenue: 0
 };
 check(nearestParkingFacility([garage, curbParking], { x: 0, z: 0 })?.id === curbParking.id, "Nearest available parking lookup failed.");
+const premiumParking = { ...curbParking, id: "premium-curb", position: { x: 5, z: 0 }, hourlyRate: 10 };
+const economyParking = { ...curbParking, id: "economy-curb", position: { x: 5, z: 0 }, hourlyRate: 2 };
+check(
+  nearestParkingFacility([premiumParking, economyParking], { x: 0, z: 0 })?.id === economyParking.id,
+  "Parking choice did not prefer the lower-priced facility at equal distance and occupancy."
+);
 const mobilityWorld = new World();
 check(mobilityWorld.parking.length === 3, "NYC template did not create its initial curb parking.");
 check(mobilityWorld.transitLines.length === 1, "NYC template did not create its initial transit line.");
@@ -185,8 +195,24 @@ check(
 );
 const placedParking = mobilityWorld.addParking("surface", { x: 24, z: -18 }, .4);
 check(placedParking.capacity === 18 && placedParking.accessibleSpaces === 2, "Surface parking capacity is incorrect.");
+check(placedParking.hourlyRate === 2, "Surface parking did not receive its default hourly rate.");
+const marketDemand = mobilityWorld.parkingDemand(placedParking, 12 * 60);
+check(mobilityWorld.setParkingRate(placedParking.id, 10), "Parking hourly rate could not be changed.");
+const premiumDemand = mobilityWorld.parkingDemand(placedParking, 12 * 60);
+check(premiumDemand < marketDemand, "Higher parking price did not reduce modeled demand.");
+check(mobilityWorld.setParkingRate(placedParking.id, 4), "Parking rate could not be reset for turnover testing.");
+const parkingRevenueBefore = placedParking.revenue;
+mobilityWorld.advanceMinutes(60, mobilityWorld.cityEconomy().monthlyBalance);
+check(placedParking.revenue > parkingRevenueBefore, "Occupied parking did not collect hourly revenue.");
+check(placedParking.occupied >= 0 && placedParking.occupied <= placedParking.capacity, "Parking turnover exceeded capacity bounds.");
+const parkingEconomy = mobilityWorld.cityEconomy();
+check(parkingEconomy.parkingRevenue > 0, "Parking pricing did not contribute projected municipal revenue.");
+const parkingSnapshot = mobilityWorld.snapshot().parking?.find(item => item.id === placedParking.id);
+check(parkingSnapshot?.hourlyRate === 4 && parkingSnapshot.revenue === placedParking.revenue, "Parking price and revenue were not included in the world snapshot.");
 check(mobilityWorld.parkPlayerVehicle(placedParking.id, placedParking.position, placedParking.rotation), "Player vehicle could not use available parking.");
 check(mobilityWorld.snapshot().playerVehicle?.parkingId === placedParking.id, "Parked vehicle was not included in the world snapshot.");
+mobilityWorld.advanceMinutes(60, parkingEconomy.monthlyBalance);
+check(placedParking.occupied >= 1, "Hourly turnover did not preserve the player's occupied parking space.");
 const context = { landAreas: [land], lots: [lot], services: [], parking: [garage] };
 const openMove = resolveExplorerMovement({ x: 0, z: 0 }, { x: 1, z: 1 }, context);
 check(!openMove.blocked && openMove.position.x === 1 && openMove.position.z === 1, "Open walking movement was blocked.");
@@ -211,6 +237,10 @@ console.log(JSON.stringify({
   transitLine: transitLine.name,
   transitStops: transitLine.stops.length,
   transitAlight: arrivedTransitStop,
+  parkingMarketDemand: Number(marketDemand.toFixed(2)),
+  parkingPremiumDemand: Number(premiumDemand.toFixed(2)),
+  parkingHourlyRevenue: placedParking.revenue,
+  parkingMonthlyRevenue: parkingEconomy.parkingRevenue,
   sidewalkDistance: Number(spawnLocation!.distance.toFixed(2)),
   buildingCollision: buildingMove.blocked,
   garageCollision: garageMove.blocked,
