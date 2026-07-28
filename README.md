@@ -63,3 +63,7 @@ This is a visual and interaction prototype with local persistence and a determin
 5. **Share the same place:** Players can invite others into a hosted city to walk, drive, build together, or simply inhabit it.
 
 See [ROADMAP.md](./ROADMAP.md) for staged delivery.
+
+## Hosting
+
+The production build can run on bigBox in a hardened, loopback-only Docker container and publish through Cloudflare Tunnel without taking ports 80 or 443 from Pi-hole. See [DEPLOY_BIGBOX.md](./DEPLOY_BIGBOX.md).
