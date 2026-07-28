@@ -15,7 +15,8 @@ const rows = first.yearly.map(checkpoint => ({
   wellbeing: `${checkpoint.wellbeing}%`,
   monthlyBalance: Math.round(checkpoint.monthlyBalance),
   treasury: Math.round(checkpoint.treasury),
-  residentActions: checkpoint.completedResidentActions
+  residentActions: checkpoint.completedResidentActions,
+  eventVisits: checkpoint.eventAttendance
 }));
 
 console.log(`Gridless ten-year stability gate: ${first.passed ? "PASS" : "FAIL"}`);

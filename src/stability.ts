@@ -19,6 +19,8 @@ export type StabilityCheckpoint = {
   minimumUtilityCondition: number;
   residentWellbeing: number;
   completedResidentActions: number;
+  eventOccurrences: number;
+  eventAttendance: number;
   snapshotBytes: number;
 };
 
@@ -316,6 +318,8 @@ function checkpoint(world: World): StabilityCheckpoint {
       ? Math.round(residents.reduce((total, resident) => total + world.residentWellbeing(resident).score, 0) / residents.length)
       : 0,
     completedResidentActions: residents.reduce((total, resident) => total + (resident.completedActions ?? 0), 0),
+    eventOccurrences: world.cityEvents.reduce((total, event) => total + event.occurrences, 0),
+    eventAttendance: economy.eventAttendance,
     snapshotBytes
   };
 }
@@ -327,6 +331,7 @@ function integrityFailures(world: World) {
   if (world.utilityFailures.length > 18) failures.push(`Retained utility-failure history grew to ${world.utilityFailures.length}.`);
   if (world.commuteFlows.length > 72) failures.push(`Commute representative set grew to ${world.commuteFlows.length}.`);
   if (world.transitLines.length > 8) failures.push(`Transit line set grew to ${world.transitLines.length}.`);
+  if (world.cityEvents.length > 32) failures.push(`City event schedule grew to ${world.cityEvents.length}.`);
   if (world.clock.month < 1 || world.clock.month > 12 || world.clock.day < 1 || world.clock.day > 30) {
     failures.push("Calendar fields are outside their valid ranges.");
   }
@@ -337,6 +342,7 @@ function integrityFailures(world: World) {
   const utilityIds = new Set(world.utilities.map(utility => utility.id));
   const transitLineIds = new Set(world.transitLines.map(line => line.id));
   const transitStopIds = new Set(world.transitLines.flatMap(line => line.stops.map(stop => stop.id)));
+  const cityEventIds = new Set(world.cityEvents.map(event => event.id));
   const accessibilityEntranceIds = new Set(world.accessibilityEntrances.map(entrance => entrance.id));
   if (lotIds.size !== world.lots.length) failures.push("Duplicate lot IDs were found.");
   if (serviceIds.size !== world.services.length) failures.push("Duplicate service IDs were found.");
@@ -345,6 +351,7 @@ function integrityFailures(world: World) {
   if (transitStopIds.size !== world.transitLines.flatMap(line => line.stops).length) {
     failures.push("Duplicate transit stop IDs were found.");
   }
+  if (cityEventIds.size !== world.cityEvents.length) failures.push("Duplicate city event IDs were found.");
   if (accessibilityEntranceIds.size !== world.accessibilityEntrances.length) {
     failures.push("Duplicate accessibility entrance IDs were found.");
   }
@@ -408,6 +415,30 @@ function integrityFailures(world: World) {
       ) {
         failures.push(`Transit stop ${stop.id} has invalid queue or boarding data.`);
       }
+    }
+  }
+  for (const event of world.cityEvents) {
+    if (!["concert", "market", "parade", "sports"].includes(event.kind)) {
+      failures.push(`City event ${event.id} has an invalid event kind.`);
+    }
+    if (
+      event.durationMinutes < 60
+      || event.intervalMinutes < 24 * 60
+      || event.capacity <= 0
+      || event.cityFeePerAttendee < 0
+      || event.monthlyCost < 0
+      || event.revenue < 0
+    ) {
+      failures.push(`City event ${event.id} has invalid scheduling or financial data.`);
+    }
+    if (
+      event.occurrences < 0
+      || event.totalAttendance < 0
+      || !Number.isInteger(event.occurrences)
+      || !Number.isInteger(event.totalAttendance)
+      || (event.lastProcessedOccurrence !== undefined && !Number.isInteger(event.lastProcessedOccurrence))
+    ) {
+      failures.push(`City event ${event.id} has invalid occurrence or attendance data.`);
     }
   }
   for (const facility of world.parking) {
