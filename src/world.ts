@@ -85,6 +85,7 @@ export type ResidentAction = {
   targetFurnitureId?: string;
   partnerResidentId?: string;
   directed?: boolean;
+  relationshipCredit?: boolean;
 };
 
 export type Resident = {
@@ -103,6 +104,13 @@ export type Resident = {
   lastActionAt?: number;
   completedActions?: number;
   homePosition?: Point2;
+};
+
+export type ResidentRelationship = {
+  residentIds: [string, string];
+  score: number;
+  conversations: number;
+  lastInteractionAt?: number;
 };
 
 export type ResidentWellbeing = {
@@ -379,6 +387,7 @@ export type Home = {
   rooms: Array<{ id: string; kind: string; x: number; z: number; width: number; depth: number }>;
   furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant"; x: number; z: number; rotation: number }>;
   residents: Resident[];
+  relationships: ResidentRelationship[];
 };
 
 export type WorldSnapshot = {
@@ -1293,6 +1302,10 @@ export class World {
 
   residentStatus(resident: Home["residents"][number]) {
     const hour = this.clock.minute / 60;
+    if (
+      resident.currentAction?.directed
+      && resident.currentAction.endsAt > this.clock.elapsedMinutes
+    ) return "Home";
     const commute = this.commuteForResident(resident);
     if (commute && this.activeCommutes().some(active => active.flow.id === commute.id)) return "Commuting";
     if (resident.role === "student") return hour >= 8 && hour < 16 ? "At school" : hour >= 16 && hour < 18 ? "Out in city" : "Home";
@@ -1336,6 +1349,36 @@ export class World {
       : undefined;
   }
 
+  relationshipBetween(home: Home, firstResidentId: string, secondResidentId: string) {
+    const key = relationshipKey(firstResidentId, secondResidentId);
+    return home.relationships.find(relationship =>
+      relationshipKey(...relationship.residentIds) === key
+    );
+  }
+
+  relationshipScore(home: Home, firstResidentId: string, secondResidentId: string) {
+    return this.relationshipBetween(home, firstResidentId, secondResidentId)?.score
+      ?? initialRelationshipScore(firstResidentId, secondResidentId);
+  }
+
+  relationshipLabel(score: number) {
+    return score >= 80
+      ? "Close"
+      : score >= 60
+        ? "Friends"
+        : score >= 40
+          ? "Familiar"
+          : score >= 20
+            ? "Strained"
+            : "Conflict";
+  }
+
+  strongestRelationship(home: Home, residentId: string) {
+    return home.relationships
+      .filter(relationship => relationship.residentIds.includes(residentId))
+      .sort((a, b) => b.score - a.score)[0];
+  }
+
   commandResidentFurnitureAction(homeId: string, residentId: string, furnitureId: string) {
     const home = this.homes.find(item => item.id === homeId);
     const resident = home?.residents.find(item => item.id === residentId);
@@ -1363,13 +1406,50 @@ export class World {
     return { ok: true, reason: `${resident.name} started ${this.residentActionLabel(resident).toLowerCase()}.` };
   }
 
+  commandResidentConversation(homeId: string, residentId: string, partnerResidentId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    const partner = home?.residents.find(item => item.id === partnerResidentId);
+    if (!home || !resident || !partner || resident.id === partner.id) {
+      return { ok: false, reason: "Both residents must be available for a conversation." };
+    }
+    if (this.residentStatus(resident) !== "Home" || this.residentStatus(partner) !== "Home") {
+      return { ok: false, reason: "Both residents need to be home before they can talk." };
+    }
+    this.checkpoint();
+    const startedAt = this.clock.elapsedMinutes;
+    const endsAt = startedAt + 60;
+    resident.currentAction = {
+      kind: "socialize",
+      startedAt,
+      endsAt,
+      partnerResidentId: partner.id,
+      directed: true,
+      relationshipCredit: true
+    };
+    partner.currentAction = {
+      kind: "socialize",
+      startedAt,
+      endsAt,
+      partnerResidentId: resident.id,
+      directed: true
+    };
+    return { ok: true, reason: `${resident.name} and ${partner.name} started talking.` };
+  }
+
   cancelResidentAction(homeId: string, residentId: string) {
-    const resident = this.homes
-      .find(item => item.id === homeId)
-      ?.residents.find(item => item.id === residentId);
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
     if (!resident?.currentAction) return false;
     this.checkpoint();
+    const partnerResidentId = resident.currentAction.kind === "socialize"
+      ? resident.currentAction.partnerResidentId
+      : undefined;
     resident.currentAction = undefined;
+    const partner = partnerResidentId
+      ? home?.residents.find(item => item.id === partnerResidentId)
+      : undefined;
+    if (partner?.currentAction?.partnerResidentId === resident.id) partner.currentAction = undefined;
     return true;
   }
 
@@ -1756,7 +1836,8 @@ export class World {
         { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0 },
         { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0 }
       ],
-      residents: []
+      residents: [],
+      relationships: []
     };
     this.homes.push(home);
     lot.homeId = home.id;
@@ -1797,7 +1878,7 @@ export class World {
     const used = new Set(home.residents.map(resident => resident.name));
     const name = names.find(candidate => !used.has(candidate)) ?? `Resident ${home.residents.length + 1}`;
     const roles: ResidentRole[] = ["office", "service", "home"];
-    home.residents.push({
+    const resident: Resident = {
       id: crypto.randomUUID(),
       name,
       age: "adult",
@@ -1808,7 +1889,15 @@ export class World {
       health: 84,
       stress: 24,
       completedActions: 0
-    });
+    };
+    for (const existing of home.residents) {
+      home.relationships.push({
+        residentIds: orderedResidentIds(existing.id, resident.id),
+        score: initialRelationshipScore(existing.id, resident.id),
+        conversations: 0
+      });
+    }
+    home.residents.push(resident);
     const lot = this.lots.find(item => item.id === home.lotId);
     if (lot && lot.households === 0) {
       lot.households = 1;
@@ -1838,10 +1927,8 @@ export class World {
         anchorBusiness: businesses > 0 ? lot.anchorBusiness ?? createAnchorBusiness(lot.id, zone, businesses) : undefined
       };
     });
-    this.homes = clone(snapshot.homes).map(home => ({
-      ...home,
-      furniture: home.furniture ?? [],
-      residents: (home.residents ?? []).map((resident, index) => ({
+    this.homes = clone(snapshot.homes).map(home => {
+      const residents = (home.residents ?? []).map((resident, index) => ({
         ...resident,
         role: resident.role ?? (resident.age === "child" ? "student" : index % 2 === 0 ? "office" : "service"),
         energy: clamp(resident.energy ?? 82, 0, 100),
@@ -1850,8 +1937,14 @@ export class World {
         health: clamp(resident.health ?? 84, 0, 100),
         stress: clamp(resident.stress ?? 24, 0, 100),
         completedActions: resident.completedActions ?? 0
-      }))
-    }));
+      }));
+      return {
+        ...home,
+        furniture: home.furniture ?? [],
+        residents,
+        relationships: normalizeRelationships(residents, home.relationships ?? [])
+      };
+    });
     this.services = clone(snapshot.services ?? []).map(service => ({
       ...service,
       capacity: service.capacity ?? legacyServiceCapacity(service.kind),
@@ -2323,7 +2416,7 @@ export class World {
       for (const resident of home.residents) {
         const current = resident.currentAction;
         if (current && current.endsAt <= now) {
-          this.completeResidentAction(resident, current);
+          this.completeResidentAction(home, resident, current);
         }
         if (this.residentStatus(resident) !== "Home") {
           resident.currentAction = undefined;
@@ -2407,11 +2500,12 @@ export class World {
       startedAt: now,
       endsAt: now + duration,
       targetFurnitureId: choice.targetFurnitureId,
-      partnerResidentId: choice.partnerResidentId
+      partnerResidentId: choice.partnerResidentId,
+      relationshipCredit: choice.kind === "socialize" && Boolean(choice.partnerResidentId)
     };
   }
 
-  private completeResidentAction(resident: Resident, action: ResidentAction) {
+  private completeResidentAction(home: Home, resident: Resident, action: ResidentAction) {
     if (action.kind === "sleep") {
       resident.energy = clamp(resident.energy + 18, 0, 100);
       resident.health = clamp(resident.health + 3, 0, 100);
@@ -2426,6 +2520,14 @@ export class World {
     } else if (action.kind === "socialize") {
       resident.social = clamp(resident.social + 20, 0, 100);
       resident.stress = clamp(resident.stress - 6, 0, 100);
+      if (action.relationshipCredit && action.partnerResidentId) {
+        const relationship = this.relationshipBetween(home, resident.id, action.partnerResidentId);
+        if (relationship) {
+          relationship.score = clamp(relationship.score + (action.directed ? 8 : 5), 0, 100);
+          relationship.conversations += 1;
+          relationship.lastInteractionAt = action.endsAt;
+        }
+      }
     } else if (action.kind === "tend-plants") {
       resident.health = clamp(resident.health + 6, 0, 100);
       resident.comfort = clamp(resident.comfort + 5, 0, 100);
@@ -2567,6 +2669,60 @@ export class World {
 
 function hashString(value: string) {
   return [...value].reduce((total, char) => (total * 31 + char.charCodeAt(0)) >>> 0, 7);
+}
+
+function orderedResidentIds(firstResidentId: string, secondResidentId: string): [string, string] {
+  return firstResidentId.localeCompare(secondResidentId) <= 0
+    ? [firstResidentId, secondResidentId]
+    : [secondResidentId, firstResidentId];
+}
+
+function relationshipKey(firstResidentId: string, secondResidentId: string) {
+  return orderedResidentIds(firstResidentId, secondResidentId).join(":");
+}
+
+function initialRelationshipScore(firstResidentId: string, secondResidentId: string) {
+  return 45 + hashString(relationshipKey(firstResidentId, secondResidentId)) % 16;
+}
+
+function normalizeRelationships(
+  residents: Resident[],
+  relationships: ResidentRelationship[]
+): ResidentRelationship[] {
+  const residentIds = new Set(residents.map(resident => resident.id));
+  const normalized = new Map<string, ResidentRelationship>();
+  for (const relationship of relationships) {
+    const [firstResidentId, secondResidentId] = orderedResidentIds(...relationship.residentIds);
+    if (
+      firstResidentId === secondResidentId
+      || !residentIds.has(firstResidentId)
+      || !residentIds.has(secondResidentId)
+    ) continue;
+    normalized.set(relationshipKey(firstResidentId, secondResidentId), {
+      residentIds: [firstResidentId, secondResidentId],
+      score: clamp(
+        relationship.score ?? initialRelationshipScore(firstResidentId, secondResidentId),
+        0,
+        100
+      ),
+      conversations: Math.max(0, Math.floor(relationship.conversations ?? 0)),
+      lastInteractionAt: relationship.lastInteractionAt
+    });
+  }
+  for (let firstIndex = 0; firstIndex < residents.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < residents.length; secondIndex += 1) {
+      const residentPair = orderedResidentIds(residents[firstIndex].id, residents[secondIndex].id);
+      const key = relationshipKey(...residentPair);
+      if (!normalized.has(key)) {
+        normalized.set(key, {
+          residentIds: residentPair,
+          score: initialRelationshipScore(...residentPair),
+          conversations: 0
+        });
+      }
+    }
+  }
+  return [...normalized.values()];
 }
 
 function clamp(value: number, minimum: number, maximum: number) {

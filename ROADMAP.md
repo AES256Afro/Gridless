@@ -190,6 +190,9 @@ Current vertical slice:
 - Home Simulator resident cards distinguish who is home, away, or commuting. An available resident can be taken directly into first-person control when the entrance is usable.
 - Pressing `C` inside cycles at-home residents and observer mode. Controlled resident positions persist with the home and their avatar does not duplicate the first-person player.
 - Pressing `E` near a furnishing directs the controlled resident to sleep, eat, relax, or tend plants. These actions use the existing durations, completion history, and need effects rather than a separate interaction system.
+- Pressing `E` near another household member starts a paired conversation. Both residents participate, receive social and calm effects on completion, and improve a persistent shared relationship score.
+- Home Simulator shows every household relationship, its current label, score, and completed conversation count. Resident cards identify each person's strongest connection.
+- Conversation state, partner references, relationship history, and relationship scores survive save and reload. Older saves generate deterministic relationship pairs for existing household members.
 - Walking cancels the current directed activity, while controlled residents remain exempt from autonomous action selection until control ends.
 - The interior interaction prompt reports the nearby action and its need effect, and the Explorer and Home Simulator panels report action progress and completion.
 - Garages participate in Explorer collision rather than behaving like decorative scenery.
@@ -204,7 +207,7 @@ Current vertical slice:
 - Transit line geometry, stop names, route progress, service plan, queues, boardings, ridership, and fare revenue persist in the world snapshot. Older saves receive safe operating defaults.
 - `npm run test:explorer` verifies road lookup, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, curb enforcement and revenue, named event scheduling and recurrence, attendance, event-controlled curbs, traffic pressure, event transit demand, event finance and persistence, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, interior entry access, room doorways, rotated lot transforms, wall and furniture collision, direct resident selection, persistent home positions, nearby object selection, directed action completion, shared need effects, transit generation, bidirectional fleets, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are resident relationships and social interactions, additional editable transit lines, and district-scale event routing with road closures and temporary transit service.
+Next systems are relationship-driven autonomous choices, additional editable transit lines, and district-scale event routing with road closures and temporary transit service.
 
 ## Milestone 3: Metropolitan scale
 

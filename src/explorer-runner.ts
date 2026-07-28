@@ -191,7 +191,8 @@ const interiorHome: Home = {
     { id: "interior-table", kind: "table", x: 0, z: 0, rotation: 0 },
     { id: "interior-bed", kind: "bed", x: 6, z: 1, rotation: Math.PI / 2 }
   ],
-  residents: []
+  residents: [],
+  relationships: []
 };
 const usableHomeEntrance: AccessibilityEntrance = {
   id: "interior-entrance",
@@ -257,6 +258,23 @@ directControlHome.residents = [{
   health: 70,
   stress: 45,
   completedActions: 0
+}, {
+  id: "conversation-partner",
+  name: "Jordan",
+  age: "adult",
+  role: "home",
+  energy: 62,
+  social: 40,
+  comfort: 65,
+  health: 76,
+  stress: 38,
+  completedActions: 0,
+  homePosition: { x: -.5, z: 0 }
+}];
+directControlHome.relationships = [{
+  residentIds: ["controlled-resident", "conversation-partner"],
+  score: 55,
+  conversations: 0
 }];
 directControlWorld.homes = [directControlHome];
 check(
@@ -293,6 +311,49 @@ check(
     && directControlHome.residents[0].completedActions === 1
     && directControlHome.residents[0].energy === 58,
   "Directed meal did not complete through the shared resident need system."
+);
+directControlWorld.clock.minute = 10 * 60 + 45;
+const directedConversation = directControlWorld.commandResidentConversation(
+  directControlHome.id,
+  "controlled-resident",
+  "conversation-partner"
+);
+check(directedConversation.ok, "Nearby residents could not start a directed conversation.");
+check(
+  directControlHome.residents.every(resident =>
+    resident.currentAction?.kind === "socialize"
+      && resident.currentAction?.directed
+      && Boolean(resident.currentAction?.partnerResidentId)
+  ),
+  "Conversation did not create paired resident actions."
+);
+directControlWorld.advanceMinutes(60, 0);
+const completedRelationship = directControlWorld.relationshipBetween(
+  directControlHome,
+  "controlled-resident",
+  "conversation-partner"
+);
+check(
+  completedRelationship?.score === 63
+    && completedRelationship.conversations === 1
+    && completedRelationship.lastInteractionAt === directControlWorld.clock.elapsedMinutes,
+  "Completed conversation did not improve and persist the household relationship."
+);
+check(
+  directControlHome.residents[0].social === 70
+    && directControlHome.residents[1].social === 60
+    && directControlHome.residents[0].lastActionKind === "socialize"
+    && directControlHome.residents[1].lastActionKind === "socialize",
+  "Conversation did not apply social need effects to both residents."
+);
+check(
+  directControlWorld.clock.minute === 11 * 60 + 45
+    && directControlWorld.residentStatus(directControlHome.residents[0]) === "Out in city",
+  "Directed conversation did not finish cleanly across a normal schedule boundary."
+);
+check(
+  directControlWorld.snapshot().homes[0].relationships[0].score === 63,
+  "Household relationship was not included in the world snapshot."
 );
 const curbParking: ParkingFacility = {
   id: "test-curb",
@@ -640,7 +701,10 @@ console.log(JSON.stringify({
   interiorAccessGate: entryStatus.allowed,
   directResidentAction: directControlHome.residents[0].lastActionKind,
   directedActionsCompleted: directControlHome.residents[0].completedActions,
-  controlledResidentEnergy: directControlHome.residents[0].energy
+  controlledResidentEnergy: directControlHome.residents[0].energy,
+  conversationPartnerSocial: directControlHome.residents[1].social,
+  relationshipScore: completedRelationship?.score,
+  completedConversations: completedRelationship?.conversations
 }, null, 2));
 
 function check(condition: boolean, message: string) {

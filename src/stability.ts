@@ -139,7 +139,8 @@ export function createStabilityScenario() {
       health: 84,
       stress: 24,
       completedActions: 0
-    }]
+    }],
+    relationships: []
   };
   homeLot.homeId = home.id;
   world.homes = [home];
@@ -371,8 +372,11 @@ function integrityFailures(world: World) {
     if (!interiorEntryPoint(home)) failures.push(`Home ${home.id} has no clear interior entry position.`);
     const roomIds = new Set(home.rooms.map(room => room.id));
     const furnitureIds = new Set(home.furniture.map(item => item.id));
+    const residentIds = new Set(home.residents.map(resident => resident.id));
+    const relationshipKeys = new Set<string>();
     if (roomIds.size !== home.rooms.length) failures.push(`Home ${home.id} has duplicate room IDs.`);
     if (furnitureIds.size !== home.furniture.length) failures.push(`Home ${home.id} has duplicate furniture IDs.`);
+    if (residentIds.size !== home.residents.length) failures.push(`Home ${home.id} has duplicate resident IDs.`);
     for (const room of home.rooms) {
       if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
     }
@@ -393,6 +397,15 @@ function integrityFailures(world: World) {
       ) {
         failures.push(`Resident ${resident.id} action points to missing furniture.`);
       }
+      if (
+        resident.currentAction?.partnerResidentId
+        && (
+          resident.currentAction.partnerResidentId === resident.id
+          || !residentIds.has(resident.currentAction.partnerResidentId)
+        )
+      ) {
+        failures.push(`Resident ${resident.id} action points to an invalid conversation partner.`);
+      }
       for (const [name, value] of Object.entries({
         energy: resident.energy,
         social: resident.social,
@@ -401,6 +414,25 @@ function integrityFailures(world: World) {
         stress: resident.stress
       })) {
         if (value < 0 || value > 100) failures.push(`Resident ${resident.id} has ${name} outside 0 to 100.`);
+      }
+    }
+    for (const relationship of home.relationships) {
+      const [firstResidentId, secondResidentId] = [...relationship.residentIds].sort();
+      const key = `${firstResidentId}:${secondResidentId}`;
+      if (
+        firstResidentId === secondResidentId
+        || !residentIds.has(firstResidentId)
+        || !residentIds.has(secondResidentId)
+      ) {
+        failures.push(`Home ${home.id} has a relationship with invalid residents.`);
+      }
+      if (relationshipKeys.has(key)) failures.push(`Home ${home.id} has duplicate relationship pairs.`);
+      relationshipKeys.add(key);
+      if (relationship.score < 0 || relationship.score > 100) {
+        failures.push(`Home ${home.id} has a relationship score outside 0 to 100.`);
+      }
+      if (!Number.isInteger(relationship.conversations) || relationship.conversations < 0) {
+        failures.push(`Home ${home.id} has an invalid completed conversation count.`);
       }
     }
   }

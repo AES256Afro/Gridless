@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `69becee3`
+Deterministic signature: `7692015c`
 
 Command:
 
@@ -33,7 +33,7 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 333 KB | 347 KB |
 
-The largest observed snapshot was 354,317 bytes.
+The largest observed snapshot was 354,363 bytes.
 
 ## Load and recovery
 
@@ -55,7 +55,7 @@ The run found no:
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
 - missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, or furniture placed outside every room
-- invalid controlled-resident home positions or resident actions targeting missing furniture
+- invalid controlled-resident home positions, resident action targets, conversation partners, relationship pairs, scores, or conversation counts
 - broken home, incident, failure, service, utility, or commute references
 - duplicate or invalid transit lines, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
@@ -68,7 +68,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, transit passenger operations, the saved entrance layer, and home-interior integrity checks included, the latest complete deterministic gate took about 66 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, transit passenger operations, the saved entrance layer, home-interior checks, and relationship integrity checks included, the latest complete deterministic gate took about 56 seconds for both decades on the development machine.
 
 ## Boundary
 

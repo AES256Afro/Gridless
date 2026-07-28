@@ -574,6 +574,52 @@ kbd {
   color: #91a198;
   font-size: 9px;
 }
+.resident-card .resident-connection {
+  color: #d8c98e;
+}
+.relationship-list {
+  padding: 9px;
+  border: 1px solid rgba(240,217,128,.18);
+  border-radius: 9px;
+  margin-top: 10px;
+  background: rgba(240,217,128,.045);
+}
+.relationship-title {
+  color: #d8c98e;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.relationship-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 7px;
+  margin-top: 7px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.relationship-row span { min-width: 0; }
+.relationship-row strong {
+  display: block;
+  overflow: hidden;
+  color: #e5ece6;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relationship-row small {
+  display: block;
+  margin-top: 2px;
+  color: #8e9d94;
+  font-size: 8px;
+}
+.relationship-row > b {
+  color: #f0d980;
+  font-size: 9px;
+  white-space: nowrap;
+}
 .resident-control {
   width: 100%;
   padding: 7px 9px;

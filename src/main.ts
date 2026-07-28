@@ -1066,7 +1066,13 @@ function toggleHomeInterior() {
   clearAccessibleRoute();
   setInteriorSceneVisibility(true);
   renderHome();
-  const worldEntry = lotLocalToWorld(entry, lot);
+  const controlledPosition = selectedResident && controlledResidentId
+    ? residentInteriorPosition(home, selectedResident, home.residents.indexOf(selectedResident))
+    : entry;
+  if (selectedResident && controlledResidentId) {
+    world.setResidentHomePosition(home.id, selectedResident.id, controlledPosition);
+  }
+  const worldEntry = lotLocalToWorld(controlledPosition, lot);
   camera.position.set(worldEntry.x, 2.02, worldEntry.z);
   const towardCenter = {
     x: lot.center.x - worldEntry.x,
@@ -1081,8 +1087,8 @@ function toggleHomeInterior() {
   setPanel(
     "HOME INTERIOR",
     home.name,
-    "Choose a resident, walk them through the rooms, and use the furniture designed in Home Simulator. Household needs and city conditions continue while you are inside.",
-    "C|Choose resident;WASD|Walk;Mouse|Look;E|Use furnishing;F|Exit home;Esc|Return to City Builder"
+    "Choose a resident, walk them through the rooms, talk with household members, and use the furniture designed in Home Simulator. Household needs and city conditions continue while you are inside.",
+    "C|Choose resident;WASD|Walk;Mouse|Look;E|Talk or interact;F|Exit home;Esc|Return to City Builder"
   );
   updateExplorerMovementStatus(0);
   updateExplorerContext();
@@ -2555,6 +2561,37 @@ function controlledInteriorResident() {
   return resident ? { ...interior, resident } : null;
 }
 
+function residentInteriorPosition(home: Home, resident: Home["residents"][number], index: number): Point2 {
+  const target = world.residentActionTarget(home, resident);
+  const targetPosition = target
+    ? { x: target.x + (index % 2 ? .55 : -.55), z: target.z + .65 }
+    : undefined;
+  if (targetPosition && isInteriorPositionValid(home, targetPosition, .2)) return targetPosition;
+  if (resident.homePosition && isInteriorPositionValid(home, resident.homePosition, .2)) {
+    return resident.homePosition;
+  }
+  const room = home.rooms[index % Math.max(1, home.rooms.length)] ?? home.rooms[0];
+  const offsets = [
+    { x: -1.2, z: .45 },
+    { x: 0, z: .45 },
+    { x: 1.2, z: .45 },
+    { x: -1.2, z: -.85 },
+    { x: 0, z: -.85 },
+    { x: 1.2, z: -.85 }
+  ];
+  if (room) {
+    for (let offset = 0; offset < offsets.length; offset += 1) {
+      const candidateOffset = offsets[(index + offset) % offsets.length];
+      const candidate = {
+        x: room.x + candidateOffset.x,
+        z: room.z + candidateOffset.z
+      };
+      if (isInteriorPositionValid(home, candidate, .2)) return candidate;
+    }
+  }
+  return interiorEntryPoint(home) ?? { x: 0, z: 0 };
+}
+
 function cycleControlledResident() {
   const interior = currentExplorerInterior();
   if (!interior) return;
@@ -2598,7 +2635,7 @@ function cycleControlledResident() {
   updateInteriorInteractionPrompt();
 }
 
-function nearbyInteriorInteraction() {
+function nearbyInteriorFurnitureInteraction() {
   const controlled = controlledInteriorResident();
   if (!controlled) return null;
   const local = worldToLotLocal(
@@ -2608,23 +2645,64 @@ function nearbyInteriorInteraction() {
   return nearestInteriorFurniture(controlled.home, local);
 }
 
-function useNearbyInteriorFurniture() {
+function nearbyInteriorResident() {
+  const controlled = controlledInteriorResident();
+  if (!controlled) return null;
+  const local = worldToLotLocal(
+    { x: camera.position.x, z: camera.position.z },
+    controlled.lot
+  );
+  return controlled.home.residents
+    .map((resident, index) => ({
+      resident,
+      position: residentInteriorPosition(controlled.home, resident, index)
+    }))
+    .filter(candidate =>
+      candidate.resident.id !== controlled.resident.id
+      && world.residentStatus(candidate.resident) === "Home"
+    )
+    .map(candidate => ({
+      ...candidate,
+      distance: Math.hypot(candidate.position.x - local.x, candidate.position.z - local.z)
+    }))
+    .filter(candidate => candidate.distance <= 2.8)
+    .sort((first, second) => first.distance - second.distance)[0] ?? null;
+}
+
+function useNearbyInteriorInteraction() {
   const controlled = controlledInteriorResident();
   if (!controlled) {
     notice("Press C to choose a resident first");
     updateInteriorInteractionPrompt();
     return;
   }
-  const nearby = nearbyInteriorInteraction();
-  if (!nearby) {
-    notice("Move closer to a furnishing to use it");
+  const nearbyResident = nearbyInteriorResident();
+  if (nearbyResident) {
+    const result = world.commandResidentConversation(
+      controlled.home.id,
+      controlled.resident.id,
+      nearbyResident.resident.id
+    );
+    if (!result.ok) {
+      notice(result.reason);
+      return;
+    }
+    renderHome();
+    updateExplorerContext();
+    updateInteriorInteractionPrompt();
+    notice(result.reason);
+    return;
+  }
+  const nearbyFurniture = nearbyInteriorFurnitureInteraction();
+  if (!nearbyFurniture) {
+    notice("Move closer to a resident or furnishing");
     updateInteriorInteractionPrompt();
     return;
   }
   const result = world.commandResidentFurnitureAction(
     controlled.home.id,
     controlled.resident.id,
-    nearby.item.id
+    nearbyFurniture.item.id
   );
   if (!result.ok) {
     notice(result.reason);
@@ -2649,10 +2727,21 @@ function updateInteriorInteractionPrompt() {
     prompt.innerHTML = "<kbd>C</kbd><span>Choose a resident to control</span>";
     return;
   }
-  const nearby = nearbyInteriorInteraction();
-  if (nearby) {
+  const nearbyResident = nearbyInteriorResident();
+  if (nearbyResident) {
+    const relationshipScore = world.relationshipScore(
+      controlled.home,
+      controlled.resident.id,
+      nearbyResident.resident.id
+    );
     prompt.innerHTML =
-      `<kbd>E</kbd><span>${nearby.interaction.label} with ${controlled.resident.name}<small>${nearby.interaction.effect}</small></span><kbd>C</kbd><span>Switch resident</span>`;
+      `<kbd>E</kbd><span>Talk with ${nearbyResident.resident.name}<small>${world.relationshipLabel(relationshipScore)} · ${relationshipScore}% relationship</small></span><kbd>C</kbd><span>Switch resident</span>`;
+    return;
+  }
+  const nearbyFurniture = nearbyInteriorFurnitureInteraction();
+  if (nearbyFurniture) {
+    prompt.innerHTML =
+      `<kbd>E</kbd><span>${nearbyFurniture.interaction.label} with ${controlled.resident.name}<small>${nearbyFurniture.interaction.effect}</small></span><kbd>C</kbd><span>Switch resident</span>`;
     return;
   }
   const action = world.activeResidentAction(controlled.resident);
@@ -2660,7 +2749,7 @@ function updateInteriorInteractionPrompt() {
     ? `${world.residentActionLabel(controlled.resident)} · ${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m left`
     : `Walking as ${controlled.resident.name}`;
   prompt.innerHTML =
-    `<kbd>C</kbd><span>Switch resident<small>${actionCopy}</small></span><kbd>E</kbd><span>Use nearby furnishing</span>`;
+    `<kbd>C</kbd><span>Switch resident<small>${actionCopy}</small></span><kbd>E</kbd><span>Talk or use furnishing</span>`;
 }
 
 function localToWorld(point: Point2, lot: Lot) {
@@ -2732,11 +2821,11 @@ function renderHome() {
   }
 
   for (const item of home.furniture) homeGroup.add(createFurniture(item));
-  home.residents.filter(resident => world.residentStatus(resident) === "Home").forEach((resident, index) => {
+  home.residents.forEach((resident, index) => {
+    if (world.residentStatus(resident) !== "Home") return;
     if (explorerInterior && resident.id === controlledResidentId) return;
     const person = new THREE.Group();
     const action = world.activeResidentAction(resident);
-    const target = world.residentActionTarget(home, resident);
     const wellbeing = world.residentWellbeing(resident);
     const color = wellbeingColor(wellbeing.score);
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(.28, .8, 4, 8), new THREE.MeshStandardMaterial({ color }));
@@ -2755,11 +2844,18 @@ function renderHome() {
       actionLabel.position.set(0, 2.05, 0);
       person.add(actionLabel);
     }
-    person.position.set(
-      target ? target.x + (index % 2 ? .55 : -.55) : resident.homePosition?.x ?? -1 + index * 1.1,
-      .2,
-      target ? target.z + .65 : resident.homePosition?.z ?? .4
-    );
+    if (action?.kind === "socialize") {
+      for (const x of [-.18, 0, .18]) {
+        const thought = new THREE.Mesh(
+          new THREE.SphereGeometry(.055, 10, 8),
+          new THREE.MeshBasicMaterial({ color: 0xf0d980 })
+        );
+        thought.position.set(x, 1.82 + Math.abs(x) * .5, 0);
+        person.add(thought);
+      }
+    }
+    const position = residentInteriorPosition(home, resident, index);
+    person.position.set(position.x, .2, position.z);
     homeGroup.add(person);
   });
   if (mode === "home") updateHouseholdSummary(home);
@@ -2991,6 +3087,9 @@ function updateHouseholdSummary(home: Home) {
         ${home.residents.length ? home.residents.map(resident => {
           const wellbeing = world.residentWellbeing(resident);
           const destination = resident.role === "home" ? "Home district" : world.residentDestinationName(resident);
+          const strongestRelationship = world.strongestRelationship(home, resident.id);
+          const strongestPartnerId = strongestRelationship?.residentIds.find(id => id !== resident.id);
+          const strongestPartner = home.residents.find(item => item.id === strongestPartnerId);
           const action = world.activeResidentAction(resident);
           const actionProgress = Math.round(world.residentActionProgress(resident) * 100);
           const status = world.residentStatus(resident);
@@ -3015,6 +3114,9 @@ function updateHouseholdSummary(home: Home) {
                 ${needMeter("Calm", 100 - resident.stress)}
               </div>
               <p>${wellbeing.pressure} · commute burden ${wellbeing.commuteBurden}%</p>
+              ${strongestRelationship && strongestPartner ? `
+                <p class="resident-connection">Closest to ${strongestPartner.name} · ${world.relationshipLabel(strongestRelationship.score)} ${strongestRelationship.score}%</p>
+              ` : ""}
               <button
                 type="button"
                 class="resident-control"
@@ -3025,6 +3127,22 @@ function updateHouseholdSummary(home: Home) {
           `;
         }).join("") : `<div class="resident-empty">Add a resident to start needs, schedules, health, and household wellbeing.</div>`}
       </div>
+      ${home.relationships.length ? `
+        <div class="relationship-list">
+          <div class="relationship-title">Household relationships</div>
+          ${[...home.relationships].sort((a, b) => b.score - a.score).map(relationship => {
+            const first = home.residents.find(resident => resident.id === relationship.residentIds[0]);
+            const second = home.residents.find(resident => resident.id === relationship.residentIds[1]);
+            if (!first || !second) return "";
+            return `
+              <div class="relationship-row">
+                <span><strong>${first.name} + ${second.name}</strong><small>${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"}</small></span>
+                <b>${world.relationshipLabel(relationship.score)} · ${relationship.score}%</b>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      ` : ""}
     `;
     details.classList.add("visible");
     details.querySelectorAll<HTMLButtonElement>("[data-control-resident]").forEach(button => {
@@ -3212,10 +3330,18 @@ function updateExplorerContext() {
     const controlledAction = controlled
       ? world.activeResidentAction(controlled.resident)
       : undefined;
+    const conversationPartner = controlledAction?.partnerResidentId
+      ? interior.home.residents.find(resident => resident.id === controlledAction.partnerResidentId)
+      : undefined;
+    const conversationCopy = controlled && conversationPartner
+      ? ` Talking with ${conversationPartner.name}. Their relationship is ${world.relationshipLabel(
+          world.relationshipScore(interior.home, controlled.resident.id, conversationPartner.id)
+        ).toLowerCase()}.`
+      : "";
     const controlCopy = controlled
       ? ` You are controlling ${controlled.resident.name}. ${controlledAction
           ? `${world.residentActionLabel(controlled.resident)} has ${Math.max(1, Math.ceil(controlledAction.endsAt - world.clock.elapsedMinutes))} minutes remaining.`
-          : "Move near a furnishing and press E to use it."}`
+          : "Move near a household member or furnishing and press E to interact."}${conversationCopy}`
       : " Press C to choose a resident for direct control.";
     const activityCopy = activities.length
       ? ` ${activities.join(" and ")}.`
@@ -3888,7 +4014,7 @@ addEventListener("keydown", event => {
   }
   if (mode === "explore" && explorerInteriorHomeId && event.code === "KeyE" && !event.repeat) {
     event.preventDefault();
-    useNearbyInteriorFurniture();
+    useNearbyInteriorInteraction();
   }
   if (
     mode === "explore"
