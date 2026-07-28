@@ -170,6 +170,31 @@ export type ParkingFacility = {
   revenue: number;
 };
 
+export type AccessibilityTargetKind = "lot" | "park" | "transit";
+
+export type AccessibilityEntrance = {
+  id: string;
+  targetKind: AccessibilityTargetKind;
+  targetId: string;
+  position: Point2;
+  stepFree: boolean;
+  doorWidth: number;
+  tactileGuidance: boolean;
+  automaticDoor: boolean;
+};
+
+export type AccessibilityDestinationKind = "home" | "business" | "park" | "transit" | "parking";
+
+export type AccessibilityDestination = {
+  id: string;
+  kind: AccessibilityDestinationKind;
+  sourceId: string;
+  entranceId: string;
+  name: string;
+  position: Point2;
+  usable: boolean;
+};
+
 export type PlayerVehicle = {
   position: Point2;
   heading: number;
@@ -259,6 +284,7 @@ export type WorldSnapshot = {
   parking?: ParkingFacility[];
   playerVehicle?: PlayerVehicle;
   transitLines?: TransitLine[];
+  accessibilityEntrances?: AccessibilityEntrance[];
 };
 
 export type CityEconomy = {
@@ -296,6 +322,7 @@ export class World {
   parking: ParkingFacility[] = [];
   playerVehicle?: PlayerVehicle;
   transitLines: TransitLine[] = [];
+  accessibilityEntrances: AccessibilityEntrance[] = [];
   lastDailyActivity = { households: 0, businesses: 0 };
   private history: WorldSnapshot[] = [];
 
@@ -305,6 +332,7 @@ export class World {
     this.rebuildLots();
     this.parking = initialParking(this.roads);
     this.transitLines = initialTransitLines(this.roads);
+    this.rebuildAccessibilityEntrances();
   }
 
   snapshot(): WorldSnapshot {
@@ -324,7 +352,8 @@ export class World {
       commuteFlows: this.commuteFlows,
       parking: this.parking,
       playerVehicle: this.playerVehicle,
-      transitLines: this.transitLines
+      transitLines: this.transitLines,
+      accessibilityEntrances: this.accessibilityEntrances
     });
   }
 
@@ -339,6 +368,7 @@ export class World {
     this.roads.push({ id: crypto.randomUUID(), points: clone(points), width, class: roadClass, name: `New ${roadClass}` });
     this.rebuildLots();
     if (!this.transitLines.length) this.transitLines = initialTransitLines(this.roads);
+    this.rebuildAccessibilityEntrances();
   }
 
   zoneLot(lotId: string, zone: Zone) {
@@ -354,6 +384,7 @@ export class World {
     lot.businessMix = createBusinessMix(0, zone, hashString(lot.id));
     lot.anchorBusiness = undefined;
     this.rebuildCommutes();
+    this.rebuildAccessibilityEntrances();
     return true;
   }
 
@@ -404,6 +435,94 @@ export class World {
     this.checkpoint();
     facility.hourlyRate = normalized;
     return true;
+  }
+
+  entranceIsUsable(entrance: AccessibilityEntrance) {
+    return entrance.stepFree && entrance.doorWidth >= .9;
+  }
+
+  entranceHasUniversalAccess(entrance: AccessibilityEntrance) {
+    return this.entranceIsUsable(entrance)
+      && entrance.tactileGuidance
+      && (entrance.targetKind !== "lot" || entrance.automaticDoor);
+  }
+
+  accessibilityUpgradeCost(entrance: AccessibilityEntrance) {
+    return entrance.targetKind === "lot" ? 45_000 : entrance.targetKind === "park" ? 70_000 : 25_000;
+  }
+
+  upgradeAccessibility(entranceId: string) {
+    const entrance = this.accessibilityEntrances.find(item => item.id === entranceId);
+    if (!entrance || this.entranceHasUniversalAccess(entrance)) return false;
+    const cost = this.accessibilityUpgradeCost(entrance);
+    if (this.clock.treasury < cost) return false;
+    this.checkpoint();
+    this.clock.treasury -= cost;
+    entrance.stepFree = true;
+    entrance.doorWidth = Math.max(1.35, entrance.doorWidth);
+    entrance.tactileGuidance = true;
+    entrance.automaticDoor = true;
+    return true;
+  }
+
+  accessibilityDestinations(): AccessibilityDestination[] {
+    const destinations: AccessibilityDestination[] = [];
+    for (const entrance of this.accessibilityEntrances) {
+      if (entrance.targetKind === "lot") {
+        const lot = this.lots.find(item => item.id === entrance.targetId);
+        if (!lot || lot.zone === "unassigned" || this.constructionProgress(lot) < 1) continue;
+        const road = this.roads.find(item => item.id === lot.roadId)?.name ?? "Unnamed road";
+        const address = `${100 + hashString(lot.id) % 900} ${road}`;
+        const home = this.homes.find(item => item.lotId === lot.id);
+        if (lot.households > 0 || home) {
+          destinations.push({
+            id: `access-destination-home-${lot.id}`,
+            kind: "home",
+            sourceId: lot.id,
+            entranceId: entrance.id,
+            name: home?.name && home.name !== "New household" ? home.name : `Homes at ${address}`,
+            position: clone(entrance.position),
+            usable: this.entranceIsUsable(entrance)
+          });
+        }
+        if (lot.businesses > 0) {
+          destinations.push({
+            id: `access-destination-business-${lot.id}`,
+            kind: "business",
+            sourceId: lot.id,
+            entranceId: entrance.id,
+            name: lot.anchorBusiness?.name ?? `Businesses at ${address}`,
+            position: clone(entrance.position),
+            usable: this.entranceIsUsable(entrance)
+          });
+        }
+      } else if (entrance.targetKind === "park") {
+        const park = this.areas.find(item => item.id === entrance.targetId && item.kind === "park");
+        if (!park) continue;
+        destinations.push({
+          id: `access-destination-park-${park.id}`,
+          kind: "park",
+          sourceId: park.id,
+          entranceId: entrance.id,
+          name: park.name,
+          position: clone(entrance.position),
+          usable: this.entranceIsUsable(entrance)
+        });
+      } else {
+        const stop = this.transitLines.flatMap(line => line.stops).find(item => item.id === entrance.targetId);
+        if (!stop) continue;
+        destinations.push({
+          id: `access-destination-transit-${stop.id}`,
+          kind: "transit",
+          sourceId: stop.id,
+          entranceId: entrance.id,
+          name: stop.name,
+          position: clone(entrance.position),
+          usable: this.entranceIsUsable(entrance)
+        });
+      }
+    }
+    return destinations;
   }
 
   parkingDemand(facility: ParkingFacility, minute = this.clock.minute) {
@@ -942,6 +1061,7 @@ export class World {
     this.transitLines = initialTransitLines(this.roads);
     this.lastDailyActivity = { households: 0, businesses: 0 };
     this.rebuildLots();
+    this.rebuildAccessibilityEntrances();
     return true;
   }
 
@@ -1094,6 +1214,7 @@ export class World {
     }));
     this.playerVehicle = snapshot.playerVehicle ? clone(snapshot.playerVehicle) : undefined;
     this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads));
+    this.accessibilityEntrances = clone(snapshot.accessibilityEntrances ?? []);
     for (const incident of this.incidents) {
       if (incident.route?.length || !incident.responderServiceId) continue;
       const responder = this.services.find(service => service.id === incident.responderServiceId);
@@ -1108,6 +1229,7 @@ export class World {
     this.completeUtilityRepairs();
     this.lastDailyActivity = { households: 0, businesses: 0 };
     this.rebuildCommutes();
+    this.rebuildAccessibilityEntrances();
   }
 
   private rebuildLots() {
@@ -1224,6 +1346,59 @@ export class World {
         }
       }
     }
+  }
+
+  private rebuildAccessibilityEntrances() {
+    const existing = new Map(this.accessibilityEntrances.map(entrance => [entrance.id, entrance]));
+    const entrances: AccessibilityEntrance[] = [];
+    for (const lot of this.lots) {
+      if (lot.zone === "unassigned") continue;
+      const id = `access-lot-${lot.id}`;
+      const previous = existing.get(id);
+      const seed = hashString(id);
+      const stepFree = seed % 4 !== 0;
+      entrances.push({
+        id,
+        targetKind: "lot",
+        targetId: lot.id,
+        position: buildingEntrancePosition(lot, this.roads),
+        stepFree: previous?.stepFree ?? stepFree,
+        doorWidth: previous?.doorWidth ?? (stepFree ? 1.05 + seed % 3 * .15 : .72),
+        tactileGuidance: previous?.tactileGuidance ?? seed % 3 !== 0,
+        automaticDoor: previous?.automaticDoor ?? seed % 2 === 0
+      });
+    }
+    for (const park of this.areas.filter(area => area.kind === "park")) {
+      const id = `access-park-${park.id}`;
+      const previous = existing.get(id);
+      entrances.push({
+        id,
+        targetKind: "park",
+        targetId: park.id,
+        position: parkEntrancePosition(park, this.roads),
+        stepFree: previous?.stepFree ?? true,
+        doorWidth: previous?.doorWidth ?? 2.4,
+        tactileGuidance: previous?.tactileGuidance ?? false,
+        automaticDoor: true
+      });
+    }
+    for (const stop of this.transitLines.flatMap(line => line.stops)) {
+      const id = `access-transit-${stop.id}`;
+      const previous = existing.get(id);
+      const seed = hashString(id);
+      const stepFree = seed % 5 !== 0;
+      entrances.push({
+        id,
+        targetKind: "transit",
+        targetId: stop.id,
+        position: clone(stop.position),
+        stepFree: previous?.stepFree ?? stepFree,
+        doorWidth: previous?.doorWidth ?? (stepFree ? 1.8 : .75),
+        tactileGuidance: previous?.tactileGuidance ?? seed % 3 !== 0,
+        automaticDoor: true
+      });
+    }
+    this.accessibilityEntrances = entrances;
   }
 
   private simulateDailyEconomy() {
@@ -1905,6 +2080,71 @@ function initialParking(roads: Road[]): ParkingFacility[] {
       revenue: 0
     }];
   });
+}
+
+function buildingEntrancePosition(lot: Lot, roads: Road[]) {
+  const road = roads.find(item => item.id === lot.roadId);
+  const roadPoint = road ? closestPointOnPolyline(road.points, lot.center) : undefined;
+  if (!roadPoint) return clone(lot.center);
+  const dx = roadPoint.x - lot.center.x;
+  const dz = roadPoint.z - lot.center.z;
+  const length = Math.hypot(dx, dz) || 1;
+  const facadeDistance = lot.width * .31 + .72;
+  return {
+    x: lot.center.x + dx / length * facadeDistance,
+    z: lot.center.z + dz / length * facadeDistance
+  };
+}
+
+function parkEntrancePosition(area: Area, roads: Road[]) {
+  const boundaryPoints = area.points.flatMap((point, index) => {
+    const next = area.points[(index + 1) % area.points.length];
+    return [
+      point,
+      { x: (point.x + next.x) / 2, z: (point.z + next.z) / 2 }
+    ];
+  });
+  const roadPoints = roads.flatMap(road => road.points);
+  if (!boundaryPoints.length || !roadPoints.length) {
+    return area.points[0] ? clone(area.points[0]) : { x: 0, z: 0 };
+  }
+  return boundaryPoints
+    .map(point => ({
+      point,
+      distance: roadPoints.reduce(
+        (closest, roadPoint) => Math.min(closest, distance(point, roadPoint)),
+        Infinity
+      )
+    }))
+    .sort((a, b) => a.distance - b.distance)[0].point;
+}
+
+function closestPointOnPolyline(points: Point2[], target: Point2) {
+  let closest: Point2 | undefined;
+  let closestDistance = Infinity;
+  for (let index = 0; index < points.length - 1; index++) {
+    const start = points[index];
+    const end = points[index + 1];
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const lengthSquared = dx * dx + dz * dz;
+    if (!lengthSquared) continue;
+    const progress = clamp(
+      ((target.x - start.x) * dx + (target.z - start.z) * dz) / lengthSquared,
+      0,
+      1
+    );
+    const point = {
+      x: start.x + dx * progress,
+      z: start.z + dz * progress
+    };
+    const candidateDistance = distance(point, target);
+    if (candidateDistance < closestDistance) {
+      closest = point;
+      closestDistance = candidateDistance;
+    }
+  }
+  return closest;
 }
 
 function pointInPolygon(point: Point2, polygon: Point2[]) {

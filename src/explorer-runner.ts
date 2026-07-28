@@ -6,7 +6,12 @@ import {
   sidewalkSpawn
 } from "./explorer";
 import { detectStreetIntersections, trafficSignalState } from "./streets";
-import { buildAccessibleRoute, nearestParkingFacility } from "./mobility";
+import {
+  assessAccessibleTrip,
+  buildAccessibleRoute,
+  nearestAccessibilityDestination,
+  nearestParkingFacility
+} from "./mobility";
 import {
   trafficSignalAhead,
   trafficSignalApproaches,
@@ -106,6 +111,19 @@ const accessibleEnd = {
 const accessibleRoute = buildAccessibleRoute(crossingPaths, intersections, accessibleStart, accessibleEnd);
 check(Boolean(accessibleRoute), "Accessible sidewalk routing did not connect crossing streets.");
 check(accessibleRoute!.rampedCrossings >= 1, "Accessible route did not use a ramped crossing.");
+const usableTrip = assessAccessibleTrip(crossingPaths, intersections, accessibleStart, {
+  position: accessibleEnd,
+  usable: true
+});
+const blockedEntranceTrip = assessAccessibleTrip(crossingPaths, intersections, accessibleStart, {
+  position: accessibleEnd,
+  usable: false
+});
+check(usableTrip.usable, "Step-free destination did not produce a usable complete trip.");
+check(
+  !blockedEntranceTrip.usable && blockedEntranceTrip.barriers.includes("Entrance is not step-free"),
+  "Entrance barrier was not reported in the complete-trip assessment."
+);
 
 const land: Area = {
   id: "test-land",
@@ -158,6 +176,41 @@ check(
 const mobilityWorld = new World();
 check(mobilityWorld.parking.length === 3, "NYC template did not create its initial curb parking.");
 check(mobilityWorld.transitLines.length === 1, "NYC template did not create its initial transit line.");
+const zonedLots = mobilityWorld.lots.filter(item => item.zone !== "unassigned");
+const lotEntrances = mobilityWorld.accessibilityEntrances.filter(item => item.targetKind === "lot");
+check(lotEntrances.length === zonedLots.length, "Every developed parcel did not receive a street entrance.");
+check(
+  mobilityWorld.accessibilityEntrances.some(item => item.targetKind === "park")
+    && mobilityWorld.accessibilityEntrances.some(item => item.targetKind === "transit"),
+  "Park and transit entrances were not generated."
+);
+const accessibilityDestinations = mobilityWorld.accessibilityDestinations();
+for (const kind of ["home", "business", "park", "transit"] as const) {
+  check(
+    accessibilityDestinations.some(destination => destination.kind === kind),
+    `${kind} accessibility destination was not generated.`
+  );
+}
+const nearestHome = nearestAccessibilityDestination(accessibilityDestinations, { x: 0, z: 0 }, "home");
+check(nearestHome?.destination.kind === "home", "Destination lookup did not respect the requested category.");
+const upgradeEntrance = mobilityWorld.accessibilityEntrances.find(
+  entrance => !mobilityWorld.entranceHasUniversalAccess(entrance)
+);
+check(Boolean(upgradeEntrance), "Accessibility upgrade test could not find an incomplete entrance.");
+const upgradeCost = mobilityWorld.accessibilityUpgradeCost(upgradeEntrance!);
+const treasuryBeforeUpgrade = mobilityWorld.clock.treasury;
+check(mobilityWorld.upgradeAccessibility(upgradeEntrance!.id), "Accessibility entrance could not be upgraded.");
+check(
+  mobilityWorld.entranceHasUniversalAccess(upgradeEntrance!)
+    && mobilityWorld.clock.treasury === treasuryBeforeUpgrade - upgradeCost,
+  "Accessibility upgrade did not install full access or charge the treasury."
+);
+check(
+  Boolean(mobilityWorld.snapshot().accessibilityEntrances?.find(
+    item => item.id === upgradeEntrance!.id
+  )?.tactileGuidance),
+  "Accessibility entrance improvements were not included in the world snapshot."
+);
 const transitLine = mobilityWorld.transitLines[0];
 check(transitLine.route.length >= 8, "Transit line route geometry is incomplete.");
 check(transitLine.stops.length >= 4, "Transit line did not create enough curbside stops.");
@@ -234,6 +287,11 @@ console.log(JSON.stringify({
   ),
   accessibleRouteMeters: Math.round(accessibleRoute!.distance),
   rampedCrossings: accessibleRoute!.rampedCrossings,
+  accessibilityEntrances: mobilityWorld.accessibilityEntrances.length,
+  accessibilityDestinations: accessibilityDestinations.length,
+  upgradedEntrance: upgradeEntrance!.id,
+  completeTripUsable: usableTrip.usable,
+  blockedEntranceReported: blockedEntranceTrip.barriers[0],
   transitLine: transitLine.name,
   transitStops: transitLine.stops.length,
   transitAlight: arrivedTransitStop,

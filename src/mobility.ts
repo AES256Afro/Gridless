@@ -1,11 +1,22 @@
 import type { ExplorerRoadPath } from "./explorer";
 import type { StreetIntersection } from "./streets";
-import type { ParkingFacility, Point2 } from "./world";
+import type {
+  AccessibilityDestination,
+  AccessibilityDestinationKind,
+  ParkingFacility,
+  Point2
+} from "./world";
 
 export type AccessibleRoute = {
   points: Point2[];
   distance: number;
   rampedCrossings: number;
+};
+
+export type AccessibleTripAssessment = {
+  route?: AccessibleRoute;
+  usable: boolean;
+  barriers: string[];
 };
 
 type EdgeKind = "sidewalk" | "corner" | "crossing";
@@ -32,6 +43,37 @@ export function nearestParkingFacility(parking: ParkingFacility[], point: Point2
         + candidate.facility.occupied / Math.max(1, candidate.facility.capacity) * 8;
       return score(a) - score(b);
     })[0]?.facility;
+}
+
+export function nearestAccessibilityDestination(
+  destinations: AccessibilityDestination[],
+  point: Point2,
+  kind?: AccessibilityDestinationKind
+) {
+  return destinations
+    .filter(destination => kind === undefined || destination.kind === kind)
+    .map(destination => ({
+      destination,
+      distance: distance(destination.position, point)
+    }))
+    .sort((a, b) => a.distance - b.distance || a.destination.name.localeCompare(b.destination.name))[0];
+}
+
+export function assessAccessibleTrip(
+  paths: ExplorerRoadPath[],
+  intersections: StreetIntersection[],
+  start: Point2,
+  destination: Pick<AccessibilityDestination, "position" | "usable">
+): AccessibleTripAssessment {
+  const route = buildAccessibleRoute(paths, intersections, start, destination.position);
+  const barriers: string[] = [];
+  if (!route) barriers.push("No connected sidewalk route");
+  if (!destination.usable) barriers.push("Entrance is not step-free");
+  return {
+    route,
+    usable: Boolean(route) && destination.usable,
+    barriers
+  };
 }
 
 export function buildAccessibleRoute(
