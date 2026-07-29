@@ -97,7 +97,8 @@ const VALID_CONVERSATION_INTENTS = new Set([
   "chat",
   "support",
   "joke",
-  "confront"
+  "confront",
+  "apologize"
 ]);
 
 export function createStabilityScenario() {
@@ -492,6 +493,41 @@ function integrityFailures(world: World) {
       }
       if (relationship.lastIntent && relationship.lastChange === undefined) {
         failures.push(`Home ${home.id} recent conversation is missing its relationship outcome.`);
+      }
+      if (
+        !Number.isInteger(relationship.tension ?? 0)
+        || (relationship.tension ?? 0) < 0
+        || (relationship.tension ?? 0) > 100
+      ) {
+        failures.push(`Home ${home.id} has relationship tension outside 0 to 100.`);
+      }
+      if (
+        !Number.isInteger(relationship.conflicts ?? 0)
+        || (relationship.conflicts ?? 0) < 0
+        || !Number.isInteger(relationship.resolvedConflicts ?? 0)
+        || (relationship.resolvedConflicts ?? 0) < 0
+        || (relationship.resolvedConflicts ?? 0) > (relationship.conflicts ?? 0)
+      ) {
+        failures.push(`Home ${home.id} has invalid conflict or reconciliation history.`);
+      }
+      if ((relationship.memories?.length ?? 0) > 8) {
+        failures.push(`Home ${home.id} retained more than eight social memories for one relationship.`);
+      }
+      for (const memory of relationship.memories ?? []) {
+        if (
+          !VALID_CONVERSATION_INTENTS.has(memory.intent)
+          || !residentIds.has(memory.initiatorResidentId)
+          || !Number.isInteger(memory.relationshipChange)
+          || memory.relationshipChange < -14
+          || memory.relationshipChange > 12
+          || !Number.isInteger(memory.tensionChange)
+          || memory.tensionChange < -40
+          || memory.tensionChange > 30
+          || !Number.isFinite(memory.occurredAt)
+          || memory.occurredAt < 0
+        ) {
+          failures.push(`Home ${home.id} has an invalid social memory.`);
+        }
       }
     }
   }

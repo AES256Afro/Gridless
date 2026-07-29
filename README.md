@@ -63,6 +63,8 @@ The current vertical slice proves:
 - Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables, and tending plants through the same need-changing action system used by autonomous residents
 - Proximity conversations between household members with a four-choice intent menu: Friendly Chat, Offer Support, Tell a Joke, or Confront
 - Intent-specific paired actions with distinct social, calm, stress, duration, personality, and relationship effects plus a persistent recent-outcome history
+- Persistent bounded social memories with tension, conflict counts, repaired-conflict counts, initiator history, and contextual Apologize actions
+- Autonomous reconciliation attempts from empathetic residents when household tension remains unresolved
 - Relationship-driven autonomous conversations that choose an available partner from familiarity, personality compatibility, and social need, then reserve both residents for the shared activity
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
