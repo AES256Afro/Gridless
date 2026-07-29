@@ -637,6 +637,13 @@ kbd {
   color: #8e9d94;
   font-size: 8px;
 }
+.relationship-row small em {
+  display: block;
+  margin-top: 2px;
+  color: #c9bee9;
+  font-style: normal;
+  font-weight: 700;
+}
 .relationship-row > b {
   color: #f0d980;
   font-size: 9px;
@@ -819,6 +826,52 @@ kbd {
   color: #91a198;
   font-size: 8px;
   font-weight: 500;
+}
+.interaction-prompt.conversation-menu {
+  bottom: 74px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  width: min(780px, calc(100vw - 32px));
+  max-width: none;
+  padding: 11px;
+  border-color: rgba(181,155,233,.36);
+  background: rgba(12,18,15,.95);
+}
+.interaction-prompt .conversation-heading {
+  flex-basis: 100%;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  color: #f3e5aa;
+  font-size: 12px;
+}
+.interaction-prompt .conversation-choice {
+  display: grid;
+  flex: 1 1 125px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 7px;
+  padding: 7px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+}
+.interaction-prompt .conversation-choice small {
+  grid-column: 2;
+  white-space: nowrap;
+}
+.interaction-prompt .conversation-choice.risky {
+  border-color: rgba(217,108,95,.25);
+}
+.interaction-prompt .conversation-choice.risky kbd {
+  color: #f8e9e7;
+  background: #b65349;
+}
+.interaction-prompt .conversation-cancel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  color: #91a198;
 }
 
 .crosshair {

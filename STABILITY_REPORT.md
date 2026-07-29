@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with attendance and cross-system demand, frequency-controlled transit with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with a persistent personality and a clear enterable interior.
+The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with attendance and cross-system demand, frequency-controlled transit with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with a persistent personality, intent-aware conversations, and a clear enterable interior.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -55,7 +55,7 @@ The run found no:
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
 - missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, or furniture placed outside every room
-- invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, relationship pairs, scores, or conversation counts
+- invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, recent relationship outcomes, relationship pairs, scores, or conversation counts
 - broken home, incident, failure, service, utility, or commute references
 - duplicate or invalid transit lines, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
@@ -68,7 +68,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, transit passenger operations, the saved entrance layer, home-interior checks, personality validation, and relationship integrity checks included, the latest complete deterministic gate took about 55 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, transit passenger operations, the saved entrance layer, home-interior checks, personality and conversation-intent validation, and relationship integrity checks included, the latest complete deterministic gate took about 58 seconds for both decades on the development machine.
 
 ## Boundary
 

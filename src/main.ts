@@ -9,6 +9,7 @@ import {
   type CityEventKind,
   type CityEventTiming,
   type CityService,
+  type ConversationIntent,
   type CurbSchedule,
   type CurbUse,
   type Home,
@@ -358,6 +359,7 @@ let explorerVehicleHeading = 0;
 let explorerInteriorHomeId: string | null = null;
 let explorerExteriorReturn: { position: Point2; yaw: number } | null = null;
 let controlledResidentId: string | null = null;
+let pendingConversationPartnerId: string | null = null;
 let accessibleRouteSummary: {
   destinationId: string;
   destinationKind: AccessibilityDestinationKind;
@@ -1000,6 +1002,7 @@ function toggleHomeInterior() {
     const fallback = entrance?.position ?? activeInterior.lot.center;
     const exit = explorerExteriorReturn?.position ?? findExplorerSpawn(fallback);
     explorerInteriorHomeId = null;
+    pendingConversationPartnerId = null;
     selectedLot = activeInterior.lot;
     world.setControlledResident();
     updateInteriorInteractionPrompt();
@@ -1055,6 +1058,7 @@ function toggleHomeInterior() {
     yaw
   };
   explorerInteriorHomeId = home.id;
+  pendingConversationPartnerId = null;
   selectedLot = lot;
   const selectedResident = controlledResidentId
     ? home.residents.find(resident => resident.id === controlledResidentId)
@@ -2595,6 +2599,7 @@ function residentInteriorPosition(home: Home, resident: Home["residents"][number
 function cycleControlledResident() {
   const interior = currentExplorerInterior();
   if (!interior) return;
+  pendingConversationPartnerId = null;
   const available = interior.home.residents.filter(
     resident => world.residentStatus(resident) === "Home"
   );
@@ -2676,6 +2681,12 @@ function useNearbyInteriorInteraction() {
     updateInteriorInteractionPrompt();
     return;
   }
+  if (pendingConversationPartnerId) {
+    pendingConversationPartnerId = null;
+    updateInteriorInteractionPrompt();
+    notice("Conversation choice closed");
+    return;
+  }
   const nearbyResident = nearbyInteriorResident();
   if (nearbyResident) {
     world.setResidentHomePosition(
@@ -2683,19 +2694,9 @@ function useNearbyInteriorInteraction() {
       nearbyResident.resident.id,
       nearbyResident.position
     );
-    const result = world.commandResidentConversation(
-      controlled.home.id,
-      controlled.resident.id,
-      nearbyResident.resident.id
-    );
-    if (!result.ok) {
-      notice(result.reason);
-      return;
-    }
-    renderHome();
-    updateExplorerContext();
+    pendingConversationPartnerId = nearbyResident.resident.id;
     updateInteriorInteractionPrompt();
-    notice(result.reason);
+    notice(`Choose how ${controlled.resident.name} talks with ${nearbyResident.resident.name}`);
     return;
   }
   const nearbyFurniture = nearbyInteriorFurnitureInteraction();
@@ -2719,17 +2720,66 @@ function useNearbyInteriorInteraction() {
   notice(result.reason);
 }
 
+function startPendingConversation(intent: ConversationIntent) {
+  const controlled = controlledInteriorResident();
+  const partner = controlled?.home.residents.find(
+    resident => resident.id === pendingConversationPartnerId
+  );
+  pendingConversationPartnerId = null;
+  if (!controlled || !partner) {
+    updateInteriorInteractionPrompt();
+    notice("That conversation partner is no longer available");
+    return;
+  }
+  const result = world.commandResidentConversation(
+    controlled.home.id,
+    controlled.resident.id,
+    partner.id,
+    intent
+  );
+  if (!result.ok) {
+    updateInteriorInteractionPrompt();
+    notice(result.reason);
+    return;
+  }
+  renderHome();
+  updateExplorerContext();
+  updateInteriorInteractionPrompt();
+  notice(result.reason);
+}
+
 function updateInteriorInteractionPrompt() {
   const prompt = document.querySelector<HTMLElement>("#interaction-prompt")!;
   const interior = currentExplorerInterior();
   if (!interior) {
-    prompt.classList.remove("visible");
+    prompt.classList.remove("visible", "conversation-menu");
     return;
   }
   prompt.classList.add("visible");
+  prompt.classList.toggle("conversation-menu", Boolean(pendingConversationPartnerId));
   const controlled = controlledInteriorResident();
   if (!controlled) {
     prompt.innerHTML = "<kbd>C</kbd><span>Choose a resident to control</span>";
+    return;
+  }
+  const pendingPartner = pendingConversationPartnerId
+    ? controlled.home.residents.find(resident => resident.id === pendingConversationPartnerId)
+    : undefined;
+  if (pendingPartner) {
+    const compatibility = world.relationshipCompatibility(controlled.resident, pendingPartner);
+    const relationshipScore = world.relationshipScore(
+      controlled.home,
+      controlled.resident.id,
+      pendingPartner.id
+    );
+    prompt.innerHTML = `
+      <span class="conversation-heading">Talk with ${pendingPartner.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}%</small></span>
+      <span class="conversation-choice"><kbd>1</kbd>Friendly Chat<small>Social +20 · Calm +6</small></span>
+      <span class="conversation-choice"><kbd>2</kbd>Offer Support<small>Social +12 · Strong calm</small></span>
+      <span class="conversation-choice"><kbd>3</kbd>Tell a Joke<small>Social +16 · Calm +10</small></span>
+      <span class="conversation-choice risky"><kbd>4</kbd>Confront<small>Relationship risk · Stress</small></span>
+      <span class="conversation-cancel"><kbd>Q</kbd>Cancel</span>
+    `;
     return;
   }
   const activeAction = world.activeResidentAction(controlled.resident);
@@ -2739,7 +2789,7 @@ function updateInteriorInteractionPrompt() {
   if (activeAction?.kind === "socialize" && activePartner) {
     const compatibility = world.relationshipCompatibility(controlled.resident, activePartner);
     prompt.innerHTML =
-      `<span>Talking with ${activePartner.name}<small>${world.compatibilityLabel(compatibility)} · ${Math.max(1, Math.ceil(activeAction.endsAt - world.clock.elapsedMinutes))}m remaining</small></span><kbd>WASD</kbd><span>Walk away to end</span>`;
+      `<span>${world.conversationIntentLabel(activeAction.conversationIntent ?? "chat")} with ${activePartner.name}<small>${world.compatibilityLabel(compatibility)} · ${Math.max(1, Math.ceil(activeAction.endsAt - world.clock.elapsedMinutes))}m remaining</small></span><kbd>WASD</kbd><span>Walk away to end</span>`;
     return;
   }
   const nearbyResident = nearbyInteriorResident();
@@ -2863,10 +2913,16 @@ function renderHome() {
       person.add(actionLabel);
     }
     if (action?.kind === "socialize") {
+      const conversationColor = {
+        chat: 0xf0d980,
+        support: 0x79c995,
+        joke: 0xb59be9,
+        confront: 0xd96c5f
+      }[action.conversationIntent ?? "chat"];
       for (const x of [-.18, 0, .18]) {
         const thought = new THREE.Mesh(
           new THREE.SphereGeometry(.055, 10, 8),
-          new THREE.MeshBasicMaterial({ color: 0xf0d980 })
+          new THREE.MeshBasicMaterial({ color: conversationColor })
         );
         thought.position.set(x, 1.82 + Math.abs(x) * .5, 0);
         person.add(thought);
@@ -3157,9 +3213,12 @@ function updateHouseholdSummary(home: Home) {
             const second = home.residents.find(resident => resident.id === relationship.residentIds[1]);
             if (!first || !second) return "";
             const compatibility = world.relationshipCompatibility(first, second);
+            const recentOutcome = relationship.lastIntent && relationship.lastChange !== undefined
+              ? `${world.conversationIntentLabel(relationship.lastIntent)} · ${relationship.lastChange > 0 ? "+" : ""}${relationship.lastChange} ${world.conversationOutcomeLabel(relationship.lastChange)}`
+              : "";
             return `
               <div class="relationship-row">
-                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"}</small></span>
+                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"}${recentOutcome ? `<em>Last: ${recentOutcome}</em>` : ""}</small></span>
                 <b>${world.relationshipLabel(relationship.score)} · ${relationship.score}%</b>
               </div>
             `;
@@ -3224,6 +3283,7 @@ function setMode(next: Mode) {
     transitRide = null;
     explorerInteriorHomeId = null;
     explorerExteriorReturn = null;
+    pendingConversationPartnerId = null;
     world.setControlledResident();
   }
   mode = next;
@@ -3357,7 +3417,7 @@ function updateExplorerContext() {
       ? interior.home.residents.find(resident => resident.id === controlledAction.partnerResidentId)
       : undefined;
     const conversationCopy = controlled && conversationPartner
-      ? ` Talking with ${conversationPartner.name}. Their personality fit is ${world.compatibilityLabel(
+      ? ` ${world.conversationIntentLabel(controlledAction?.conversationIntent ?? "chat")} with ${conversationPartner.name}. Their personality fit is ${world.compatibilityLabel(
           world.relationshipCompatibility(controlled.resident, conversationPartner)
         ).toLowerCase()}, and their relationship is ${world.relationshipLabel(
           world.relationshipScore(interior.home, controlled.resident.id, conversationPartner.id)
@@ -4033,6 +4093,34 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
+  if (
+    mode === "explore"
+    && explorerInteriorHomeId
+    && pendingConversationPartnerId
+    && ["Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code)
+    && !event.repeat
+  ) {
+    event.preventDefault();
+    const intent = {
+      Digit1: "chat",
+      Digit2: "support",
+      Digit3: "joke",
+      Digit4: "confront"
+    }[event.code] as ConversationIntent;
+    startPendingConversation(intent);
+  }
+  if (
+    mode === "explore"
+    && explorerInteriorHomeId
+    && pendingConversationPartnerId
+    && event.code === "KeyQ"
+    && !event.repeat
+  ) {
+    event.preventDefault();
+    pendingConversationPartnerId = null;
+    updateInteriorInteractionPrompt();
+    notice("Conversation choice canceled");
+  }
   if (mode === "explore" && explorerInteriorHomeId && event.code === "KeyC" && !event.repeat) {
     event.preventDefault();
     cycleControlledResident();
@@ -4048,6 +4136,10 @@ addEventListener("keydown", event => {
     && ["KeyW", "KeyA", "KeyS", "KeyD"].includes(event.code)
     && !event.repeat
   ) {
+    if (pendingConversationPartnerId) {
+      pendingConversationPartnerId = null;
+      updateInteriorInteractionPrompt();
+    }
     const interior = currentExplorerInterior();
     if (interior && world.cancelResidentAction(interior.home.id, controlledResidentId)) {
       renderHome();

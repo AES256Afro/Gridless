@@ -44,6 +44,7 @@ import {
   World,
   type AccessibilityEntrance,
   type Area,
+  type ConversationIntent,
   type Home,
   type Lot,
   type ParkingFacility,
@@ -278,6 +279,7 @@ directControlHome.relationships = [{
   score: 55,
   conversations: 0
 }];
+const directControlBaseline = structuredClone(directControlHome);
 directControlWorld.homes = [directControlHome];
 check(
   furnitureInteraction("table").action === "eat",
@@ -323,13 +325,15 @@ const directedRelationshipGain = directControlWorld.conversationRelationshipGain
 const directedConversation = directControlWorld.commandResidentConversation(
   directControlHome.id,
   "controlled-resident",
-  "conversation-partner"
+  "conversation-partner",
+  "chat"
 );
 check(directedConversation.ok, "Nearby residents could not start a directed conversation.");
 check(
   directControlHome.residents.every(resident =>
     resident.currentAction?.kind === "socialize"
       && resident.currentAction?.directed
+      && resident.currentAction?.conversationIntent === "chat"
       && Boolean(resident.currentAction?.partnerResidentId)
   ),
   "Conversation did not create paired resident actions."
@@ -354,9 +358,76 @@ check(
   "Conversation did not apply social need effects to both residents."
 );
 check(
+  completedRelationship?.lastIntent === "chat"
+    && completedRelationship.lastChange === directedRelationshipGain,
+  "Completed conversation did not persist its intent and relationship outcome."
+);
+check(
   directControlWorld.clock.minute === 11 * 60 + 45
     && directControlWorld.residentStatus(directControlHome.residents[0]) === "Out in city",
   "Directed conversation did not finish cleanly across a normal schedule boundary."
+);
+
+function runConversationIntentProbe(intent: ConversationIntent) {
+  const world = new World();
+  const home = structuredClone(directControlBaseline);
+  world.homes = [home];
+  world.clock.minute = 20 * 60;
+  world.setControlledResident("controlled-resident");
+  const first = home.residents[0];
+  const second = home.residents[1];
+  const expectedChange = world.conversationRelationshipChange(first, second, intent, true);
+  const started = world.commandResidentConversation(
+    home.id,
+    first.id,
+    second.id,
+    intent
+  );
+  check(started.ok, `${world.conversationIntentLabel(intent)} could not start.`);
+  check(
+    home.residents.every(resident => resident.currentAction?.conversationIntent === intent),
+    `${world.conversationIntentLabel(intent)} was not attached to both paired actions.`
+  );
+  world.advanceMinutes({ chat: 60, support: 55, joke: 40, confront: 35 }[intent], 0);
+  return {
+    first,
+    second,
+    relationship: world.relationshipBetween(home, first.id, second.id),
+    expectedChange
+  };
+}
+
+const supportProbe = runConversationIntentProbe("support");
+check(
+  supportProbe.first.social === 62
+    && supportProbe.first.stress === 37
+    && supportProbe.second.social === 52
+    && supportProbe.second.stress === 22
+    && supportProbe.relationship?.lastIntent === "support"
+    && supportProbe.relationship.lastChange === supportProbe.expectedChange,
+  "Offer Support did not apply its distinct social, calm, and relationship effects."
+);
+const jokeProbe = runConversationIntentProbe("joke");
+check(
+  jokeProbe.first.social === 66
+    && jokeProbe.first.stress === 35
+    && jokeProbe.second.social === 56
+    && jokeProbe.second.stress === 28
+    && jokeProbe.relationship?.lastIntent === "joke"
+    && jokeProbe.relationship.lastChange === jokeProbe.expectedChange,
+  "Tell a Joke did not apply its distinct social, calm, and relationship effects."
+);
+const confrontProbe = runConversationIntentProbe("confront");
+check(
+  confrontProbe.first.social === 44
+    && confrontProbe.first.stress === 54
+    && confrontProbe.second.social === 34
+    && confrontProbe.second.stress === 52
+    && confrontProbe.relationship?.score === 55 + confrontProbe.expectedChange
+    && confrontProbe.relationship.lastIntent === "confront"
+    && confrontProbe.relationship.lastChange === confrontProbe.expectedChange
+    && confrontProbe.expectedChange < 0,
+  "Confront did not create its intended relationship loss and stress tradeoff."
 );
 check(
   directControlWorld.snapshot().homes[0].relationships[0].score === 55 + directedRelationshipGain,
@@ -420,6 +491,7 @@ autonomousSocialWorld.advanceMinutes(1, 0);
 check(
   autonomousSocialHome.residents[0].currentAction?.kind === "socialize"
     && autonomousSocialHome.residents[0].currentAction?.partnerResidentId === "compatible-partner"
+    && autonomousSocialHome.residents[0].currentAction?.conversationIntent === "chat"
     && autonomousSocialHome.residents[1].currentAction?.partnerResidentId === "autonomous-outgoing",
   "Outgoing resident did not reserve the more compatible autonomous conversation partner."
 );
@@ -807,6 +879,10 @@ console.log(JSON.stringify({
   relationshipScore: completedRelationship?.score,
   directedRelationshipGain,
   completedConversations: completedRelationship?.conversations,
+  supportRelationshipChange: supportProbe.expectedChange,
+  jokeRelationshipChange: jokeProbe.expectedChange,
+  confrontRelationshipChange: confrontProbe.expectedChange,
+  confrontStress: confrontProbe.first.stress,
   autonomousConversationPartner: autonomousSocialHome.residents[0].lastActionKind,
   compatibleRelationshipScore: autonomousRelationship?.score,
   autonomousRelationshipGain
