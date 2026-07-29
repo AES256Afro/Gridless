@@ -525,6 +525,28 @@ kbd {
   white-space: nowrap;
 }
 .resident-heading b { color: #d9e7dc; font-size: 10px; white-space: nowrap; }
+.resident-traits {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+.resident-traits span {
+  padding: 3px 6px;
+  border: 1px solid rgba(156,142,208,.28);
+  border-radius: 999px;
+  color: #c9bee9;
+  background: rgba(156,142,208,.1);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+.resident-traits small {
+  flex-basis: 100%;
+  color: #899a90;
+  font-size: 8px;
+}
 .resident-action-row {
   display: grid;
   grid-template-columns: auto 1fr auto;

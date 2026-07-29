@@ -76,6 +76,14 @@ export type LotActivity = {
 
 export type ResidentRole = "office" | "service" | "student" | "home";
 
+export type ResidentTrait =
+  | "outgoing"
+  | "homebody"
+  | "active"
+  | "creative"
+  | "organized"
+  | "empathetic";
+
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "socialize" | "tend-plants" | "idle";
 
 export type ResidentAction = {
@@ -99,6 +107,7 @@ export type Resident = {
   comfort: number;
   health: number;
   stress: number;
+  traits: ResidentTrait[];
   currentAction?: ResidentAction;
   lastActionKind?: ResidentActionKind;
   lastActionAt?: number;
@@ -440,6 +449,24 @@ export type CityEconomy = {
 };
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const RESIDENT_TRAITS: ResidentTrait[] = [
+  "outgoing",
+  "homebody",
+  "active",
+  "creative",
+  "organized",
+  "empathetic"
+];
+
+const RESIDENT_TRAIT_DETAILS: Record<ResidentTrait, { label: string; description: string }> = {
+  outgoing: { label: "Outgoing", description: "seeks company" },
+  homebody: { label: "Homebody", description: "recharges at home" },
+  active: { label: "Active", description: "prefers hands-on activity" },
+  creative: { label: "Creative", description: "chooses expressive downtime" },
+  organized: { label: "Organized", description: "likes reliable routines" },
+  empathetic: { label: "Empathetic", description: "builds bonds easily" }
+};
 
 export class World {
   templateId: WorldTemplate["id"] = "nyc";
@@ -1373,6 +1400,44 @@ export class World {
             : "Conflict";
   }
 
+  residentTraitLabel(trait: ResidentTrait) {
+    return RESIDENT_TRAIT_DETAILS[trait].label;
+  }
+
+  residentPersonalitySummary(resident: Resident) {
+    return resident.traits
+      .map(trait => RESIDENT_TRAIT_DETAILS[trait].description)
+      .join(" and ");
+  }
+
+  relationshipCompatibility(firstResident: Resident, secondResident: Resident) {
+    return residentCompatibility(firstResident, secondResident);
+  }
+
+  compatibilityLabel(score: number) {
+    return score >= 78
+      ? "Natural match"
+      : score >= 62
+        ? "Good fit"
+        : score >= 46
+          ? "Mixed fit"
+          : "Friction";
+  }
+
+  conversationRelationshipGain(
+    firstResident: Resident,
+    secondResident: Resident,
+    directed: boolean
+  ) {
+    const compatibility = this.relationshipCompatibility(firstResident, secondResident);
+    const base = directed ? 6 : 3;
+    return Math.round(clamp(
+      base + (compatibility - 50) / 12,
+      directed ? 4 : 1,
+      directed ? 11 : 8
+    ));
+  }
+
   strongestRelationship(home: Home, residentId: string) {
     return home.relationships
       .filter(relationship => relationship.residentIds.includes(residentId))
@@ -1888,6 +1953,7 @@ export class World {
       comfort: 74,
       health: 84,
       stress: 24,
+      traits: initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
       completedActions: 0
     };
     for (const existing of home.residents) {
@@ -1936,6 +2002,10 @@ export class World {
         comfort: clamp(resident.comfort ?? 74, 0, 100),
         health: clamp(resident.health ?? 84, 0, 100),
         stress: clamp(resident.stress ?? 24, 0, 100),
+        traits: normalizeResidentTraits(
+          resident.traits,
+          `${home.id}-${resident.id}-${resident.name}-${index}`
+        ),
         completedActions: resident.completedActions ?? 0
       }));
       return {
@@ -2420,11 +2490,26 @@ export class World {
         }
         if (this.residentStatus(resident) !== "Home") {
           resident.currentAction = undefined;
-          continue;
         }
+      }
+      for (const resident of home.residents) {
         if (this.activeResidentAction(resident)) continue;
+        if (this.residentStatus(resident) !== "Home") continue;
         if (resident.id === this.controlledResidentId) continue;
-        resident.currentAction = this.chooseResidentAction(home, resident);
+        const chosenAction = this.chooseResidentAction(home, resident);
+        resident.currentAction = chosenAction;
+        if (chosenAction.kind === "socialize" && chosenAction.partnerResidentId) {
+          const partner = home.residents.find(item => item.id === chosenAction.partnerResidentId);
+          if (partner && !partner.currentAction && partner.id !== this.controlledResidentId) {
+            partner.currentAction = {
+              kind: "socialize",
+              startedAt: chosenAction.startedAt,
+              endsAt: chosenAction.endsAt,
+              targetFurnitureId: chosenAction.targetFurnitureId,
+              partnerResidentId: resident.id
+            };
+          }
+        }
       }
     }
   }
@@ -2433,9 +2518,22 @@ export class World {
     const now = this.clock.elapsedMinutes;
     const hour = this.clock.minute / 60;
     const sleepingHours = hour < 7 || hour >= 22;
-    const availablePartner = home.residents.find(candidate =>
-      candidate.id !== resident.id && this.residentStatus(candidate) === "Home"
-    );
+    const availablePartner = home.residents
+      .filter(candidate =>
+        candidate.id !== resident.id
+        && candidate.id !== this.controlledResidentId
+        && this.residentStatus(candidate) === "Home"
+        && !candidate.currentAction
+      )
+      .map(candidate => ({
+        resident: candidate,
+        score:
+          this.relationshipScore(home, resident.id, candidate.id) * .55
+          + this.relationshipCompatibility(resident, candidate) * .45
+          + (100 - candidate.social) * .12
+          + hashString(`${resident.id}-${candidate.id}-${Math.floor(now / 60)}`) % 8
+      }))
+      .sort((first, second) => second.score - first.score)[0]?.resident;
     const furniture = {
       bed: home.furniture.find(item => item.kind === "bed"),
       sofa: home.furniture.find(item => item.kind === "sofa"),
@@ -2480,6 +2578,7 @@ export class World {
     ];
     for (const candidate of candidates) {
       candidate.score += hashString(`${resident.id}-${candidate.kind}-${Math.floor(now / 60)}`) % 9;
+      candidate.score += residentActionTraitBonus(resident, candidate.kind);
       if (
         resident.lastActionKind === candidate.kind
         && resident.lastActionAt !== undefined
@@ -2522,8 +2621,13 @@ export class World {
       resident.stress = clamp(resident.stress - 6, 0, 100);
       if (action.relationshipCredit && action.partnerResidentId) {
         const relationship = this.relationshipBetween(home, resident.id, action.partnerResidentId);
-        if (relationship) {
-          relationship.score = clamp(relationship.score + (action.directed ? 8 : 5), 0, 100);
+        const partner = home.residents.find(item => item.id === action.partnerResidentId);
+        if (relationship && partner) {
+          relationship.score = clamp(
+            relationship.score + this.conversationRelationshipGain(resident, partner, Boolean(action.directed)),
+            0,
+            100
+          );
           relationship.conversations += 1;
           relationship.lastInteractionAt = action.endsAt;
         }
@@ -2683,6 +2787,82 @@ function relationshipKey(firstResidentId: string, secondResidentId: string) {
 
 function initialRelationshipScore(firstResidentId: string, secondResidentId: string) {
   return 45 + hashString(relationshipKey(firstResidentId, secondResidentId)) % 16;
+}
+
+function initialResidentTraits(seed: string): ResidentTrait[] {
+  const firstIndex = hashString(`${seed}-primary`) % RESIDENT_TRAITS.length;
+  let secondIndex = hashString(`${seed}-secondary`) % RESIDENT_TRAITS.length;
+  if (secondIndex === firstIndex) secondIndex = (secondIndex + 1) % RESIDENT_TRAITS.length;
+  return [RESIDENT_TRAITS[firstIndex], RESIDENT_TRAITS[secondIndex]];
+}
+
+function normalizeResidentTraits(traits: ResidentTrait[] | undefined, seed: string) {
+  const normalized = [...new Set((traits ?? []).filter(
+    (trait): trait is ResidentTrait => RESIDENT_TRAITS.includes(trait)
+  ))].slice(0, 2);
+  for (const fallback of initialResidentTraits(seed)) {
+    if (normalized.length >= 2) break;
+    if (!normalized.includes(fallback)) normalized.push(fallback);
+  }
+  if (normalized.length < 2) {
+    normalized.push(RESIDENT_TRAITS.find(trait => !normalized.includes(trait)) ?? "empathetic");
+  }
+  return normalized;
+}
+
+function residentCompatibility(firstResident: Resident, secondResident: Resident) {
+  const firstTraits = new Set(firstResident.traits);
+  const secondTraits = new Set(secondResident.traits);
+  const sharedTraits = firstResident.traits.filter(trait => secondTraits.has(trait)).length;
+  let score = 48 + sharedTraits * 18;
+  if (firstTraits.has("empathetic")) score += 4;
+  if (secondTraits.has("empathetic")) score += 4;
+  if (firstTraits.has("outgoing") && secondTraits.has("outgoing")) score += 6;
+  if (firstTraits.has("homebody") && secondTraits.has("homebody")) score += 6;
+  if (
+    (firstTraits.has("active") && secondTraits.has("organized"))
+    || (firstTraits.has("organized") && secondTraits.has("active"))
+  ) score += 5;
+  if (
+    (firstTraits.has("creative") && secondTraits.has("empathetic"))
+    || (firstTraits.has("empathetic") && secondTraits.has("creative"))
+  ) score += 6;
+  if (
+    (firstTraits.has("outgoing") && secondTraits.has("homebody"))
+    || (firstTraits.has("homebody") && secondTraits.has("outgoing"))
+  ) score -= 10;
+  if (
+    (firstTraits.has("active") && secondTraits.has("homebody"))
+    || (firstTraits.has("homebody") && secondTraits.has("active"))
+  ) score -= 4;
+  return Math.round(clamp(score, 25, 95));
+}
+
+function residentActionTraitBonus(resident: Resident, action: ResidentActionKind) {
+  let bonus = 0;
+  for (const trait of resident.traits) {
+    if (trait === "outgoing") {
+      if (action === "socialize") bonus += 26;
+      if (action === "idle") bonus -= 4;
+    } else if (trait === "homebody") {
+      if (action === "relax") bonus += 18;
+      if (action === "sleep") bonus += 8;
+      if (action === "socialize") bonus -= 3;
+    } else if (trait === "active") {
+      if (action === "tend-plants") bonus += 18;
+      if (action === "idle") bonus -= 7;
+      if (action === "relax") bonus -= 2;
+    } else if (trait === "creative") {
+      if (action === "relax" || action === "tend-plants") bonus += 10;
+    } else if (trait === "organized") {
+      if (action === "eat") bonus += 12;
+      if (action === "tend-plants") bonus += 8;
+      if (action === "sleep") bonus += 4;
+    } else if (trait === "empathetic" && action === "socialize") {
+      bonus += 18;
+    }
+  }
+  return bonus;
 }
 
 function normalizeRelationships(

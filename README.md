@@ -37,6 +37,7 @@ The current vertical slice proves:
 - Time-aware household routines, business operating hours, municipal shifts, responder availability, and occupied-building night lighting
 - Persistent street-graph commutes with named resident workplaces, representative walking and driving groups, visible 3D travelers, congestion, and traffic-sensitive staffing and emergency response
 - Persistent resident energy, social, comfort, health, and stress needs shaped by schedules, home design, utilities, neighborhood services, incidents, and commute burden
+- Persistent two-trait resident personalities with visible social style, compatibility, trait-weighted activity choices, and save migration for existing households
 - Household and city wellbeing visible across planning, street exploration, and Home Simulator, with local wellbeing feeding back into daily growth
 - Degrading utility infrastructure with deterministic local outages, street-routed repair crews, traffic-sensitive restoration, affected-parcel consequences, and persistent recovery state
 - Persistent autonomous household actions chosen from resident needs, schedules, available furniture, and who is home, with visible 3D behavior, progress, completed-action history, and direct need effects
@@ -61,6 +62,7 @@ The current vertical slice proves:
 - Direct household control from resident cards or the interior `C` control, with persistent in-home positions and observer switching
 - Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables, and tending plants through the same need-changing action system used by autonomous residents
 - Proximity conversations between household members, with paired actions, shared social effects, persistent relationship scores, completed-conversation history, and visible relationship status
+- Relationship-driven autonomous conversations that choose an available partner from familiarity, personality compatibility, and social need, then reserve both residents for the shared activity
 - A live interaction prompt with action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots

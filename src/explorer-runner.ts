@@ -257,6 +257,7 @@ directControlHome.residents = [{
   comfort: 50,
   health: 70,
   stress: 45,
+  traits: ["outgoing", "empathetic"],
   completedActions: 0
 }, {
   id: "conversation-partner",
@@ -268,6 +269,7 @@ directControlHome.residents = [{
   comfort: 65,
   health: 76,
   stress: 38,
+  traits: ["creative", "empathetic"],
   completedActions: 0,
   homePosition: { x: -.5, z: 0 }
 }];
@@ -313,6 +315,11 @@ check(
   "Directed meal did not complete through the shared resident need system."
 );
 directControlWorld.clock.minute = 10 * 60 + 45;
+const directedRelationshipGain = directControlWorld.conversationRelationshipGain(
+  directControlHome.residents[0],
+  directControlHome.residents[1],
+  true
+);
 const directedConversation = directControlWorld.commandResidentConversation(
   directControlHome.id,
   "controlled-resident",
@@ -334,7 +341,7 @@ const completedRelationship = directControlWorld.relationshipBetween(
   "conversation-partner"
 );
 check(
-  completedRelationship?.score === 63
+  completedRelationship?.score === 55 + directedRelationshipGain
     && completedRelationship.conversations === 1
     && completedRelationship.lastInteractionAt === directControlWorld.clock.elapsedMinutes,
   "Completed conversation did not improve and persist the household relationship."
@@ -352,8 +359,102 @@ check(
   "Directed conversation did not finish cleanly across a normal schedule boundary."
 );
 check(
-  directControlWorld.snapshot().homes[0].relationships[0].score === 63,
+  directControlWorld.snapshot().homes[0].relationships[0].score === 55 + directedRelationshipGain,
   "Household relationship was not included in the world snapshot."
+);
+const autonomousSocialWorld = new World();
+const autonomousSocialHome = structuredClone(interiorHome);
+autonomousSocialHome.residents = [{
+  id: "autonomous-outgoing",
+  name: "Maya",
+  age: "adult",
+  role: "home",
+  energy: 88,
+  social: 8,
+  comfort: 84,
+  health: 86,
+  stress: 18,
+  traits: ["outgoing", "empathetic"],
+  completedActions: 0
+}, {
+  id: "compatible-partner",
+  name: "Sofia",
+  age: "adult",
+  role: "home",
+  energy: 84,
+  social: 56,
+  comfort: 80,
+  health: 82,
+  stress: 20,
+  traits: ["outgoing", "empathetic"],
+  completedActions: 0
+}, {
+  id: "mismatched-partner",
+  name: "Theo",
+  age: "adult",
+  role: "home",
+  energy: 84,
+  social: 56,
+  comfort: 80,
+  health: 82,
+  stress: 20,
+  traits: ["homebody", "organized"],
+  completedActions: 0
+}];
+autonomousSocialHome.relationships = [{
+  residentIds: ["autonomous-outgoing", "compatible-partner"],
+  score: 72,
+  conversations: 0
+}, {
+  residentIds: ["autonomous-outgoing", "mismatched-partner"],
+  score: 72,
+  conversations: 0
+}, {
+  residentIds: ["compatible-partner", "mismatched-partner"],
+  score: 52,
+  conversations: 0
+}];
+autonomousSocialWorld.homes = [autonomousSocialHome];
+autonomousSocialWorld.clock.minute = 20 * 60;
+autonomousSocialWorld.advanceMinutes(1, 0);
+check(
+  autonomousSocialHome.residents[0].currentAction?.kind === "socialize"
+    && autonomousSocialHome.residents[0].currentAction?.partnerResidentId === "compatible-partner"
+    && autonomousSocialHome.residents[1].currentAction?.partnerResidentId === "autonomous-outgoing",
+  "Outgoing resident did not reserve the more compatible autonomous conversation partner."
+);
+check(
+  autonomousSocialWorld.relationshipCompatibility(
+    autonomousSocialHome.residents[0],
+    autonomousSocialHome.residents[1]
+  ) > autonomousSocialWorld.relationshipCompatibility(
+    autonomousSocialHome.residents[0],
+    autonomousSocialHome.residents[2]
+  ),
+  "Personality compatibility did not distinguish a natural match from a mismatched pair."
+);
+const autonomousRelationshipGain = autonomousSocialWorld.conversationRelationshipGain(
+  autonomousSocialHome.residents[0],
+  autonomousSocialHome.residents[1],
+  false
+);
+autonomousSocialWorld.setControlledResident("autonomous-outgoing");
+autonomousSocialWorld.advanceMinutes(60, 0);
+const autonomousRelationship = autonomousSocialWorld.relationshipBetween(
+  autonomousSocialHome,
+  "autonomous-outgoing",
+  "compatible-partner"
+);
+check(
+  autonomousRelationship?.score === 72 + autonomousRelationshipGain
+    && autonomousRelationship.conversations === 1
+    && autonomousSocialHome.residents[0].lastActionKind === "socialize"
+    && autonomousSocialHome.residents[1].lastActionKind === "socialize",
+  "Paired autonomous conversation did not complete through the relationship system."
+);
+check(
+  autonomousSocialWorld.snapshot().homes[0].residents[0].traits.join(",") === "outgoing,empathetic",
+  "Resident personality traits were not included in the world snapshot."
 );
 const curbParking: ParkingFacility = {
   id: "test-curb",
@@ -704,7 +805,11 @@ console.log(JSON.stringify({
   controlledResidentEnergy: directControlHome.residents[0].energy,
   conversationPartnerSocial: directControlHome.residents[1].social,
   relationshipScore: completedRelationship?.score,
-  completedConversations: completedRelationship?.conversations
+  directedRelationshipGain,
+  completedConversations: completedRelationship?.conversations,
+  autonomousConversationPartner: autonomousSocialHome.residents[0].lastActionKind,
+  compatibleRelationshipScore: autonomousRelationship?.score,
+  autonomousRelationshipGain
 }, null, 2));
 
 function check(condition: boolean, message: string) {
