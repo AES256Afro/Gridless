@@ -218,6 +218,7 @@ app.innerHTML = `
         <option value="tomorrow">Tomorrow</option>
       </select>
       <button data-city-tool="transit">Transit operations</button>
+      <select id="transit-line" aria-label="Selected transit line"></select>
       <select id="transit-frequency" aria-label="Transit service frequency">
         <option value="18">Basic service · 18m</option>
         <option value="10" selected>Frequent service · 10m</option>
@@ -228,6 +229,16 @@ app.innerHTML = `
         <option value="2.75" selected>Standard fare · $2.75</option>
         <option value="4">Premium fare · $4</option>
       </select>
+      <select id="transit-stops" aria-label="Transit stop count">
+        <option value="4">4 stops</option>
+        <option value="5">5 stops</option>
+        <option value="6">6 stops</option>
+        <option value="7">7 stops</option>
+        <option value="8">8 stops</option>
+        <option value="9">9 stops</option>
+        <option value="10">10 stops</option>
+      </select>
+      <button id="transit-remove" type="button">Remove line</button>
       <button data-city-tool="access">Improve access</button>
     </div>
     <div class="home-tools" aria-label="Home building tools">
@@ -333,6 +344,7 @@ const keys = new Set<string>();
 let mode: Mode = "city";
 let draft: Point2[] = [];
 let selectedLot: Lot | null = null;
+let selectedTransitLineId: string | null = world.transitLines[0]?.id ?? null;
 let cityTool: CityTool = "road";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
@@ -669,12 +681,17 @@ function renderTransitInfrastructure() {
   transitGroup.clear();
   for (const line of world.transitLines) {
     if (line.route.length < 2) continue;
+    const selected = line.id === selectedTransitLineId;
     const routeGeometry = new THREE.BufferGeometry().setFromPoints(
       line.route.map(point => new THREE.Vector3(point.x, .34, point.z))
     );
     const route = new THREE.Line(
       routeGeometry,
-      new THREE.LineBasicMaterial({ color: line.color, transparent: true, opacity: .48 })
+      new THREE.LineBasicMaterial({
+        color: line.color,
+        transparent: true,
+        opacity: mode === "city" && cityTool === "transit" ? selected ? .92 : .3 : .48
+      })
     );
     transitGroup.add(route);
     for (const stop of line.stops) {
@@ -702,7 +719,7 @@ function renderTransitInfrastructure() {
       platform.rotation.x = -Math.PI / 2;
       platform.position.y = .05;
       marker.add(pole, sign, platform);
-      if (mode === "city" && cityTool === "transit") {
+      if (mode === "city" && cityTool === "transit" && selected) {
         const label = makeLabel(`${stop.name} · ${stop.waiting} waiting`);
         label.position.y = 5.1;
         label.scale.set(32, 5.5, 1);
@@ -715,7 +732,7 @@ function renderTransitInfrastructure() {
       const midpoint = line.route[Math.floor(line.route.length / 2)];
       const projectedNet = world.transitMonthlyProjection(line) - world.transitMonthlyCost(line);
       const label = makeLabel(
-        `${line.name} · every ${line.headwayMinutes}m · ${transitFleetSize(line)} buses · ${transitFarePolicyLabel(line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(line))} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
+        `${selected ? "SELECTED · " : ""}${line.name} · every ${line.headwayMinutes}m · ${line.stops.length} stops · ${transitFleetSize(line)} buses · ${transitFarePolicyLabel(line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(line))} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
       );
       label.position.set(midpoint.x, 10, midpoint.z);
       label.scale.set(110, 9, 1);
@@ -844,12 +861,14 @@ function updateTransitVehicle(dt: number) {
   transitVehicleGroup.visible = Boolean(pose);
   if (pose) placeTransitVehicle(transitVehicleGroup, pose);
 
-  const scheduledFleet = scheduledTransitFleet(
-    line,
-    world.clock.elapsedMinutes + simulationAccumulator,
-    2.5
-  );
-  const backgroundFleet = activeTransitVehicle ? scheduledFleet.slice(1) : scheduledFleet;
+  const backgroundFleet = world.transitLines.flatMap(transitLine => {
+    const fleet = scheduledTransitFleet(
+      transitLine,
+      world.clock.elapsedMinutes + simulationAccumulator,
+      2.5
+    );
+    return activeTransitVehicle?.lineId === transitLine.id ? fleet.slice(1) : fleet;
+  });
   ensureTransitFleet(backgroundFleet.length);
   backgroundFleet.forEach((vehicle, index) => {
     placeTransitVehicle(transitFleetGroup.children[index], vehicle.pose);
@@ -2020,11 +2039,7 @@ function updateCityStats() {
   document.querySelector("#economy-summary")!.textContent =
     `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
-  const transitLine = world.transitLines[0];
-  if (transitLine) {
-    (document.querySelector("#transit-frequency") as HTMLSelectElement).value = String(transitLine.headwayMinutes);
-    (document.querySelector("#transit-fare") as HTMLSelectElement).value = String(transitLine.fare);
-  }
+  syncTransitControls();
 }
 
 function serviceCapacityFactor(kind: ServiceKind, population: number) {
@@ -2519,6 +2534,31 @@ function currentTransitHeadway() {
 
 function currentTransitFare() {
   return Number((document.querySelector("#transit-fare") as HTMLSelectElement).value);
+}
+
+function selectedTransitLine() {
+  const selected = world.transitLines.find(line => line.id === selectedTransitLineId);
+  if (selected) return selected;
+  selectedTransitLineId = world.transitLines[0]?.id ?? null;
+  return world.transitLines[0];
+}
+
+function syncTransitControls() {
+  const lineSelect = document.querySelector<HTMLSelectElement>("#transit-line")!;
+  lineSelect.innerHTML = world.transitLines
+    .map(line => `<option value="${line.id}">${line.name}</option>`)
+    .join("");
+  const line = selectedTransitLine();
+  lineSelect.disabled = !line;
+  if (!line) {
+    (document.querySelector("#transit-remove") as HTMLButtonElement).disabled = true;
+    return;
+  }
+  lineSelect.value = line.id;
+  (document.querySelector("#transit-frequency") as HTMLSelectElement).value = String(line.headwayMinutes);
+  (document.querySelector("#transit-fare") as HTMLSelectElement).value = String(line.fare);
+  (document.querySelector("#transit-stops") as HTMLSelectElement).value = String(line.stops.length);
+  (document.querySelector("#transit-remove") as HTMLButtonElement).disabled = world.transitLines.length <= 1;
 }
 
 function utilityColor(kind: UtilityKind) {
@@ -3835,9 +3875,9 @@ function updateCityToolPanel(lot?: Lot) {
       "Event type|Demand pattern;Timing|First occurrence;Click city|Place recurring event;Explorer|Walk or drive to it;⌘ Z|Undo"
     );
   } else if (cityTool === "transit") {
-    const line = world.transitLines[0];
+    const line = selectedTransitLine();
     if (!line) {
-      setPanel("TRANSIT OPERATIONS", "No route available", "Start from the NYC foundation or draw a connected road network before operating transit service.", "Region|Load NYC foundation;Roads|Build a network");
+      setPanel("TRANSIT NETWORK", "No route available", "Draw a connected road network, then click a road with Transit operations selected to create the first bus line.", "Roads|Build a network;Click road|Create line");
       return;
     }
     const demand = world.transitLineDemand(line);
@@ -3845,10 +3885,10 @@ function updateCityToolPanel(lot?: Lot) {
     const waiting = line.stops.reduce((total, stop) => total + stop.waiting, 0);
     const projectedNet = world.transitMonthlyProjection(line) - world.transitMonthlyCost(line);
     setPanel(
-      "TRANSIT OPERATIONS",
+      "TRANSIT NETWORK",
       line.name,
-      `Every ${line.headwayMinutes} minutes with ${transitFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}.`,
-      "Frequency|Fleet and waits;Fare|Demand and revenue;Stop rings|Passenger queues;T in Explorer|Board"
+      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · every ${line.headwayMinutes} minutes with ${transitFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
+      "Line selector|Choose route;Click road|Create or select;Stops|Change coverage;Frequency|Fleet and waits;Fare|Demand and revenue;Remove|Delete selected line"
     );
   } else if (cityTool === "access") {
     const usable = world.accessibilityEntrances.filter(entrance => world.entranceIsUsable(entrance)).length;
@@ -4067,7 +4107,32 @@ renderer.domElement.addEventListener("pointerdown", event => {
     notice(`${draft.length} utility points`);
     return;
   }
-  if (mode === "city" && cityTool === "transit") return;
+  if (mode === "city" && cityTool === "transit") {
+    const hit = raycaster.intersectObject(ground)[0];
+    if (!hit) return;
+    const roadLocation = nearestRoadLocation(
+      explorerRoadPaths,
+      { x: hit.point.x, z: hit.point.z }
+    );
+    if (!roadLocation || roadLocation.distance > 28) {
+      notice("Click closer to a road to create or select a transit line");
+      return;
+    }
+    const previousCount = world.transitLines.length;
+    const line = world.addTransitLine(roadLocation.roadId);
+    if (!line) {
+      notice(world.transitLines.length >= 8 ? "Transit network limit reached" : "That road cannot support a line");
+      return;
+    }
+    selectedTransitLineId = line.id;
+    renderWorld();
+    notice(
+      world.transitLines.length > previousCount
+        ? `${line.name} created with ${line.stops.length} stops`
+        : `${line.name} selected`
+    );
+    return;
+  }
   if (
     mode === "city"
     && cityTool !== "road"
@@ -4256,7 +4321,7 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
               : cityTool === "event"
                 ? "Choose a street location for the event"
               : cityTool === "transit"
-                ? "Adjust route frequency and fare"
+                ? "Select a line or click a road to create one"
               : cityTool === "access"
                 ? "Choose an entrance to upgrade"
           : `Zoning brush: ${cityTool}`
@@ -4315,16 +4380,41 @@ document.querySelector("#event-timing")!.addEventListener("change", () => {
   notice(`Event timing set to ${cityEventTimingLabel(currentCityEventTiming())}`);
 });
 document.querySelector("#transit-frequency")!.addEventListener("change", () => {
-  const line = world.transitLines[0];
+  const line = selectedTransitLine();
   if (!line || !world.setTransitOperations(line.id, currentTransitHeadway(), currentTransitFare())) return;
   renderWorld();
   notice(`${line.name} now runs every ${line.headwayMinutes} minutes with ${transitFleetSize(line)} buses`);
 });
 document.querySelector("#transit-fare")!.addEventListener("change", () => {
-  const line = world.transitLines[0];
+  const line = selectedTransitLine();
   if (!line || !world.setTransitOperations(line.id, currentTransitHeadway(), currentTransitFare())) return;
   renderWorld();
   notice(`${line.name} fare set to ${formatTransitFare(line.fare)}`);
+});
+document.querySelector("#transit-line")!.addEventListener("change", event => {
+  selectedTransitLineId = (event.currentTarget as HTMLSelectElement).value;
+  const line = selectedTransitLine();
+  syncTransitControls();
+  renderTransitInfrastructure();
+  if (cityTool === "transit") updateCityToolPanel();
+  if (line) notice(`${line.name} selected`);
+});
+document.querySelector("#transit-stops")!.addEventListener("change", event => {
+  const line = selectedTransitLine();
+  const count = Number((event.currentTarget as HTMLSelectElement).value);
+  if (!line || !world.setTransitStopCount(line.id, count)) return;
+  renderWorld();
+  notice(`${line.name} now serves ${line.stops.length} stops`);
+});
+document.querySelector("#transit-remove")!.addEventListener("click", () => {
+  const line = selectedTransitLine();
+  if (!line || !world.removeTransitLine(line.id)) {
+    notice("At least one transit line must remain");
+    return;
+  }
+  selectedTransitLineId = world.transitLines[0]?.id ?? null;
+  renderWorld();
+  notice(`${line.name} removed from the network`);
 });
 document.querySelector("#staffing-policy")!.addEventListener("change", event => {
   const funding = Number((event.currentTarget as HTMLSelectElement).value);

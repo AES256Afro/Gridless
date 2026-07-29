@@ -355,6 +355,7 @@ function integrityFailures(world: World) {
     failures.push("Calendar fields are outside their valid ranges.");
   }
 
+  const roadIds = new Set(world.roads.map(road => road.id));
   const lotIds = new Set(world.lots.map(lot => lot.id));
   const areaIds = new Set(world.areas.map(area => area.id));
   const serviceIds = new Set(world.services.map(service => service.id));
@@ -549,8 +550,19 @@ function integrityFailures(world: World) {
     if (commute.route.length < 2 || commute.distance < 0 || commute.travelMinutes <= 0) failures.push(`Commute ${commute.id} has invalid routing data.`);
   }
   for (const line of world.transitLines) {
-    if (line.route.length < 2 || line.stops.length < 2 || line.travelMinutes <= 0) {
+    if (
+      line.route.length < 2
+      || line.stops.length < 4
+      || line.stops.length > 10
+      || line.travelMinutes <= 0
+    ) {
       failures.push(`Transit line ${line.id} has invalid route, stop, or schedule data.`);
+    }
+    if (line.roadId && !roadIds.has(line.roadId)) {
+      failures.push(`Transit line ${line.id} points to a missing road.`);
+    }
+    if (!Number.isInteger(line.color) || line.color < 0 || line.color > 0xffffff) {
+      failures.push(`Transit line ${line.id} has an invalid display color.`);
     }
     if (line.headwayMinutes < 4 || line.headwayMinutes > 30 || line.vehicleCapacity <= 0) {
       failures.push(`Transit line ${line.id} has invalid frequency or vehicle capacity.`);
