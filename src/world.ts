@@ -1,7 +1,12 @@
 import * as THREE from "three";
 import { NYC_TEMPLATE, WORLD_TEMPLATES } from "./templates";
 import { findRoadRoute, routeLength } from "./routing";
-import { initialTransitLines, transitFleetSize } from "./transit";
+import {
+  initialTransitLines,
+  transitFleetSize,
+  transitLineForRoad,
+  transitStopsForLine
+} from "./transit";
 
 export type Point2 = { x: number; z: number };
 
@@ -258,6 +263,7 @@ export type TransitStop = {
 
 export type TransitLine = {
   id: string;
+  roadId?: string;
   name: string;
   mode: "bus";
   color: number;
@@ -848,6 +854,38 @@ export class World {
     this.checkpoint();
     line.headwayMinutes = headway;
     line.fare = normalizedFare;
+    return true;
+  }
+
+  addTransitLine(roadId: string) {
+    const road = this.roads.find(item => item.id === roadId);
+    if (!road || road.points.length < 2 || this.transitLines.length >= 8) return undefined;
+    const existing = this.transitLines.find(line => line.roadId === roadId);
+    if (existing) return existing;
+    this.checkpoint();
+    const line = transitLineForRoad(road, this.transitLines.length);
+    this.transitLines.push(line);
+    this.rebuildAccessibilityEntrances();
+    return line;
+  }
+
+  setTransitStopCount(lineId: string, stopCount: number) {
+    const line = this.transitLines.find(item => item.id === lineId);
+    if (!line) return false;
+    const count = Math.round(clamp(stopCount, 4, 10));
+    if (line.stops.length === count) return false;
+    this.checkpoint();
+    line.stops = transitStopsForLine(line, count);
+    this.rebuildAccessibilityEntrances();
+    return true;
+  }
+
+  removeTransitLine(lineId: string) {
+    const index = this.transitLines.findIndex(item => item.id === lineId);
+    if (index < 0 || this.transitLines.length <= 1) return false;
+    this.checkpoint();
+    this.transitLines.splice(index, 1);
+    this.rebuildAccessibilityEntrances();
     return true;
   }
 
@@ -2165,6 +2203,11 @@ export class World {
     this.playerVehicle = snapshot.playerVehicle ? clone(snapshot.playerVehicle) : undefined;
     this.transitLines = clone(snapshot.transitLines ?? initialTransitLines(this.roads)).map(line => ({
       ...line,
+      roadId: line.roadId
+        ?? this.roads.find(road =>
+          line.id === `transit-line-${road.id}`
+          || line.id.startsWith(`transit-line-${road.id}-`)
+        )?.id,
       headwayMinutes: Math.round(clamp(line.headwayMinutes ?? 10, 4, 30)),
       fare: Math.round(clamp(line.fare ?? 2.75, 0, 10) * 4) / 4,
       vehicleCapacity: Math.max(1, Math.round(line.vehicleCapacity ?? 48)),

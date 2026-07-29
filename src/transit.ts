@@ -23,6 +23,10 @@ export function initialTransitLines(roads: Road[]): TransitLine[] {
   if (!candidates.length) return [];
   const road = candidates.find(candidate => candidate.id === "nyc-broadway")
     ?? [...candidates].sort((a, b) => approximateRoadLength(b) - approximateRoadLength(a))[0];
+  return [transitLineForRoad(road, 0)];
+}
+
+export function transitLineForRoad(road: Road, lineIndex: number): TransitLine {
   const curve = new THREE.CatmullRomCurve3(
     road.points.map(point => new THREE.Vector3(point.x, 0, point.z)),
     false,
@@ -33,53 +37,61 @@ export function initialTransitLines(roads: Road[]): TransitLine[] {
     .getSpacedPoints(Math.max(8, Math.ceil(length / 10)))
     .map(point => ({ x: point.x, z: point.z }));
   const stopCount = Math.max(4, Math.min(8, Math.round(length / 145)));
-  const stopNames = road.id === "nyc-broadway"
-    ? ["Lower Broadway", "Canal Street", "Union Square", "Times Square", "Columbus Circle", "Upper Broadway", "Harlem Terminal", "North Terminal"]
-    : [];
-  const stops: TransitStop[] = Array.from({ length: stopCount }, (_, index) => {
-    const progress = .04 + index / Math.max(1, stopCount - 1) * .92;
-    const position = transitPoseAtProgress(
-      {
-        id: "transit-preview",
-        name: "Preview",
-        mode: "bus",
-        color: 0x2d79a7,
-        route,
-        stops: [],
-        travelMinutes: 1,
-        headwayMinutes: 10,
-        fare: 2.75,
-        vehicleCapacity: 48,
-        ridership: 0,
-        fareRevenue: 0
-      },
-      progress,
-      1,
-      road.width / 2 + 1.35
-    ).point;
-    return {
-      id: `transit-stop-${road.id}-${index + 1}`,
-      name: stopNames[index] ?? `${road.name ?? "City Line"} Stop ${index + 1}`,
-      position,
-      progress,
-      waiting: 0,
-      boardings: 0
-    };
-  });
-  return [{
-    id: `transit-line-${road.id}`,
-    name: road.id === "nyc-broadway" ? "Broadway Local B1" : `${road.name ?? "City"} Local`,
+  const lineNumber = lineIndex + 1;
+  const line: TransitLine = {
+    id: lineIndex === 0 ? `transit-line-${road.id}` : `transit-line-${road.id}-${lineNumber}`,
+    roadId: road.id,
+    name: road.id === "nyc-broadway" && lineIndex === 0
+      ? "Broadway Local B1"
+      : `${road.name ?? "City"} Local ${lineNumber}`,
     mode: "bus",
-    color: 0x2d79a7,
+    color: [0x2d79a7, 0xc45d4c, 0x5f9e67, 0x8b6ec1, 0xd39a3d, 0x4b9f9a, 0xb85f8f, 0x6e7c8d][lineIndex % 8],
     route,
-    stops,
+    stops: [],
     travelMinutes: Math.max(6, Math.round(length / 150 + stopCount * .65)),
     headwayMinutes: 10,
     fare: 2.75,
     vehicleCapacity: 48,
     ridership: 0,
     fareRevenue: 0
-  }];
+  };
+  line.stops = transitStopsForLine(line, stopCount, road.width);
+  return line;
+}
+
+export function transitStopsForLine(line: TransitLine, stopCount: number, roadWidth = 12): TransitStop[] {
+  const count = Math.max(4, Math.min(10, Math.round(stopCount)));
+  const roadName = line.name.replace(/\s+Local(?:\s+\w+)?$/, "");
+  const stopNames = line.roadId === "nyc-broadway"
+    ? ["Lower Broadway", "Canal Street", "Union Square", "Times Square", "Columbus Circle", "Upper Broadway", "Harlem Terminal", "North Terminal"]
+    : [];
+  return Array.from({ length: count }, (_, index) => {
+    const progress = .04 + index / Math.max(1, count - 1) * .92;
+    const position = transitPoseAtProgress(
+      {
+        ...line,
+        stops: [],
+      },
+      progress,
+      1,
+      roadWidth / 2 + 1.35
+    ).point;
+    const previous = line.stops
+      .slice()
+      .sort((first, second) => Math.abs(first.progress - progress) - Math.abs(second.progress - progress))[0];
+    return {
+      id: line.id === `transit-line-${line.roadId}`
+        ? `transit-stop-${line.roadId}-${index + 1}`
+        : `${line.id}-stop-${index + 1}`,
+      name: line.roadId === "nyc-broadway" && line.id === "transit-line-nyc-broadway"
+        ? stopNames[index] ?? `Broadway Stop ${index + 1}`
+        : `${roadName} Stop ${index + 1}`,
+      position,
+      progress,
+      waiting: previous && Math.abs(previous.progress - progress) < .08 ? previous.waiting : 0,
+      boardings: previous && Math.abs(previous.progress - progress) < .08 ? previous.boardings : 0
+    };
+  });
 }
 
 export function nearestTransitStop(lines: TransitLine[], point: Point2, maximumDistance = Infinity) {

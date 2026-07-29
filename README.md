@@ -49,6 +49,7 @@ The current vertical slice proves:
 - Right-hand AI traffic lanes with red-light stopping, green-light movement, visible brake lights, and signal-ahead guidance while driving
 - A drivable street-level car with acceleration, braking, reverse, steering, handbrake, road-aware traction, collision, chase camera, and safe sidewalk exit
 - A persistent Broadway Local B1 bus line with seven named curbside stops, frequency-driven active fleets, passenger demand, stop queues, crowding, fares, ridership revenue, stop-side Explorer entry, and `T` controls for boarding, requesting the next stop, and alighting
+- A player-editable transit network with up to eight road-following lines, line selection, click-to-create routes, independent frequency and fare policies, four to ten regenerated stops, distinct colors, network-wide vehicle rendering, and safe line removal
 - Persistent curb bays, surface lots, and structured garages with capacity, occupancy, designated accessible spaces, undo, and browser-save support
 - Player-controlled hourly parking prices with time-aware local demand, deterministic turnover, persistent revenue, operating costs, projected monthly net results, and price-aware facility selection
 - Programmable curb space with flexible parking, commercial loading, rush-hour restrictions, and evening event control, plus timed schedules, delivery queues, enforcement, fines, and street-level guidance

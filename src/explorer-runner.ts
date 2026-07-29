@@ -780,6 +780,77 @@ check(
     && transitLine.vehicleCapacity === 48,
   "Transit line did not receive its default operating plan."
 );
+const secondaryTransitRoad = mobilityWorld.roads.find(
+  road => road.id !== transitLine.roadId && road.points.length > 1
+);
+const secondaryTransitLine = secondaryTransitRoad
+  ? mobilityWorld.addTransitLine(secondaryTransitRoad.id)
+  : undefined;
+check(
+  Boolean(
+    secondaryTransitLine
+      && mobilityWorld.transitLines.length === 2
+      && secondaryTransitLine.roadId === secondaryTransitRoad?.id
+      && secondaryTransitLine.route.length >= 8
+      && secondaryTransitLine.stops.length >= 4
+      && secondaryTransitLine.color !== transitLine.color
+  ),
+  "Additional transit line did not receive its own road route, stops, identity, and color."
+);
+check(
+  secondaryTransitRoad
+    ? mobilityWorld.addTransitLine(secondaryTransitRoad.id)?.id === secondaryTransitLine?.id
+      && mobilityWorld.transitLines.length === 2
+    : false,
+  "Selecting a road with an existing transit line created a duplicate."
+);
+check(
+  Boolean(
+    secondaryTransitLine
+      && mobilityWorld.setTransitStopCount(secondaryTransitLine.id, 10)
+      && secondaryTransitLine.stops.length === 10
+      && secondaryTransitLine.stops.every((stop, index) =>
+        stop.progress >= .039
+        && stop.progress <= .961
+        && stop.id.endsWith(`stop-${index + 1}`)
+      )
+  ),
+  "Transit stop-count editing did not rebuild the selected line."
+);
+check(
+  Boolean(
+    secondaryTransitLine
+      && mobilityWorld.setTransitOperations(secondaryTransitLine.id, 18, 0)
+      && secondaryTransitLine.headwayMinutes === 18
+      && secondaryTransitLine.fare === 0
+  ),
+  "Selected-line frequency and fare editing did not persist independently."
+);
+const removableTransitRoad = mobilityWorld.roads.find(
+  road => !mobilityWorld.transitLines.some(line => line.roadId === road.id) && road.points.length > 1
+);
+const removableTransitLine = removableTransitRoad
+  ? mobilityWorld.addTransitLine(removableTransitRoad.id)
+  : undefined;
+check(
+  Boolean(
+    removableTransitLine
+      && mobilityWorld.removeTransitLine(removableTransitLine.id)
+      && !mobilityWorld.transitLines.some(line => line.id === removableTransitLine.id)
+      && mobilityWorld.transitLines.length === 2
+  ),
+  "Transit line removal did not preserve the rest of the network."
+);
+check(
+  mobilityWorld.transitLines.every(line =>
+    line.stops.every(stop =>
+      mobilityWorld.accessibilityEntrances.some(
+        entrance => entrance.targetKind === "transit" && entrance.targetId === stop.id
+      )
+    )
+  ),
+  "Transit network edits did not rebuild accessibility entrances for every stop."
+);
 check(
   mobilityWorld.snapshot().transitLines?.[0].stops.length === transitLine.stops.length,
   "Transit line and stops were not included in the world snapshot."
@@ -865,7 +936,10 @@ check(parkingEconomy.parkingRevenue > 0, "Parking pricing did not contribute pro
 check(
   parkingEconomy.transitRevenue > 0
     && parkingEconomy.transitCosts > 0
-    && parkingEconomy.transitRidership === transitLine.ridership,
+    && parkingEconomy.transitRidership === mobilityWorld.transitLines.reduce(
+      (total, line) => total + line.ridership,
+      0
+    ),
   "Transit operations were not included in the city economy."
 );
 const parkingSnapshot = mobilityWorld.snapshot().parking?.find(item => item.id === placedParking.id);
@@ -877,6 +951,16 @@ check(
     && transitSnapshot.ridership === transitLine.ridership
     && transitSnapshot.stops.some(stop => stop.boardings > 0),
   "Transit frequency, fares, ridership, and stop activity were not included in the world snapshot."
+);
+const secondaryTransitSnapshot = mobilityWorld.snapshot().transitLines?.find(
+  item => item.id === secondaryTransitLine?.id
+);
+check(
+  secondaryTransitSnapshot?.roadId === secondaryTransitRoad?.id
+    && secondaryTransitSnapshot?.stops.length === 10
+    && secondaryTransitSnapshot?.headwayMinutes === 18
+    && secondaryTransitSnapshot?.fare === 0,
+  "Additional transit line geometry and independent operations were not included in the world snapshot."
 );
 check(mobilityWorld.parkPlayerVehicle(placedParking.id, placedParking.position, placedParking.rotation), "Player vehicle could not use available parking.");
 check(mobilityWorld.snapshot().playerVehicle?.parkingId === placedParking.id, "Parked vehicle was not included in the world snapshot.");
@@ -909,6 +993,9 @@ console.log(JSON.stringify({
   completeTripUsable: usableTrip.usable,
   blockedEntranceReported: blockedEntranceTrip.barriers[0],
   transitLine: transitLine.name,
+  transitLines: mobilityWorld.transitLines.length,
+  secondaryTransitLine: secondaryTransitLine?.name,
+  secondaryTransitStops: secondaryTransitLine?.stops.length,
   transitStops: transitLine.stops.length,
   transitFleet: transitFleetSize(transitLine),
   transitRidership: transitLine.ridership,
