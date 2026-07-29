@@ -2678,6 +2678,11 @@ function useNearbyInteriorInteraction() {
   }
   const nearbyResident = nearbyInteriorResident();
   if (nearbyResident) {
+    world.setResidentHomePosition(
+      controlled.home.id,
+      nearbyResident.resident.id,
+      nearbyResident.position
+    );
     const result = world.commandResidentConversation(
       controlled.home.id,
       controlled.resident.id,
@@ -2727,6 +2732,16 @@ function updateInteriorInteractionPrompt() {
     prompt.innerHTML = "<kbd>C</kbd><span>Choose a resident to control</span>";
     return;
   }
+  const activeAction = world.activeResidentAction(controlled.resident);
+  const activePartner = activeAction?.partnerResidentId
+    ? controlled.home.residents.find(resident => resident.id === activeAction.partnerResidentId)
+    : undefined;
+  if (activeAction?.kind === "socialize" && activePartner) {
+    const compatibility = world.relationshipCompatibility(controlled.resident, activePartner);
+    prompt.innerHTML =
+      `<span>Talking with ${activePartner.name}<small>${world.compatibilityLabel(compatibility)} · ${Math.max(1, Math.ceil(activeAction.endsAt - world.clock.elapsedMinutes))}m remaining</small></span><kbd>WASD</kbd><span>Walk away to end</span>`;
+    return;
+  }
   const nearbyResident = nearbyInteriorResident();
   if (nearbyResident) {
     const relationshipScore = world.relationshipScore(
@@ -2734,8 +2749,12 @@ function updateInteriorInteractionPrompt() {
       controlled.resident.id,
       nearbyResident.resident.id
     );
+    const compatibility = world.relationshipCompatibility(
+      controlled.resident,
+      nearbyResident.resident
+    );
     prompt.innerHTML =
-      `<kbd>E</kbd><span>Talk with ${nearbyResident.resident.name}<small>${world.relationshipLabel(relationshipScore)} · ${relationshipScore}% relationship</small></span><kbd>C</kbd><span>Switch resident</span>`;
+      `<kbd>E</kbd><span>Talk with ${nearbyResident.resident.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}%</small></span><kbd>C</kbd><span>Switch resident</span>`;
     return;
   }
   const nearbyFurniture = nearbyInteriorFurnitureInteraction();
@@ -2744,9 +2763,8 @@ function updateInteriorInteractionPrompt() {
       `<kbd>E</kbd><span>${nearbyFurniture.interaction.label} with ${controlled.resident.name}<small>${nearbyFurniture.interaction.effect}</small></span><kbd>C</kbd><span>Switch resident</span>`;
     return;
   }
-  const action = world.activeResidentAction(controlled.resident);
-  const actionCopy = action
-    ? `${world.residentActionLabel(controlled.resident)} · ${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m left`
+  const actionCopy = activeAction
+    ? `${world.residentActionLabel(controlled.resident)} · ${Math.max(1, Math.ceil(activeAction.endsAt - world.clock.elapsedMinutes))}m left`
     : `Walking as ${controlled.resident.name}`;
   prompt.innerHTML =
     `<kbd>C</kbd><span>Switch resident<small>${actionCopy}</small></span><kbd>E</kbd><span>Talk or use furnishing</span>`;
@@ -3101,6 +3119,10 @@ function updateHouseholdSummary(home: Home) {
                 <span><strong>${resident.name}</strong><small>${world.residentActionLabel(resident)} · ${destination}</small></span>
                 <b>${wellbeing.score}% ${wellbeing.label}</b>
               </div>
+              <div class="resident-traits" title="${world.residentPersonalitySummary(resident)}">
+                ${resident.traits.map(trait => `<span>${world.residentTraitLabel(trait)}</span>`).join("")}
+                <small>${world.residentPersonalitySummary(resident)}</small>
+              </div>
               <div class="resident-action-row">
                 <span>${action ? `${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m remaining` : world.residentStatus(resident)}</span>
                 <i><b style="width:${action ? actionProgress : 100}%"></b></i>
@@ -3134,9 +3156,10 @@ function updateHouseholdSummary(home: Home) {
             const first = home.residents.find(resident => resident.id === relationship.residentIds[0]);
             const second = home.residents.find(resident => resident.id === relationship.residentIds[1]);
             if (!first || !second) return "";
+            const compatibility = world.relationshipCompatibility(first, second);
             return `
               <div class="relationship-row">
-                <span><strong>${first.name} + ${second.name}</strong><small>${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"}</small></span>
+                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"}</small></span>
                 <b>${world.relationshipLabel(relationship.score)} · ${relationship.score}%</b>
               </div>
             `;
@@ -3334,7 +3357,9 @@ function updateExplorerContext() {
       ? interior.home.residents.find(resident => resident.id === controlledAction.partnerResidentId)
       : undefined;
     const conversationCopy = controlled && conversationPartner
-      ? ` Talking with ${conversationPartner.name}. Their relationship is ${world.relationshipLabel(
+      ? ` Talking with ${conversationPartner.name}. Their personality fit is ${world.compatibilityLabel(
+          world.relationshipCompatibility(controlled.resident, conversationPartner)
+        ).toLowerCase()}, and their relationship is ${world.relationshipLabel(
           world.relationshipScore(interior.home, controlled.resident.id, conversationPartner.id)
         ).toLowerCase()}.`
       : "";

@@ -85,6 +85,15 @@ const UTILITY_CAPACITY: Record<UtilityKind, number> = {
   waste: 32_000
 };
 
+const VALID_RESIDENT_TRAITS = new Set([
+  "outgoing",
+  "homebody",
+  "active",
+  "creative",
+  "organized",
+  "empathetic"
+]);
+
 export function createStabilityScenario() {
   const world = new World();
   world.serviceFunding = .85;
@@ -138,6 +147,7 @@ export function createStabilityScenario() {
       comfort: 74,
       health: 84,
       stress: 24,
+      traits: ["organized", "homebody"],
       completedActions: 0
     }],
     relationships: []
@@ -388,6 +398,13 @@ function integrityFailures(world: World) {
       if (!containingRoom) failures.push(`Furniture ${item.id} is outside every room in home ${home.id}.`);
     }
     for (const resident of home.residents) {
+      if (
+        resident.traits.length !== 2
+        || new Set(resident.traits).size !== resident.traits.length
+        || resident.traits.some(trait => !VALID_RESIDENT_TRAITS.has(trait))
+      ) {
+        failures.push(`Resident ${resident.id} has invalid personality traits.`);
+      }
       if (resident.homePosition && !isInteriorPositionValid(home, resident.homePosition)) {
         failures.push(`Resident ${resident.id} has an invalid saved home position.`);
       }
