@@ -84,6 +84,8 @@ export type ResidentTrait =
   | "organized"
   | "empathetic";
 
+export type ConversationIntent = "chat" | "support" | "joke" | "confront";
+
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "socialize" | "tend-plants" | "idle";
 
 export type ResidentAction = {
@@ -92,6 +94,7 @@ export type ResidentAction = {
   endsAt: number;
   targetFurnitureId?: string;
   partnerResidentId?: string;
+  conversationIntent?: ConversationIntent;
   directed?: boolean;
   relationshipCredit?: boolean;
 };
@@ -120,6 +123,8 @@ export type ResidentRelationship = {
   score: number;
   conversations: number;
   lastInteractionAt?: number;
+  lastIntent?: ConversationIntent;
+  lastChange?: number;
 };
 
 export type ResidentWellbeing = {
@@ -1349,11 +1354,18 @@ export class World {
   residentActionLabel(resident: Resident) {
     const action = this.activeResidentAction(resident);
     if (!action) return this.residentStatus(resident) === "Home" ? "Choosing next activity" : this.residentStatus(resident);
+    if (action.kind === "socialize") {
+      return {
+        chat: "Having a friendly chat",
+        support: "Sharing support",
+        joke: "Telling a joke",
+        confront: "Having a confrontation"
+      }[action.conversationIntent ?? "chat"];
+    }
     return {
       sleep: "Sleeping",
       eat: "Having a meal",
       relax: "Relaxing",
-      socialize: "Socializing",
       "tend-plants": "Tending plants",
       idle: "Taking a breather"
     }[action.kind];
@@ -1424,18 +1436,62 @@ export class World {
           : "Friction";
   }
 
+  conversationIntentLabel(intent: ConversationIntent) {
+    return {
+      chat: "Friendly Chat",
+      support: "Offer Support",
+      joke: "Tell a Joke",
+      confront: "Confront"
+    }[intent];
+  }
+
+  conversationOutcomeLabel(change: number) {
+    return change >= 8
+      ? "Breakthrough"
+      : change >= 4
+        ? "Positive"
+        : change > 0
+          ? "Small gain"
+          : change <= -9
+            ? "Argument"
+            : "Tense";
+  }
+
   conversationRelationshipGain(
     firstResident: Resident,
     secondResident: Resident,
     directed: boolean
   ) {
+    return this.conversationRelationshipChange(firstResident, secondResident, "chat", directed);
+  }
+
+  conversationRelationshipChange(
+    firstResident: Resident,
+    secondResident: Resident,
+    intent: ConversationIntent,
+    directed: boolean
+  ) {
     const compatibility = this.relationshipCompatibility(firstResident, secondResident);
-    const base = directed ? 6 : 3;
-    return Math.round(clamp(
-      base + (compatibility - 50) / 12,
-      directed ? 4 : 1,
-      directed ? 11 : 8
-    ));
+    if (!directed) {
+      return Math.round(clamp(3 + (compatibility - 50) / 12, 1, 8));
+    }
+    if (intent === "support") {
+      const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
+        + (secondResident.traits.includes("empathetic") ? 1 : 0);
+      return Math.round(clamp(7 + empathy + (compatibility - 50) / 15, 4, 12));
+    }
+    if (intent === "joke") {
+      const humor = (firstResident.traits.includes("creative") ? 1 : 0)
+        + (firstResident.traits.includes("outgoing") ? 1 : 0)
+        + (secondResident.traits.includes("outgoing") ? 1 : 0);
+      return Math.round(clamp(5 + humor + (compatibility - 50) / 16, 2, 11));
+    }
+    if (intent === "confront") {
+      const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
+        + (secondResident.traits.includes("empathetic") ? 1 : 0);
+      return Math.round(clamp(-9 + empathy + (compatibility - 50) / 18, -14, -3));
+    }
+    return Math.round(clamp(6 + (compatibility - 50) / 12, 4, 11));
   }
 
   strongestRelationship(home: Home, residentId: string) {
@@ -1471,7 +1527,12 @@ export class World {
     return { ok: true, reason: `${resident.name} started ${this.residentActionLabel(resident).toLowerCase()}.` };
   }
 
-  commandResidentConversation(homeId: string, residentId: string, partnerResidentId: string) {
+  commandResidentConversation(
+    homeId: string,
+    residentId: string,
+    partnerResidentId: string,
+    intent: ConversationIntent = "chat"
+  ) {
     const home = this.homes.find(item => item.id === homeId);
     const resident = home?.residents.find(item => item.id === residentId);
     const partner = home?.residents.find(item => item.id === partnerResidentId);
@@ -1483,12 +1544,19 @@ export class World {
     }
     this.checkpoint();
     const startedAt = this.clock.elapsedMinutes;
-    const endsAt = startedAt + 60;
+    const duration = {
+      chat: 60,
+      support: 55,
+      joke: 40,
+      confront: 35
+    }[intent];
+    const endsAt = startedAt + duration;
     resident.currentAction = {
       kind: "socialize",
       startedAt,
       endsAt,
       partnerResidentId: partner.id,
+      conversationIntent: intent,
       directed: true,
       relationshipCredit: true
     };
@@ -1497,9 +1565,13 @@ export class World {
       startedAt,
       endsAt,
       partnerResidentId: resident.id,
+      conversationIntent: intent,
       directed: true
     };
-    return { ok: true, reason: `${resident.name} and ${partner.name} started talking.` };
+    return {
+      ok: true,
+      reason: `${resident.name} chose ${this.conversationIntentLabel(intent).toLowerCase()} with ${partner.name}.`
+    };
   }
 
   cancelResidentAction(homeId: string, residentId: string) {
@@ -2006,6 +2078,14 @@ export class World {
           resident.traits,
           `${home.id}-${resident.id}-${resident.name}-${index}`
         ),
+        currentAction: resident.currentAction
+          ? {
+              ...resident.currentAction,
+              conversationIntent: resident.currentAction.kind === "socialize"
+                ? normalizeConversationIntent(resident.currentAction.conversationIntent)
+                : undefined
+            }
+          : undefined,
         completedActions: resident.completedActions ?? 0
       }));
       return {
@@ -2506,7 +2586,8 @@ export class World {
               startedAt: chosenAction.startedAt,
               endsAt: chosenAction.endsAt,
               targetFurnitureId: chosenAction.targetFurnitureId,
-              partnerResidentId: resident.id
+              partnerResidentId: resident.id,
+              conversationIntent: chosenAction.conversationIntent
             };
           }
         }
@@ -2600,6 +2681,7 @@ export class World {
       endsAt: now + duration,
       targetFurnitureId: choice.targetFurnitureId,
       partnerResidentId: choice.partnerResidentId,
+      conversationIntent: choice.kind === "socialize" ? "chat" : undefined,
       relationshipCredit: choice.kind === "socialize" && Boolean(choice.partnerResidentId)
     };
   }
@@ -2617,19 +2699,34 @@ export class World {
       resident.comfort = clamp(resident.comfort + 14, 0, 100);
       resident.stress = clamp(resident.stress - 12, 0, 100);
     } else if (action.kind === "socialize") {
-      resident.social = clamp(resident.social + 20, 0, 100);
-      resident.stress = clamp(resident.stress - 6, 0, 100);
+      const intent = action.conversationIntent ?? "chat";
+      const effects = {
+        chat: { social: 20, stress: -6 },
+        support: { social: 12, stress: action.relationshipCredit ? -8 : -16 },
+        joke: { social: 16, stress: -10 },
+        confront: { social: -6, stress: action.relationshipCredit ? 9 : 14 }
+      }[intent];
+      resident.social = clamp(resident.social + effects.social, 0, 100);
+      resident.stress = clamp(resident.stress + effects.stress, 0, 100);
       if (action.relationshipCredit && action.partnerResidentId) {
         const relationship = this.relationshipBetween(home, resident.id, action.partnerResidentId);
         const partner = home.residents.find(item => item.id === action.partnerResidentId);
         if (relationship && partner) {
+          const relationshipChange = this.conversationRelationshipChange(
+            resident,
+            partner,
+            intent,
+            Boolean(action.directed)
+          );
           relationship.score = clamp(
-            relationship.score + this.conversationRelationshipGain(resident, partner, Boolean(action.directed)),
+            relationship.score + relationshipChange,
             0,
             100
           );
           relationship.conversations += 1;
           relationship.lastInteractionAt = action.endsAt;
+          relationship.lastIntent = intent;
+          relationship.lastChange = relationshipChange;
         }
       }
     } else if (action.kind === "tend-plants") {
@@ -2865,6 +2962,10 @@ function residentActionTraitBonus(resident: Resident, action: ResidentActionKind
   return bonus;
 }
 
+function normalizeConversationIntent(intent: ConversationIntent | undefined): ConversationIntent {
+  return intent === "support" || intent === "joke" || intent === "confront" ? intent : "chat";
+}
+
 function normalizeRelationships(
   residents: Resident[],
   relationships: ResidentRelationship[]
@@ -2886,7 +2987,13 @@ function normalizeRelationships(
         100
       ),
       conversations: Math.max(0, Math.floor(relationship.conversations ?? 0)),
-      lastInteractionAt: relationship.lastInteractionAt
+      lastInteractionAt: relationship.lastInteractionAt,
+      lastIntent: relationship.lastIntent
+        ? normalizeConversationIntent(relationship.lastIntent)
+        : undefined,
+      lastChange: Number.isFinite(relationship.lastChange)
+        ? clamp(Math.round(relationship.lastChange!), -14, 12)
+        : undefined
     });
   }
   for (let firstIndex = 0; firstIndex < residents.length; firstIndex += 1) {

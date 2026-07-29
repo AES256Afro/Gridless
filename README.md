@@ -61,9 +61,10 @@ The current vertical slice proves:
 - Live household activity and utility-disruption context inside the same persistent furnished home
 - Direct household control from resident cards or the interior `C` control, with persistent in-home positions and observer switching
 - Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables, and tending plants through the same need-changing action system used by autonomous residents
-- Proximity conversations between household members, with paired actions, shared social effects, persistent relationship scores, completed-conversation history, and visible relationship status
+- Proximity conversations between household members with a four-choice intent menu: Friendly Chat, Offer Support, Tell a Joke, or Confront
+- Intent-specific paired actions with distinct social, calm, stress, duration, personality, and relationship effects plus a persistent recent-outcome history
 - Relationship-driven autonomous conversations that choose an available partner from familiarity, personality compatibility, and social need, then reserve both residents for the shared activity
-- A live interaction prompt with action effects, remaining duration, controlled-resident identity, and completed-action feedback
+- A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots
 - Room drawing, architectural walls and floors, room-contained furniture placement, and household residents

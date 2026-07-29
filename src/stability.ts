@@ -93,6 +93,12 @@ const VALID_RESIDENT_TRAITS = new Set([
   "organized",
   "empathetic"
 ]);
+const VALID_CONVERSATION_INTENTS = new Set([
+  "chat",
+  "support",
+  "joke",
+  "confront"
+]);
 
 export function createStabilityScenario() {
   const world = new World();
@@ -423,6 +429,22 @@ function integrityFailures(world: World) {
       ) {
         failures.push(`Resident ${resident.id} action points to an invalid conversation partner.`);
       }
+      if (
+        resident.currentAction?.conversationIntent
+        && (
+          resident.currentAction.kind !== "socialize"
+          || !VALID_CONVERSATION_INTENTS.has(resident.currentAction.conversationIntent)
+        )
+      ) {
+        failures.push(`Resident ${resident.id} has an invalid conversation intent.`);
+      }
+      if (
+        resident.currentAction?.kind === "socialize"
+        && resident.currentAction.partnerResidentId
+        && !resident.currentAction.conversationIntent
+      ) {
+        failures.push(`Resident ${resident.id} paired conversation is missing an intent.`);
+      }
       for (const [name, value] of Object.entries({
         energy: resident.energy,
         social: resident.social,
@@ -450,6 +472,26 @@ function integrityFailures(world: World) {
       }
       if (!Number.isInteger(relationship.conversations) || relationship.conversations < 0) {
         failures.push(`Home ${home.id} has an invalid completed conversation count.`);
+      }
+      if (
+        relationship.lastIntent
+        && !VALID_CONVERSATION_INTENTS.has(relationship.lastIntent)
+      ) {
+        failures.push(`Home ${home.id} has an invalid recent conversation intent.`);
+      }
+      if (
+        relationship.lastChange !== undefined
+        && (
+          !Number.isInteger(relationship.lastChange)
+          || relationship.lastChange < -14
+          || relationship.lastChange > 12
+          || !relationship.lastIntent
+        )
+      ) {
+        failures.push(`Home ${home.id} has an invalid recent relationship outcome.`);
+      }
+      if (relationship.lastIntent && relationship.lastChange === undefined) {
+        failures.push(`Home ${home.id} recent conversation is missing its relationship outcome.`);
       }
     }
   }
