@@ -644,10 +644,31 @@ kbd {
   font-style: normal;
   font-weight: 700;
 }
+.relationship-row .social-memory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+  white-space: normal;
+}
+.relationship-row .social-memory i {
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #aebbd1;
+  background: rgba(119,185,216,.09);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 700;
+}
 .relationship-row > b {
   color: #f0d980;
   font-size: 9px;
   white-space: nowrap;
+}
+.relationship-row > b small {
+  display: block;
+  color: #b6c7bb;
+  text-align: right;
 }
 .resident-control {
   width: 100%;
@@ -865,6 +886,13 @@ kbd {
 .interaction-prompt .conversation-choice.risky kbd {
   color: #f8e9e7;
   background: #b65349;
+}
+.interaction-prompt .conversation-choice.reconcile {
+  border-color: rgba(119,185,216,.28);
+}
+.interaction-prompt .conversation-choice.reconcile kbd {
+  color: #102229;
+  background: #77b9d8;
 }
 .interaction-prompt .conversation-cancel {
   display: flex;

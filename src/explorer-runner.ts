@@ -368,15 +368,23 @@ check(
   "Directed conversation did not finish cleanly across a normal schedule boundary."
 );
 
-function runConversationIntentProbe(intent: ConversationIntent) {
+function runConversationIntentProbe(intent: ConversationIntent, initialTension = 0) {
   const world = new World();
   const home = structuredClone(directControlBaseline);
+  home.relationships[0].tension = initialTension;
+  home.relationships[0].conflicts = initialTension > 0 ? 1 : 0;
   world.homes = [home];
   world.clock.minute = 20 * 60;
   world.setControlledResident("controlled-resident");
   const first = home.residents[0];
   const second = home.residents[1];
-  const expectedChange = world.conversationRelationshipChange(first, second, intent, true);
+  const expectedChange = world.conversationRelationshipChange(
+    first,
+    second,
+    intent,
+    true,
+    initialTension
+  );
   const started = world.commandResidentConversation(
     home.id,
     first.id,
@@ -388,7 +396,7 @@ function runConversationIntentProbe(intent: ConversationIntent) {
     home.residents.every(resident => resident.currentAction?.conversationIntent === intent),
     `${world.conversationIntentLabel(intent)} was not attached to both paired actions.`
   );
-  world.advanceMinutes({ chat: 60, support: 55, joke: 40, confront: 35 }[intent], 0);
+  world.advanceMinutes({ chat: 60, support: 55, joke: 40, confront: 35, apologize: 45 }[intent], 0);
   return {
     first,
     second,
@@ -426,8 +434,65 @@ check(
     && confrontProbe.relationship?.score === 55 + confrontProbe.expectedChange
     && confrontProbe.relationship.lastIntent === "confront"
     && confrontProbe.relationship.lastChange === confrontProbe.expectedChange
+    && confrontProbe.relationship.tension === 30
+    && confrontProbe.relationship.conflicts === 1
+    && confrontProbe.relationship.memories?.[0].intent === "confront"
+    && confrontProbe.relationship.memories[0].tensionChange === 30
     && confrontProbe.expectedChange < 0,
   "Confront did not create its intended relationship loss and stress tradeoff."
+);
+const apologyProbe = runConversationIntentProbe("apologize", 55);
+check(
+  apologyProbe.first.social === 58
+    && apologyProbe.first.stress === 33
+    && apologyProbe.second.social === 48
+    && apologyProbe.second.stress === 20
+    && apologyProbe.relationship?.score === 55 + apologyProbe.expectedChange
+    && apologyProbe.relationship.lastIntent === "apologize"
+    && apologyProbe.relationship.lastChange === apologyProbe.expectedChange
+    && apologyProbe.relationship.tension === 15
+    && apologyProbe.relationship.conflicts === 1
+    && apologyProbe.relationship.resolvedConflicts === 1
+    && apologyProbe.relationship.lastReconciledAt !== undefined
+    && apologyProbe.relationship.memories?.[0].intent === "apologize"
+    && apologyProbe.relationship.memories[0].tensionChange === -40,
+  "Apologize did not repair tension, preserve conflict history, and record reconciliation."
+);
+const autonomousRepairWorld = new World();
+const autonomousRepairHome = structuredClone(directControlBaseline);
+autonomousRepairHome.residents[0].social = 8;
+autonomousRepairHome.residents[0].stress = 18;
+autonomousRepairHome.relationships[0].tension = 55;
+autonomousRepairHome.relationships[0].conflicts = 1;
+autonomousRepairWorld.homes = [autonomousRepairHome];
+autonomousRepairWorld.clock.minute = 20 * 60;
+const autonomousApologyGain = autonomousRepairWorld.conversationRelationshipChange(
+  autonomousRepairHome.residents[0],
+  autonomousRepairHome.residents[1],
+  "apologize",
+  false,
+  55
+);
+autonomousRepairWorld.advanceMinutes(1, 0);
+check(
+  autonomousRepairHome.residents[0].currentAction?.kind === "socialize"
+    && autonomousRepairHome.residents[0].currentAction?.conversationIntent === "apologize"
+    && autonomousRepairHome.residents[1].currentAction?.conversationIntent === "apologize",
+  "An empathetic resident did not autonomously attempt to repair a tense relationship."
+);
+autonomousRepairWorld.setControlledResident("controlled-resident");
+autonomousRepairWorld.advanceMinutes(45, 0);
+const autonomouslyRepairedRelationship = autonomousRepairWorld.relationshipBetween(
+  autonomousRepairHome,
+  "controlled-resident",
+  "conversation-partner"
+);
+check(
+  autonomouslyRepairedRelationship?.score === 55 + autonomousApologyGain
+    && autonomouslyRepairedRelationship.tension === 15
+    && autonomouslyRepairedRelationship.resolvedConflicts === 1
+    && autonomouslyRepairedRelationship.memories?.[0].intent === "apologize",
+  "Autonomous apology did not complete through the shared reconciliation system."
 );
 check(
   directControlWorld.snapshot().homes[0].relationships[0].score === 55 + directedRelationshipGain,
@@ -883,6 +948,11 @@ console.log(JSON.stringify({
   jokeRelationshipChange: jokeProbe.expectedChange,
   confrontRelationshipChange: confrontProbe.expectedChange,
   confrontStress: confrontProbe.first.stress,
+  apologyRelationshipChange: apologyProbe.expectedChange,
+  repairedTension: apologyProbe.relationship?.tension,
+  resolvedConflicts: apologyProbe.relationship?.resolvedConflicts,
+  autonomousApologyGain,
+  autonomousRepairedTension: autonomouslyRepairedRelationship?.tension,
   autonomousConversationPartner: autonomousSocialHome.residents[0].lastActionKind,
   compatibleRelationshipScore: autonomousRelationship?.score,
   autonomousRelationshipGain

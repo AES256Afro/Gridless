@@ -2772,12 +2772,19 @@ function updateInteriorInteractionPrompt() {
       controlled.resident.id,
       pendingPartner.id
     );
+    const relationship = world.relationshipBetween(
+      controlled.home,
+      controlled.resident.id,
+      pendingPartner.id
+    );
+    const tension = relationship?.tension ?? 0;
     prompt.innerHTML = `
-      <span class="conversation-heading">Talk with ${pendingPartner.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}%</small></span>
+      <span class="conversation-heading">Talk with ${pendingPartner.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}% · ${world.relationshipTensionLabel(tension)} tension ${tension}%</small></span>
       <span class="conversation-choice"><kbd>1</kbd>Friendly Chat<small>Social +20 · Calm +6</small></span>
       <span class="conversation-choice"><kbd>2</kbd>Offer Support<small>Social +12 · Strong calm</small></span>
       <span class="conversation-choice"><kbd>3</kbd>Tell a Joke<small>Social +16 · Calm +10</small></span>
       <span class="conversation-choice risky"><kbd>4</kbd>Confront<small>Relationship risk · Stress</small></span>
+      <span class="conversation-choice reconcile"><kbd>5</kbd>Apologize<small>Repair tension · Make amends</small></span>
       <span class="conversation-cancel"><kbd>Q</kbd>Cancel</span>
     `;
     return;
@@ -2917,7 +2924,8 @@ function renderHome() {
         chat: 0xf0d980,
         support: 0x79c995,
         joke: 0xb59be9,
-        confront: 0xd96c5f
+        confront: 0xd96c5f,
+        apologize: 0x77b9d8
       }[action.conversationIntent ?? "chat"];
       for (const x of [-.18, 0, .18]) {
         const thought = new THREE.Mesh(
@@ -3213,13 +3221,18 @@ function updateHouseholdSummary(home: Home) {
             const second = home.residents.find(resident => resident.id === relationship.residentIds[1]);
             if (!first || !second) return "";
             const compatibility = world.relationshipCompatibility(first, second);
+            const tension = relationship.tension ?? 0;
             const recentOutcome = relationship.lastIntent && relationship.lastChange !== undefined
-              ? `${world.conversationIntentLabel(relationship.lastIntent)} · ${relationship.lastChange > 0 ? "+" : ""}${relationship.lastChange} ${world.conversationOutcomeLabel(relationship.lastChange)}`
+              ? `${world.conversationIntentLabel(relationship.lastIntent)} · ${relationship.lastChange > 0 ? "+" : ""}${relationship.lastChange} ${world.conversationOutcomeLabel(relationship.lastChange, relationship.lastIntent)}`
               : "";
+            const memories = (relationship.memories ?? []).slice(0, 3).map(memory => {
+              const initiator = home.residents.find(resident => resident.id === memory.initiatorResidentId);
+              return `<i>${initiator?.name ?? "Resident"}: ${world.conversationIntentLabel(memory.intent)} ${memory.relationshipChange > 0 ? "+" : ""}${memory.relationshipChange}</i>`;
+            }).join("");
             return `
               <div class="relationship-row">
-                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"}${recentOutcome ? `<em>Last: ${recentOutcome}</em>` : ""}</small></span>
-                <b>${world.relationshipLabel(relationship.score)} · ${relationship.score}%</b>
+                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"} · ${relationship.conflicts ?? 0} conflicts · ${relationship.resolvedConflicts ?? 0} repaired${recentOutcome ? `<em>Last: ${recentOutcome}</em>` : ""}${memories ? `<span class="social-memory">${memories}</span>` : ""}</small></span>
+                <b>${world.relationshipLabel(relationship.score)} · ${relationship.score}%<small>${world.relationshipTensionLabel(tension)} ${tension}%</small></b>
               </div>
             `;
           }).join("")}
@@ -3421,7 +3434,9 @@ function updateExplorerContext() {
           world.relationshipCompatibility(controlled.resident, conversationPartner)
         ).toLowerCase()}, and their relationship is ${world.relationshipLabel(
           world.relationshipScore(interior.home, controlled.resident.id, conversationPartner.id)
-        ).toLowerCase()}.`
+        ).toLowerCase()} with ${world.relationshipTensionLabel(
+          world.relationshipBetween(interior.home, controlled.resident.id, conversationPartner.id)?.tension ?? 0
+        ).toLowerCase()} tension.`
       : "";
     const controlCopy = controlled
       ? ` You are controlling ${controlled.resident.name}. ${controlledAction
@@ -4097,7 +4112,7 @@ addEventListener("keydown", event => {
     mode === "explore"
     && explorerInteriorHomeId
     && pendingConversationPartnerId
-    && ["Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code)
+    && ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"].includes(event.code)
     && !event.repeat
   ) {
     event.preventDefault();
@@ -4105,7 +4120,8 @@ addEventListener("keydown", event => {
       Digit1: "chat",
       Digit2: "support",
       Digit3: "joke",
-      Digit4: "confront"
+      Digit4: "confront",
+      Digit5: "apologize"
     }[event.code] as ConversationIntent;
     startPendingConversation(intent);
   }

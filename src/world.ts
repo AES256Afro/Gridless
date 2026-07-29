@@ -84,7 +84,15 @@ export type ResidentTrait =
   | "organized"
   | "empathetic";
 
-export type ConversationIntent = "chat" | "support" | "joke" | "confront";
+export type ConversationIntent = "chat" | "support" | "joke" | "confront" | "apologize";
+
+export type SocialMemory = {
+  intent: ConversationIntent;
+  relationshipChange: number;
+  tensionChange: number;
+  occurredAt: number;
+  initiatorResidentId: string;
+};
 
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "socialize" | "tend-plants" | "idle";
 
@@ -125,6 +133,12 @@ export type ResidentRelationship = {
   lastInteractionAt?: number;
   lastIntent?: ConversationIntent;
   lastChange?: number;
+  tension?: number;
+  conflicts?: number;
+  resolvedConflicts?: number;
+  lastConflictAt?: number;
+  lastReconciledAt?: number;
+  memories?: SocialMemory[];
 };
 
 export type ResidentWellbeing = {
@@ -1359,7 +1373,8 @@ export class World {
         chat: "Having a friendly chat",
         support: "Sharing support",
         joke: "Telling a joke",
-        confront: "Having a confrontation"
+        confront: "Having a confrontation",
+        apologize: "Making amends"
       }[action.conversationIntent ?? "chat"];
     }
     return {
@@ -1441,11 +1456,13 @@ export class World {
       chat: "Friendly Chat",
       support: "Offer Support",
       joke: "Tell a Joke",
-      confront: "Confront"
+      confront: "Confront",
+      apologize: "Apologize"
     }[intent];
   }
 
-  conversationOutcomeLabel(change: number) {
+  conversationOutcomeLabel(change: number, intent?: ConversationIntent) {
+    if (intent === "apologize") return change >= 6 ? "Reconciled" : "Amends";
     return change >= 8
       ? "Breakthrough"
       : change >= 4
@@ -1455,6 +1472,16 @@ export class World {
           : change <= -9
             ? "Argument"
             : "Tense";
+  }
+
+  relationshipTensionLabel(tension: number) {
+    return tension >= 70
+      ? "Hostile"
+      : tension >= 45
+        ? "Conflict"
+        : tension >= 20
+          ? "Uneasy"
+          : "Calm";
   }
 
   conversationRelationshipGain(
@@ -1469,11 +1496,22 @@ export class World {
     firstResident: Resident,
     secondResident: Resident,
     intent: ConversationIntent,
-    directed: boolean
+    directed: boolean,
+    tension = 0
   ) {
     const compatibility = this.relationshipCompatibility(firstResident, secondResident);
-    if (!directed) {
+    if (!directed && intent !== "apologize") {
       return Math.round(clamp(3 + (compatibility - 50) / 12, 1, 8));
+    }
+    if (intent === "apologize") {
+      const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
+        + (secondResident.traits.includes("empathetic") ? 1 : 0);
+      const directionBonus = directed ? 2 : 0;
+      return Math.round(clamp(
+        3 + directionBonus + empathy + tension / 12 + (compatibility - 50) / 20,
+        2,
+        12
+      ));
     }
     if (intent === "support") {
       const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
@@ -1548,7 +1586,8 @@ export class World {
       chat: 60,
       support: 55,
       joke: 40,
-      confront: 35
+      confront: 35,
+      apologize: 45
     }[intent];
     const endsAt = startedAt + duration;
     resident.currentAction = {
@@ -2599,22 +2638,36 @@ export class World {
     const now = this.clock.elapsedMinutes;
     const hour = this.clock.minute / 60;
     const sleepingHours = hour < 7 || hour >= 22;
-    const availablePartner = home.residents
+    const availablePartnerMatch = home.residents
       .filter(candidate =>
         candidate.id !== resident.id
         && candidate.id !== this.controlledResidentId
         && this.residentStatus(candidate) === "Home"
         && !candidate.currentAction
       )
-      .map(candidate => ({
-        resident: candidate,
-        score:
-          this.relationshipScore(home, resident.id, candidate.id) * .55
-          + this.relationshipCompatibility(resident, candidate) * .45
-          + (100 - candidate.social) * .12
-          + hashString(`${resident.id}-${candidate.id}-${Math.floor(now / 60)}`) % 8
-      }))
-      .sort((first, second) => second.score - first.score)[0]?.resident;
+      .map(candidate => {
+        const relationship = this.relationshipBetween(home, resident.id, candidate.id);
+        const tension = relationship?.tension ?? 0;
+        return {
+          resident: candidate,
+          relationship,
+          tension,
+          score:
+            this.relationshipScore(home, resident.id, candidate.id) * .55
+            + this.relationshipCompatibility(resident, candidate) * .45
+            + (100 - candidate.social) * .12
+            + tension * (resident.traits.includes("empathetic") ? .42 : .1)
+            + hashString(`${resident.id}-${candidate.id}-${Math.floor(now / 60)}`) % 8
+        };
+      })
+      .sort((first, second) => second.score - first.score)[0];
+    const availablePartner = availablePartnerMatch?.resident;
+    const autonomousConversationIntent: ConversationIntent =
+      availablePartnerMatch
+      && availablePartnerMatch.tension >= 25
+      && (resident.traits.includes("empathetic") || availablePartnerMatch.tension >= 45)
+        ? "apologize"
+        : "chat";
     const furniture = {
       bed: home.furniture.find(item => item.kind === "bed"),
       sofa: home.furniture.find(item => item.kind === "sofa"),
@@ -2646,7 +2699,10 @@ export class World {
       },
       {
         kind: "socialize",
-        score: (100 - resident.social) * 1.08 + (availablePartner ? 24 : -32) + (furniture.table || furniture.sofa ? 10 : 0),
+        score: (100 - resident.social) * 1.08
+          + (availablePartner ? 24 : -32)
+          + (furniture.table || furniture.sofa ? 10 : 0)
+          + (autonomousConversationIntent === "apologize" ? availablePartnerMatch?.tension ?? 0 : 0) * .45,
         targetFurnitureId: furniture.table?.id ?? furniture.sofa?.id,
         partnerResidentId: availablePartner?.id
       },
@@ -2673,7 +2729,7 @@ export class World {
       ? sleepingHours ? 360 : 90
       : choice.kind === "eat" ? 45
         : choice.kind === "relax" ? 75
-          : choice.kind === "socialize" ? 60
+          : choice.kind === "socialize" ? autonomousConversationIntent === "apologize" ? 45 : 60
             : choice.kind === "tend-plants" ? 45 : 30;
     return {
       kind: choice.kind,
@@ -2681,7 +2737,7 @@ export class World {
       endsAt: now + duration,
       targetFurnitureId: choice.targetFurnitureId,
       partnerResidentId: choice.partnerResidentId,
-      conversationIntent: choice.kind === "socialize" ? "chat" : undefined,
+      conversationIntent: choice.kind === "socialize" ? autonomousConversationIntent : undefined,
       relationshipCredit: choice.kind === "socialize" && Boolean(choice.partnerResidentId)
     };
   }
@@ -2704,7 +2760,8 @@ export class World {
         chat: { social: 20, stress: -6 },
         support: { social: 12, stress: action.relationshipCredit ? -8 : -16 },
         joke: { social: 16, stress: -10 },
-        confront: { social: -6, stress: action.relationshipCredit ? 9 : 14 }
+        confront: { social: -6, stress: action.relationshipCredit ? 9 : 14 },
+        apologize: { social: 8, stress: action.relationshipCredit ? -12 : -18 }
       }[intent];
       resident.social = clamp(resident.social + effects.social, 0, 100);
       resident.stress = clamp(resident.stress + effects.stress, 0, 100);
@@ -2712,21 +2769,50 @@ export class World {
         const relationship = this.relationshipBetween(home, resident.id, action.partnerResidentId);
         const partner = home.residents.find(item => item.id === action.partnerResidentId);
         if (relationship && partner) {
+          const previousTension = relationship.tension ?? 0;
           const relationshipChange = this.conversationRelationshipChange(
             resident,
             partner,
             intent,
-            Boolean(action.directed)
+            Boolean(action.directed),
+            previousTension
           );
+          const tensionChange = {
+            chat: -6,
+            support: -12,
+            joke: -8,
+            confront: 30,
+            apologize: -40
+          }[intent];
           relationship.score = clamp(
             relationship.score + relationshipChange,
             0,
             100
           );
+          relationship.tension = clamp(previousTension + tensionChange, 0, 100);
           relationship.conversations += 1;
           relationship.lastInteractionAt = action.endsAt;
           relationship.lastIntent = intent;
           relationship.lastChange = relationshipChange;
+          if (intent === "confront") {
+            relationship.conflicts = (relationship.conflicts ?? 0) + 1;
+            relationship.lastConflictAt = action.endsAt;
+          }
+          if (
+            intent === "apologize"
+            && previousTension >= 20
+            && relationship.tension < 20
+          ) {
+            relationship.resolvedConflicts = (relationship.resolvedConflicts ?? 0) + 1;
+            relationship.lastReconciledAt = action.endsAt;
+          }
+          relationship.memories = [{
+            intent,
+            relationshipChange,
+            tensionChange: relationship.tension - previousTension,
+            occurredAt: action.endsAt,
+            initiatorResidentId: resident.id
+          }, ...(relationship.memories ?? [])].slice(0, 8);
         }
       }
     } else if (action.kind === "tend-plants") {
@@ -2963,7 +3049,12 @@ function residentActionTraitBonus(resident: Resident, action: ResidentActionKind
 }
 
 function normalizeConversationIntent(intent: ConversationIntent | undefined): ConversationIntent {
-  return intent === "support" || intent === "joke" || intent === "confront" ? intent : "chat";
+  return intent === "support"
+    || intent === "joke"
+    || intent === "confront"
+    || intent === "apologize"
+    ? intent
+    : "chat";
 }
 
 function normalizeRelationships(
@@ -2993,7 +3084,27 @@ function normalizeRelationships(
         : undefined,
       lastChange: Number.isFinite(relationship.lastChange)
         ? clamp(Math.round(relationship.lastChange!), -14, 12)
-        : undefined
+        : undefined,
+      tension: clamp(Math.round(relationship.tension ?? 0), 0, 100),
+      conflicts: Math.max(0, Math.floor(relationship.conflicts ?? 0)),
+      resolvedConflicts: Math.max(0, Math.floor(relationship.resolvedConflicts ?? 0)),
+      lastConflictAt: relationship.lastConflictAt,
+      lastReconciledAt: relationship.lastReconciledAt,
+      memories: (relationship.memories ?? [])
+        .filter(memory =>
+          residentIds.has(memory.initiatorResidentId)
+          && Number.isFinite(memory.occurredAt)
+          && Number.isFinite(memory.relationshipChange)
+          && Number.isFinite(memory.tensionChange)
+        )
+        .slice(0, 8)
+        .map(memory => ({
+          intent: normalizeConversationIntent(memory.intent),
+          relationshipChange: clamp(Math.round(memory.relationshipChange), -14, 12),
+          tensionChange: clamp(Math.round(memory.tensionChange), -40, 30),
+          occurredAt: Math.max(0, memory.occurredAt),
+          initiatorResidentId: memory.initiatorResidentId
+        }))
     });
   }
   for (let firstIndex = 0; firstIndex < residents.length; firstIndex += 1) {
