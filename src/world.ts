@@ -397,6 +397,19 @@ export type SimulationClock = {
   elapsedMinutes: number;
 };
 
+export type Season = "winter" | "spring" | "summer" | "autumn";
+export type WeatherKind = "clear" | "cloudy" | "rain" | "snow";
+
+export type WeatherState = {
+  kind: WeatherKind;
+  season: Season;
+  label: string;
+  temperatureC: number;
+  windKph: number;
+  precipitation: number;
+  visibility: number;
+};
+
 export type IncidentKind = "fire" | "medical";
 
 export type CityIncident = {
@@ -583,6 +596,46 @@ export class World {
     this.transitLines = initialTransitLines(this.roads);
     this.cityEvents = initialCityEvents(this.roads);
     this.rebuildAccessibilityEntrances();
+  }
+
+  weather(): WeatherState {
+    const { year, month, day } = this.clock;
+    const season: Season = month === 12 || month <= 2
+      ? "winter"
+      : month <= 5
+        ? "spring"
+        : month <= 8
+          ? "summer"
+          : "autumn";
+    const seed = hashString(`weather:${year}:${month}:${day}`);
+    const roll = seed % 100;
+    const wetThreshold = season === "summer" ? 34 : season === "spring" ? 42 : season === "autumn" ? 38 : 30;
+    const kind: WeatherKind = season === "winter" && roll < 18
+      ? "snow"
+      : roll < wetThreshold
+        ? "rain"
+        : roll < wetThreshold + 27
+          ? "cloudy"
+          : "clear";
+    const monthlyTemperature = [-1, 1, 6, 12, 18, 23, 26, 25, 21, 14, 8, 2][month - 1];
+    const temperatureC = monthlyTemperature + Math.floor(seed / 101) % 9 - 4;
+    const precipitation = kind === "rain" ? .72 + (seed % 19) / 100 : kind === "snow" ? .58 + (seed % 17) / 100 : 0;
+    const visibility = kind === "rain" ? .58 : kind === "snow" ? .66 : kind === "cloudy" ? .82 : 1;
+    const labels: Record<WeatherKind, string> = {
+      clear: "Clear",
+      cloudy: "Cloudy",
+      rain: "Rain",
+      snow: "Snow"
+    };
+    return {
+      kind,
+      season,
+      label: labels[kind],
+      temperatureC,
+      windKph: 6 + Math.floor(seed / 17) % 27,
+      precipitation,
+      visibility
+    };
   }
 
   snapshot(): WorldSnapshot {

@@ -356,6 +356,17 @@ function integrityFailures(world: World) {
   if (world.clock.month < 1 || world.clock.month > 12 || world.clock.day < 1 || world.clock.day > 30) {
     failures.push("Calendar fields are outside their valid ranges.");
   }
+  const weather = world.weather();
+  if (
+    !Number.isFinite(weather.temperatureC)
+    || !Number.isFinite(weather.windKph)
+    || weather.precipitation < 0
+    || weather.precipitation > 1
+    || weather.visibility <= 0
+    || weather.visibility > 1
+  ) {
+    failures.push("Weather state is outside its valid ranges.");
+  }
 
   const roadIds = new Set(world.roads.map(road => road.id));
   const lotIds = new Set(world.lots.map(lot => lot.id));

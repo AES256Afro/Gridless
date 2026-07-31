@@ -25,6 +25,7 @@ import {
   type ServiceKind,
   type SpatialChunk,
   type UtilityKind,
+  type WeatherState,
   type Zone,
   World
 } from "./world";
@@ -87,7 +88,7 @@ app.innerHTML = `
   <div class="hud">
     <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="lod-status" id="lod-status">Preparing region detail</div></div>
     <div class="simulation-controls">
-      <div><span id="sim-date">Y1 · JAN 1</span><strong id="sim-time">08:00</strong></div>
+      <div><span id="sim-date">Y1 · JAN 1</span><strong id="sim-time">08:00</strong><small id="sim-weather">Clear · 0°C</small></div>
       <button data-speed="0" aria-label="Pause simulation">Ⅱ</button>
       <button data-speed="12" class="active" aria-label="Normal simulation speed">▶</button>
       <button data-speed="72" aria-label="Fast simulation speed">▶▶</button>
@@ -367,14 +368,53 @@ sun.shadow.bias = -.00015;
 sun.shadow.normalBias = .08;
 scene.add(sun);
 
+const rainParticleCount = 320;
+const rainPositions = new Float32Array(rainParticleCount * 6);
+for (let index = 0; index < rainParticleCount; index++) {
+  const offset = index * 6;
+  const x = ((index * 73) % 997) / 997 * 180 - 90;
+  const y = ((index * 151) % 991) / 991 * 160 - 70;
+  const z = ((index * 211) % 983) / 983 * 180 - 90;
+  rainPositions.set([x, y, z, x + .35, y - 3.6, z + .15], offset);
+}
+const rainGeometry = new THREE.BufferGeometry();
+rainGeometry.setAttribute("position", new THREE.BufferAttribute(rainPositions, 3));
+const rainField = new THREE.LineSegments(
+  rainGeometry,
+  new THREE.LineBasicMaterial({ color: 0xa9d4df, transparent: true, opacity: .34, depthWrite: false })
+);
+rainField.visible = false;
+rainField.frustumCulled = false;
+scene.add(rainField);
+
+const snowParticleCount = 460;
+const snowPositions = new Float32Array(snowParticleCount * 3);
+for (let index = 0; index < snowParticleCount; index++) {
+  snowPositions.set([
+    ((index * 83) % 997) / 997 * 180 - 90,
+    ((index * 137) % 991) / 991 * 160 - 70,
+    ((index * 223) % 983) / 983 * 180 - 90
+  ], index * 3);
+}
+const snowGeometry = new THREE.BufferGeometry();
+snowGeometry.setAttribute("position", new THREE.BufferAttribute(snowPositions, 3));
+const snowField = new THREE.Points(
+  snowGeometry,
+  new THREE.PointsMaterial({ color: 0xf4f7f3, size: .7, transparent: true, opacity: .78, depthWrite: false })
+);
+snowField.visible = false;
+snowField.frustumCulled = false;
+scene.add(snowField);
+
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(1400, 1400),
   new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
 );
 ground.rotation.x = -Math.PI / 2;
+const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x6e919b, roughness: .62, metalness: .08 });
 const water = new THREE.Mesh(
   new THREE.PlaneGeometry(1800, 1800),
-  new THREE.MeshStandardMaterial({ color: 0x6e919b, roughness: .62, metalness: .08 })
+  waterMaterial
 );
 water.rotation.x = -Math.PI / 2;
 water.position.y = -.35;
@@ -2284,19 +2324,37 @@ function utilityCapacityFactor(kind: ServiceKind, population: number) {
 
 function updateClockDisplay() {
   const { year, month, day, minute } = world.clock;
+  const weather = world.weather();
   const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
   const hours = Math.floor(minute / 60);
   const minutes = Math.floor(minute % 60);
   document.querySelector("#sim-date")!.textContent = `Y${year} · ${monthNames[month - 1]} ${day}`;
   document.querySelector("#sim-time")!.textContent = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  document.querySelector("#sim-weather")!.textContent = `${weather.label} · ${weather.temperatureC}°C · ${weather.windKph} km/h`;
   const daylight = Math.max(0, Math.sin((hours + minutes / 60 - 6) / 12 * Math.PI));
-  sun.intensity = .38 + daylight * 2.82;
-  hemisphere.intensity = .58 + daylight * 1.67;
+  const weatherLight = weather.kind === "rain" ? .55 : weather.kind === "cloudy" ? .72 : weather.kind === "snow" ? .82 : 1;
+  sun.intensity = (.38 + daylight * 2.82) * weatherLight;
+  hemisphere.intensity = (.58 + daylight * 1.67) * (.78 + weatherLight * .22);
   const night = new THREE.Color(0x172532);
-  const dayColor = new THREE.Color(0xb8c9cb);
+  const dayColor = new THREE.Color(
+    weather.kind === "rain" ? 0x788b92
+      : weather.kind === "cloudy" ? 0x98a7a8
+        : weather.kind === "snow" ? 0xc6d1d2
+          : 0xb8c9cb
+  );
   const sky = night.clone().lerp(dayColor, .18 + daylight * .82);
   scene.background = sky;
-  if (scene.fog) scene.fog.color.copy(sky);
+  if (scene.fog instanceof THREE.FogExp2) {
+    scene.fog.color.copy(sky);
+    scene.fog.density = .00052 + (1 - weather.visibility) * .00115;
+  }
+  const precipitationVisible = mode !== "home" && !explorerInteriorHomeId;
+  rainField.visible = weather.kind === "rain" && precipitationVisible;
+  snowField.visible = weather.kind === "snow" && precipitationVisible;
+  roadMaterial.color.set(weather.kind === "rain" ? 0x252d2e : weather.kind === "snow" ? 0x3b4140 : 0x303533);
+  roadMaterial.roughness = weather.kind === "rain" ? .72 : .94;
+  sidewalkMaterial.color.set(weather.kind === "snow" ? 0xc5c9c2 : weather.kind === "rain" ? 0x9da39f : 0xb7b4aa);
+  waterMaterial.color.set(weather.kind === "rain" ? 0x587782 : weather.kind === "snow" ? 0x819aa1 : 0x6e919b);
   renderIncidents();
   renderCommutes();
   updateTrafficSignals();
@@ -2326,6 +2384,17 @@ function isLotCovered(lot: Lot, kind: ServiceKind) {
 
 function renderTerrain() {
   terrainGroup.clear();
+  const weather = world.weather();
+  const seasonalParkColor = weather.kind === "snow"
+    ? 0xc9d1c8
+    : weather.season === "winter"
+      ? 0x71806b
+      : weather.season === "spring"
+        ? 0x5d8053
+        : weather.season === "summer"
+          ? 0x4f7549
+          : 0x806f48;
+  const seasonalLandColor = weather.kind === "snow" ? 0xaeb8a8 : weather.season === "autumn" ? 0x8d9270 : 0x819773;
   for (const area of world.areas) {
     if (area.kind === "district") {
       const center = area.points.reduce((sum, point) => ({ x: sum.x + point.x / area.points.length, z: sum.z + point.z / area.points.length }), { x: 0, z: 0 });
@@ -2340,7 +2409,7 @@ function renderTerrain() {
     const surface = new THREE.Mesh(
       new THREE.ShapeGeometry(shape),
       new THREE.MeshStandardMaterial({
-        color: area.kind === "park" ? 0x587a4f : 0x819773,
+        color: area.kind === "park" ? seasonalParkColor : seasonalLandColor,
         roughness: 1,
         side: THREE.DoubleSide
       })
@@ -5131,9 +5200,42 @@ document.querySelector("#apply-template")!.addEventListener("click", event => {
 });
 
 const clock = new THREE.Clock();
+
+function animateWeather(dt: number, weather: WeatherState) {
+  const scale = mode === "city" ? 4.6 : mode === "home" || explorerInteriorHomeId ? .48 : 1;
+  rainField.scale.setScalar(scale);
+  snowField.scale.setScalar(scale);
+  rainField.position.copy(camera.position);
+  snowField.position.copy(camera.position);
+  if (rainField.visible) {
+    const fall = dt * (42 + weather.precipitation * 34) / scale;
+    for (let index = 0; index < rainParticleCount; index++) {
+      const offset = index * 6;
+      rainPositions[offset + 1] -= fall;
+      rainPositions[offset + 4] -= fall;
+      if (rainPositions[offset + 4] < -76) {
+        rainPositions[offset + 1] += 156;
+        rainPositions[offset + 4] += 156;
+      }
+    }
+    rainGeometry.attributes.position.needsUpdate = true;
+  }
+  if (snowField.visible) {
+    const fall = dt * 9 / scale;
+    for (let index = 0; index < snowParticleCount; index++) {
+      const offset = index * 3;
+      snowPositions[offset] += Math.sin(world.clock.elapsedMinutes * .015 + index) * dt * .7;
+      snowPositions[offset + 1] -= fall;
+      if (snowPositions[offset + 1] < -76) snowPositions[offset + 1] += 156;
+    }
+    snowGeometry.attributes.position.needsUpdate = true;
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), .05);
+  animateWeather(dt, world.weather());
   if (simulationSpeed > 0) {
     simulationAccumulator += dt * simulationSpeed;
     const elapsedMinutes = Math.floor(simulationAccumulator);
