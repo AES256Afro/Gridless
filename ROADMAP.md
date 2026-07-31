@@ -10,6 +10,8 @@ Gridless is one continuous game with three nested experiences:
 
 A city lot is never a decorative placeholder. It can own a persistent home, rooms, objects, residents, finances, utilities, and history. Changes made at household scale contribute to neighborhood demand and city systems; city conditions affect household cost, travel, safety, services, and wellbeing.
 
+The interface follows the same hierarchy. The persistent top switcher moves between City Builder, City Explorer, and Home Simulator. City Builder then narrows work into Build, Zones, Services, Mobility, and Events, with operation-specific settings revealed only when relevant. Explorer prioritizes place, movement, and nearby actions. Home Simulator prioritizes construction, furnishing, residents, needs, and relationships.
+
 ## NYC as the flexible starting language
 
 The default template borrows New York City’s useful planning logic without turning the project into a fixed replica:

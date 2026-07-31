@@ -737,17 +737,19 @@ kbd {
 .city-build-tools {
   display: none;
   position: absolute;
-  right: 28px;
+  right: auto;
   bottom: 28px;
-  left: 28px;
+  left: 50%;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
+  gap: 6px;
+  width: min(1120px, calc(100vw - 56px));
   padding: 6px;
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 12px;
   background: rgba(13,21,17,.9);
   box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  transform: translateX(-50%);
   pointer-events: auto;
   backdrop-filter: blur(16px);
 }
@@ -756,7 +758,51 @@ kbd {
 .city-build-tools button { padding: 9px 11px; white-space: nowrap; }
 .city-build-tools button:hover { color: white; background: rgba(255,255,255,.08); }
 .city-build-tools button.active { color: #172019; background: #d9e8d7; }
+.city-tool-categories {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(90px, 1fr));
+  gap: 4px;
+  width: 100%;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.city-tool-categories button {
+  padding: 7px 14px;
+  color: #8fa096;
+  background: transparent;
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.city-tool-categories button.active {
+  color: #e8f0e9;
+  background: rgba(255,255,255,.1);
+}
+.city-tool-options {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 36px;
+}
+.city-tool-options.active { display: flex; }
+.city-tool-actions,
+.city-tool-settings {
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.city-tool-actions { display: flex; }
+.city-tool-settings {
+  display: none;
+  padding-left: 7px;
+  border-left: 1px solid rgba(255,255,255,.12);
+}
+.city-tool-settings.active { display: flex; }
 .city-build-tools select {
+  min-width: 145px;
+  max-width: 215px;
   padding: 8px 9px;
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 7px;
@@ -925,16 +971,13 @@ kbd {
   max-width: none;
   transform: none;
 }
-.city-editing .panel { bottom: 94px; }
+.city-editing .panel { bottom: 126px; }
 .city-editing .actionbar { top: 136px; bottom: auto; }
 .city-editing .city-tools { top: 186px; bottom: auto; }
 
 @media (max-width: 1500px) {
-  .city-build-tools {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  .city-editing .panel { bottom: 132px; }
+  .city-tool-options { overflow-x: auto; justify-content: flex-start; }
+  .city-editing .panel { bottom: 126px; }
 }
 
 @media (max-width: 1100px) {
@@ -979,8 +1022,9 @@ kbd {
     right: 16px;
     bottom: 76px;
     left: 16px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
+    width: auto;
+    transform: none;
   }
+  .city-tool-categories { grid-template-columns: repeat(5, minmax(70px, 1fr)); overflow-x: auto; }
+  .city-tool-options { overflow-x: auto; justify-content: flex-start; }
 }
