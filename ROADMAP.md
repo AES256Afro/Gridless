@@ -51,6 +51,8 @@ City and Home edits share a bounded 40-step Undo and Redo history. Visible butto
 
 The browser keeps manual saves separate from a debounced recovery snapshot. Every authored change, simulated day, and clean page exit refreshes the recovery copy. Recovering is itself undoable, while malformed or incompatible recovery data leaves the current city untouched.
 
+A global field guide is available from every scale through the visible Help button or `?`. It groups controls by City Builder, City Explorer, and Home Simulator, documents shared history and recovery behavior, closes with `Esc` or the backdrop, and remains usable on narrow screens.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.

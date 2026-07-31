@@ -101,6 +101,7 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
     <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="lod-status" id="lod-status">Preparing region detail</div></div>
+    <button class="help-trigger" id="help-open" type="button" aria-label="Open controls guide"><kbd>?</kbd><span>Help</span></button>
     <div class="simulation-controls">
       <div><span id="sim-date">Y1 · JAN 1</span><strong id="sim-time">08:00</strong><small id="sim-weather">Clear · 0°C</small></div>
       <button data-speed="0" aria-label="Pause simulation">Ⅱ</button>
@@ -389,6 +390,20 @@ app.innerHTML = `
         <div class="resident-profile-preview"><span>PROFILE PREVIEW</span><strong id="resident-preview-name">New resident</strong><p id="resident-preview-copy">Adult · Office worker · Choose two traits</p></div>
         <div class="resident-creator-actions"><button type="button" id="resident-creator-cancel">Cancel</button><button type="submit" class="primary">Add to household</button></div>
       </form>
+    </div>
+    <div class="controls-guide" id="controls-guide" role="dialog" aria-modal="true" aria-labelledby="controls-guide-title" hidden>
+      <section>
+        <header>
+          <div><span>GRIDLESS FIELD GUIDE</span><h2 id="controls-guide-title">One city, three ways to play</h2><p>Plan the region, experience it at street level, then shape the lives inside its homes. Every scale edits the same persistent world.</p></div>
+          <button type="button" id="help-close" aria-label="Close controls guide">×</button>
+        </header>
+        <div class="controls-guide-grid">
+          <article><b>01</b><h3>City Builder</h3><p>Shape roads and parcels, fund services, tune mobility, and diagnose the city through live overlays.</p><dl><dt>Click</dt><dd>Place or select</dd><dt>Enter</dt><dd>Finish a road or network</dd><dt>Views</dt><dd>Traffic, utilities, wellbeing, growth</dd></dl></article>
+          <article><b>02</b><h3>City Explorer</h3><p>Walk, drive, ride transit, follow accessible routes, and enter homes from their real street entrances.</p><dl><dt>W A S D</dt><dd>Move or drive</dd><dt>Shift / Space</dt><dd>Sprint / jump</dd><dt>E / T / F</dt><dd>Vehicle / transit / home</dd><dt>R / O</dt><dd>Route / photo mode</dd></dl></article>
+          <article><b>03</b><h3>Home Simulator</h3><p>Draw rooms, choose their purpose and finishes, furnish around real collisions, and guide a household.</p><dl><dt>Select</dt><dd>Edit a room or object</dd><dt>Click</dt><dd>Place or move</dd><dt>R</dt><dd>Rotate selected furniture</dd><dt>C / E</dt><dd>Choose resident / interact</dd></dl></article>
+        </div>
+        <footer><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⇧ ⌘/Ctrl Z</kbd> Redo</span><span><kbd>?</kbd> This guide</span><span><kbd>Esc</kbd> Close or step back</span><small>Manual saves are yours. Autosave recovery protects the latest world state separately.</small></footer>
+      </section>
     </div>
     <div class="explorer-status" aria-label="Explorer movement status">
       <div><span>Location</span><strong id="explorer-location">City streets</strong></div>
@@ -5121,6 +5136,19 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
+  const controlsGuide = document.querySelector<HTMLElement>("#controls-guide")!;
+  if (event.code === "Slash" && event.shiftKey && !event.repeat) {
+    event.preventDefault();
+    controlsGuide.hidden = !controlsGuide.hidden;
+    if (!controlsGuide.hidden) document.querySelector<HTMLButtonElement>("#help-close")!.focus();
+    return;
+  }
+  if (event.code === "Escape" && !controlsGuide.hidden) {
+    event.preventDefault();
+    controlsGuide.hidden = true;
+    document.querySelector<HTMLButtonElement>("#help-open")!.focus();
+    return;
+  }
   if (event.code === "Escape" && !document.querySelector<HTMLElement>("#resident-creator")!.hidden) {
     event.preventDefault();
     closeResidentCreator();
@@ -5150,6 +5178,11 @@ addEventListener("keydown", event => {
     renderHome();
     renderDraft();
     notice("Home edit cancelled");
+  }
+  if (mode === "home" && event.code === "KeyR" && selectedFurnitureId && !event.repeat) {
+    event.preventDefault();
+    document.querySelector<HTMLButtonElement>("#rotate-furniture")!.click();
+    return;
   }
   if (
     mode === "explore"
@@ -5273,6 +5306,18 @@ addEventListener("keydown", event => {
 });
 addEventListener("keyup", event => keys.delete(event.code));
 addEventListener("blur", () => keys.clear());
+document.querySelector("#help-open")!.addEventListener("click", () => {
+  document.querySelector<HTMLElement>("#controls-guide")!.hidden = false;
+  document.querySelector<HTMLButtonElement>("#help-close")!.focus();
+});
+document.querySelector("#help-close")!.addEventListener("click", () => {
+  document.querySelector<HTMLElement>("#controls-guide")!.hidden = true;
+  document.querySelector<HTMLButtonElement>("#help-open")!.focus();
+});
+document.querySelector("#controls-guide")!.addEventListener("click", event => {
+  if (event.target !== event.currentTarget) return;
+  document.querySelector<HTMLElement>("#controls-guide")!.hidden = true;
+});
 renderer.domElement.addEventListener("pointermove", event => {
   if (mode !== "home" || !selectedLot) return;
   pointer.set(event.clientX / innerWidth * 2 - 1, -(event.clientY / innerHeight) * 2 + 1);
