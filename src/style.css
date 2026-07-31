@@ -36,6 +36,7 @@ canvas { display: block; }
   font: 700 30px/1 "Manrope", sans-serif;
   letter-spacing: -.04em;
 }
+.city-name { margin-top: 4px; color: #d8e3da; font-size: 11px; font-weight: 650; }
 .help-trigger {
   position: absolute;
   z-index: 4;
@@ -1155,6 +1156,18 @@ kbd {
   background: #28322c;
   font: 500 12px "DM Sans", sans-serif;
 }
+.city-tools input {
+  width: 160px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 8px;
+  color: #e9f0e9;
+  background: #28322c;
+  font: 600 12px "DM Sans", sans-serif;
+  outline: none;
+}
+.city-tools input:focus { border-color: #f0d980; box-shadow: 0 0 0 2px rgba(240,217,128,.13); }
+.city-tools #rename-city { color: #dbe5dc; background: rgba(255,255,255,.08); }
 .city-tools button {
   padding: 9px 12px;
   border: 0;

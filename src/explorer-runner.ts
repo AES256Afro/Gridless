@@ -264,6 +264,21 @@ check(
   "A new edit after undo did not invalidate the abandoned redo branch."
 );
 
+const identityWorld = new World();
+const identityRevision = identityWorld.changeRevision();
+check(!identityWorld.setCityName("<script>"), "City identity accepted unsafe markup characters.");
+check(identityWorld.setCityName("Harbor Commons"), "A valid city name was rejected.");
+check(
+  identityWorld.cityName === "Harbor Commons" && identityWorld.changeRevision() > identityRevision,
+  "City identity did not update as a tracked world edit."
+);
+const namedCitySnapshot = identityWorld.serialize();
+check(identityWorld.setCityName("Second Name"), "City identity could not be changed a second time.");
+check(identityWorld.restore(namedCitySnapshot) && identityWorld.cityName === "Harbor Commons", "Recovery lost the saved city identity.");
+check(identityWorld.undo() && identityWorld.cityName === "Second Name", "Undo did not restore the city identity from before recovery.");
+check(identityWorld.redo() && identityWorld.cityName === "Harbor Commons", "Redo did not restore the recovered city identity.");
+check(identityWorld.applyTemplate("blank") && identityWorld.cityName === "Untitled Region", "A blank template did not reset city identity.");
+
 const recoveryWorld = new World();
 const recoveryRevision = recoveryWorld.changeRevision();
 recoveryWorld.addRoad([{ x: 900, z: 940 }, { x: 950, z: 940 }], 9, "street");
