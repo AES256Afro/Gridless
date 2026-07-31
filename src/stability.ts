@@ -375,6 +375,26 @@ function integrityFailures(world: World) {
   if (accessibilityEntranceIds.size !== world.accessibilityEntrances.length) {
     failures.push("Duplicate accessibility entrance IDs were found.");
   }
+  const spatialChunkIds = new Set(world.spatialChunks.map(chunk => chunk.id));
+  const spatialLotIds = world.spatialChunks.flatMap(chunk => chunk.lotIds);
+  const spatialPopulation = world.spatialChunks.reduce((total, chunk) => total + chunk.population, 0);
+  if (world.spatialChunkSize < 128 || world.spatialChunkSize > 1024) {
+    failures.push("Spatial chunk size is outside its supported range.");
+  }
+  if (spatialChunkIds.size !== world.spatialChunks.length) failures.push("Duplicate spatial chunk IDs were found.");
+  if (
+    spatialLotIds.length !== world.lots.length
+    || new Set(spatialLotIds).size !== world.lots.length
+    || spatialLotIds.some(lotId => !lotIds.has(lotId))
+  ) {
+    failures.push("Spatial chunks do not contain every lot exactly once.");
+  }
+  if (world.spatialChunks.some(chunk => chunk.roadIds.some(roadId => !roadIds.has(roadId)))) {
+    failures.push("Spatial chunks contain missing road references.");
+  }
+  if (spatialPopulation !== world.cityEconomy().population) {
+    failures.push("Spatial chunk population does not match the city economy.");
+  }
 
   for (const lot of world.lots) {
     if (!Number.isInteger(lot.households) || lot.households < 0) failures.push(`Lot ${lot.id} has invalid household count.`);

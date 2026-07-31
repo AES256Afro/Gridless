@@ -19,6 +19,7 @@ import {
   type Point2,
   type Road,
   type ServiceKind,
+  type SpatialChunk,
   type UtilityKind,
   type Zone,
   World
@@ -79,7 +80,7 @@ type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
-    <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1></div>
+    <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="lod-status" id="lod-status">Preparing region detail</div></div>
     <div class="simulation-controls">
       <div><span id="sim-date">Y1 · JAN 1</span><strong id="sim-time">08:00</strong></div>
       <button data-speed="0" aria-label="Pause simulation">Ⅱ</button>
@@ -1571,6 +1572,13 @@ function renderWorld() {
   renderTransitInfrastructure();
   renderTerrain();
   worldGroup.clear();
+  const renderFocus = worldRenderFocus();
+  const spatialChunks = world.refreshSpatialChunks();
+  const detailedLotIds = spatialChunks.length > 16
+    ? new Set(spatialChunks
+      .filter(chunk => world.spatialDetailTier(chunk, renderFocus) !== "aggregate")
+      .flatMap(chunk => chunk.lotIds))
+    : undefined;
   for (const road of world.roads) {
     const curb = ribbon(road.points, road.width + 5.2, curbMaterial);
     curb.position.y = 0;
@@ -1646,6 +1654,7 @@ function renderWorld() {
     worldGroup.add(createParkingFacility(facility));
   }
   for (const lot of world.lots) {
+    if (detailedLotIds && !detailedLotIds.has(lot.id)) continue;
     const lotMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(lot.width, lot.depth),
       lot.id === selectedLot?.id ? lotSelectedMaterial : zoneLotMaterials[lot.zone]
@@ -2018,6 +2027,16 @@ function zoneBuildingHeight(zone: Zone, seed: number) {
   return 5 + seed % 25;
 }
 
+function worldRenderFocus(): Point2 {
+  if (mode === "explore") return { x: camera.position.x, z: camera.position.z };
+  if (mode === "home" && selectedLot) return { ...selectedLot.center };
+  return { x: orbit.target.x, z: orbit.target.z };
+}
+
+function spatialChunkLabel(chunk: SpatialChunk) {
+  return `${chunk.id.replace("chunk-", "")} · ${chunk.population.toLocaleString()} residents`;
+}
+
 function updateCityStats() {
   const {
     households,
@@ -2066,6 +2085,20 @@ function updateCityStats() {
   document.querySelector("#wellbeing")!.textContent = wellbeing
     ? `${wellbeing}% · ${wellbeingLabel(wellbeing)}`
     : "No residents";
+  const lod = world.spatialLodSummary(worldRenderFocus());
+  const totalChunks = lod.agentChunks + lod.activeChunks + lod.aggregateChunks;
+  const activePopulation = lod.agentPopulation + lod.activePopulation;
+  const aggregateCopy = lod.aggregateChunks
+    ? ` · ${lod.aggregateChunks} aggregate`
+    : "";
+  const representativeChunk = world.spatialChunks
+    .find(chunk => world.spatialDetailTier(chunk, worldRenderFocus()) === "agent")
+    ?? world.spatialChunks[0];
+  const lodStatus = document.querySelector<HTMLElement>("#lod-status")!;
+  lodStatus.textContent = `${totalChunks} region chunks · ${activePopulation.toLocaleString()} residents in active detail${aggregateCopy}`;
+  lodStatus.title = representativeChunk
+    ? `Focused chunk ${spatialChunkLabel(representativeChunk)}`
+    : "No populated spatial chunks";
 
   const completedLots = world.lots.filter(lot => world.constructionProgress(lot) >= 1);
   const residentialLots = completedLots.filter(lot => lot.zone === "residential" || lot.zone === "mixed").length;

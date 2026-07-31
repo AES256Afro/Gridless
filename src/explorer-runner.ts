@@ -614,6 +614,34 @@ check(
 const mobilityWorld = new World();
 check(mobilityWorld.parking.length === 3, "NYC template did not create its initial curb parking.");
 check(mobilityWorld.transitLines.length === 1, "NYC template did not create its initial transit line.");
+const spatialChunks = mobilityWorld.refreshSpatialChunks();
+const chunkLotIds = spatialChunks.flatMap(chunk => chunk.lotIds);
+check(spatialChunks.length > 1, "NYC template did not divide into multiple spatial chunks.");
+check(
+  new Set(chunkLotIds).size === mobilityWorld.lots.length
+    && chunkLotIds.length === mobilityWorld.lots.length,
+  "Spatial chunks did not assign every lot exactly once."
+);
+check(
+  spatialChunks.reduce((total, chunk) => total + chunk.population, 0)
+    === mobilityWorld.cityEconomy().population,
+  "Spatial chunk population aggregates did not match the city economy."
+);
+const nearSpatialLod = mobilityWorld.spatialLodSummary({ x: 0, z: 0 });
+const farSpatialLod = mobilityWorld.spatialLodSummary({ x: 1_000_000, z: 1_000_000 });
+check(
+  nearSpatialLod.agentChunks > 0
+    && farSpatialLod.aggregateChunks === spatialChunks.length
+    && farSpatialLod.aggregatePopulation === mobilityWorld.cityEconomy().population,
+  "Spatial LOD did not switch between focused agent detail and distant aggregates."
+);
+const spatialSnapshot = mobilityWorld.snapshot();
+check(
+  spatialSnapshot.spatialChunkSize === 256
+    && spatialSnapshot.spatialChunks?.length === spatialChunks.length
+    && spatialSnapshot.spatialChunks.flatMap(chunk => chunk.lotIds).length === mobilityWorld.lots.length,
+  "Spatial chunk metadata was not persisted in the world snapshot."
+);
 const curbWorld = new World();
 const managedCurb = curbWorld.parking.find(item => item.kind === "curb")!;
 check(
@@ -1025,6 +1053,9 @@ console.log(JSON.stringify({
   directionalLaneSeparation: Number(
     Math.hypot(outboundLane.point.x - returningLane.point.x, outboundLane.point.z - returningLane.point.z).toFixed(2)
   ),
+  spatialChunks: spatialChunks.length,
+  agentDetailChunks: nearSpatialLod.agentChunks,
+  farAggregatePopulation: farSpatialLod.aggregatePopulation,
   accessibleRouteMeters: Math.round(accessibleRoute!.distance),
   rampedCrossings: accessibleRoute!.rampedCrossings,
   accessibilityEntrances: mobilityWorld.accessibilityEntrances.length,

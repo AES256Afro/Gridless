@@ -36,6 +36,16 @@ canvas { display: block; }
   font: 700 30px/1 "Manrope", sans-serif;
   letter-spacing: -.04em;
 }
+.lod-status {
+  position: absolute;
+  top: 28px;
+  left: 118px;
+  width: 270px;
+  color: rgba(229,238,231,.66);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
 
 .simulation-controls {
   position: absolute;
