@@ -168,6 +168,7 @@ canvas { display: block; }
   width: 292px;
   padding: 17px;
   border-radius: 14px;
+  pointer-events: auto;
 }
 
 .panel h2 { margin: 0 0 5px; font: 700 16px "Manrope", sans-serif; }
@@ -221,6 +222,28 @@ canvas { display: block; }
   border-top: 1px solid rgba(255,255,255,.08);
   color: #b6c6ba;
 }
+
+.city-advisor {
+  display: none;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+.city-editing .city-advisor { display: block; }
+#city-advisor-actions { display: grid; gap: 6px; margin-top: 8px; }
+#city-advisor-actions button {
+  padding: 8px 9px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 8px;
+  color: #dce6de;
+  background: rgba(255,255,255,.045);
+  text-align: left;
+  cursor: pointer;
+}
+#city-advisor-actions button:hover { border-color: rgba(240,217,128,.42); background: rgba(240,217,128,.08); }
+#city-advisor-actions strong, #city-advisor-actions span { display: block; }
+#city-advisor-actions strong { font: 650 11px "Manrope", sans-serif; }
+#city-advisor-actions span { margin-top: 2px; color: #91a198; font-size: 9px; line-height: 1.3; }
 
 .panel.inspecting { width: 350px; }
 .city-editing .panel.inspecting .demand { display: none; }

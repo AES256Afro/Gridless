@@ -26,6 +26,7 @@ The current vertical slice proves:
 - Curved road splines, intersections, generated lots, undo, and browser saves
 - NYC-inspired region template with editable street hierarchy, districts, park, waterfront, and blank-region alternative
 - Local street, avenue, and arterial construction plus parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
+- A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
 - Persistent power, water, fire, health, and school facilities with coverage radii, operating costs, municipal balance, and demand feedback
 - Deterministic saved calendar with pause/speed controls plus drawable power, water, and sewage networks
 - Sewage treatment and waste-transfer facilities with network-aware parcel coverage

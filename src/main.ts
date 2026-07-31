@@ -2,6 +2,7 @@ import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
+import { cityAdvisorActions } from "./advisor";
 import {
   CITY_EVENT_DEFINITIONS,
   HOME_BUILD_COSTS,
@@ -137,6 +138,10 @@ app.innerHTML = `
         <small id="demand-reason">Demand responds to homes, jobs, and services.</small>
         <small id="economy-summary">Households and businesses update each day.</small>
       </div>
+      <section class="city-advisor" id="city-advisor" aria-label="City Advisor">
+        <div class="eyebrow">CITY ADVISOR · NEXT ACTIONS</div>
+        <div id="city-advisor-actions"></div>
+      </section>
     </div>
     <div class="actionbar">
       <button id="undo">Undo</button><button id="save">Save city</button><button id="load">Load city</button>
@@ -2382,7 +2387,28 @@ function updateCityStats() {
   document.querySelector("#economy-summary")!.textContent =
     `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
+  updateCityAdvisor({
+    roads: world.roads.length,
+    services: world.services.length,
+    coverage,
+    staffing: world.effectiveStaffing(),
+    utilityFailures: utilityOutages,
+    congestion: congestion / 100,
+    wellbeing,
+    monthlyBalance: balance
+  });
   syncTransitControls();
+}
+
+function updateCityAdvisor(input: Parameters<typeof cityAdvisorActions>[0]) {
+  document.querySelector("#city-advisor-actions")!.innerHTML = cityAdvisorActions(input)
+    .map(action => `
+      <button type="button" data-advisor-group="${action.group}" ${action.tool ? `data-advisor-tool="${action.tool}"` : ""} ${action.view ? `data-advisor-view="${action.view}"` : ""}>
+        <strong>${action.title}</strong>
+        <span>${action.detail}</span>
+      </button>
+    `)
+    .join("");
 }
 
 function serviceCapacityFactor(kind: ServiceKind, population: number) {
@@ -5235,6 +5261,19 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool-group]").forEach(b
   setCityToolGroup(button.dataset.cityToolGroup as CityToolGroup, true);
   if (button.dataset.cityToolGroup === "views") updateCityViewPanel();
 }));
+
+document.querySelector("#city-advisor")!.addEventListener("click", event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-advisor-group]");
+  if (!button) return;
+  const group = button.dataset.advisorGroup as CityToolGroup;
+  setCityToolGroup(group);
+  if (button.dataset.advisorTool) {
+    document.querySelector<HTMLButtonElement>(`[data-city-tool="${button.dataset.advisorTool}"]`)?.click();
+  } else if (button.dataset.advisorView) {
+    setCityToolGroup("views");
+    document.querySelector<HTMLButtonElement>(`[data-city-view="${button.dataset.advisorView}"]`)?.click();
+  }
+});
 
 document.querySelectorAll<HTMLButtonElement>("[data-city-view]").forEach(button => button.addEventListener("click", () => {
   cityView = button.dataset.cityView as CityView;

@@ -20,6 +20,7 @@ import {
 } from "./interiors";
 import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { soundscapeProfile } from "./soundscape";
+import { cityAdvisorActions } from "./advisor";
 import {
   assessAccessibleTrip,
   buildAccessibleRoute,
@@ -95,6 +96,48 @@ check(
   rainyStreetSound.rain > streetSound.rain
     && nightStreetSound.urban < streetSound.urban,
   "Soundscape profiles did not respond to weather and time of day."
+);
+const blankCityAdvice = cityAdvisorActions({
+  roads: 0,
+  services: 0,
+  coverage: 0,
+  staffing: .85,
+  utilityFailures: 0,
+  congestion: 0,
+  wellbeing: 0,
+  monthlyBalance: 0
+});
+check(
+  blankCityAdvice[0].id === "first-road" && blankCityAdvice.length <= 3,
+  "City Advisor did not prioritize the first playable action for a blank region."
+);
+const pressuredCityAdvice = cityAdvisorActions({
+  roads: 12,
+  services: 2,
+  coverage: .31,
+  staffing: .62,
+  utilityFailures: 2,
+  congestion: .81,
+  wellbeing: 44,
+  monthlyBalance: -125_000
+});
+check(
+  pressuredCityAdvice.map(action => action.id).join(",") === "utility-failure,service-coverage,service-staffing",
+  "City Advisor did not rank urgent outages, coverage, and staffing ahead of lower-priority pressures."
+);
+const healthyCityAdvice = cityAdvisorActions({
+  roads: 12,
+  services: 9,
+  coverage: .9,
+  staffing: .85,
+  utilityFailures: 0,
+  congestion: .34,
+  wellbeing: 78,
+  monthlyBalance: 400_000
+});
+check(
+  healthyCityAdvice.length === 1 && healthyCityAdvice[0].id === "growth",
+  "City Advisor did not fall back to development review for a healthy city."
 );
 
 const road: Road = {
