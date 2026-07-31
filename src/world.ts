@@ -449,6 +449,8 @@ export type UtilityFailure = {
 export type HomeFloorFinish = "oak" | "tile" | "concrete" | "carpet";
 export type HomeWallFinish = "warm-white" | "sage" | "clay" | "slate";
 export type HomeFurnitureStyle = "natural" | "light" | "dark" | "colorful";
+export const HOME_ROOM_KINDS = ["Living room", "Bedroom", "Kitchen", "Bathroom", "Study", "Dining room", "Nursery", "Studio"] as const;
+export type HomeRoomKind = typeof HOME_ROOM_KINDS[number];
 
 export type HomeRoom = {
   id: string;
@@ -2600,6 +2602,15 @@ export class World {
     this.checkpoint();
     room.wallFinish = finish;
     home.designSpent += cost;
+    return true;
+  }
+
+  setRoomKind(homeId: string, roomId: string, kind: HomeRoomKind) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    if (!home || !room || room.kind === kind || !HOME_ROOM_KINDS.includes(kind)) return false;
+    this.checkpoint();
+    room.kind = kind;
     return true;
   }
 

@@ -9,6 +9,7 @@ import {
   HOME_BUILD_COSTS,
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
+  HOME_ROOM_KINDS,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
@@ -21,6 +22,7 @@ import {
   type Home,
   type HomeFloorFinish,
   type HomeFurnitureStyle,
+  type HomeRoomKind,
   type HomeWallFinish,
   type Lot,
   type ParkingFacility,
@@ -342,6 +344,9 @@ app.innerHTML = `
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
       <strong id="room-editor-title">Room selected</strong>
+      <label>Purpose<select id="room-kind">
+        ${HOME_ROOM_KINDS.map(kind => `<option value="${kind}">${kind}</option>`).join("")}
+      </select></label>
       <label>Floor<select id="room-floor-finish">
         <option value="oak">Oak · $55/m²</option>
         <option value="tile">Tile · $65/m²</option>
@@ -3838,6 +3843,11 @@ function updateRoomEditor(home: Home | null) {
   editor.classList.toggle("visible", Boolean(mode === "home" && room));
   if (!home || !room) return;
   document.querySelector("#room-editor-title")!.textContent = `${room.kind} · ${room.width.toFixed(1)} × ${room.depth.toFixed(1)}m`;
+  const kindSelect = document.querySelector<HTMLSelectElement>("#room-kind")!;
+  if (![...kindSelect.options].some(option => option.value === room.kind)) {
+    kindSelect.add(new Option(room.kind, room.kind));
+  }
+  kindSelect.value = room.kind;
   document.querySelector<HTMLSelectElement>("#room-floor-finish")!.value = room.floorFinish ?? "oak";
   document.querySelector<HTMLSelectElement>("#room-wall-finish")!.value = room.wallFinish ?? "warm-white";
   const deleteButton = document.querySelector<HTMLButtonElement>("#delete-room")!;
@@ -4834,7 +4844,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
         notice("Choose the opposite room corner");
       } else {
         const room = {
-          kind: `Room ${home.rooms.length + 1}`,
+          kind: "Living room",
           x: (homeDraft.x + point.x) / 2,
           z: (homeDraft.z + point.z) / 2,
           width: Math.abs(point.x - homeDraft.x),
@@ -5537,6 +5547,14 @@ document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   movingFurnitureId = null;
   renderWorld();
   notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
+});
+document.querySelector("#room-kind")!.addEventListener("change", event => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  const kind = (event.currentTarget as HTMLSelectElement).value as HomeRoomKind;
+  if (!home || !room || !world.setRoomKind(home.id, room.id, kind)) return;
+  renderWorld();
+  notice(`Room purpose changed to ${kind}`);
 });
 document.querySelector("#room-floor-finish")!.addEventListener("change", event => {
   const home = currentHome();
