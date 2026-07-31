@@ -39,7 +39,7 @@ Every foundation must remain editable. Their value comes from distinct constrain
 ### Home Simulator build order
 
 - **Structure:** room drawing, eight persistent room purposes, selectable plans, persistent floor and wall finishes, and safe room deletion are live; multiple stories, manual doors, windows, roofs, stairs, and foundation choices remain ahead
-- **Furnishing:** a categorized eight-object catalog, four persistent style swatches, priced placement, collision-aware rotation, selling, budget, and functional interactions are live; object variants, per-part recolors, free rotation, snapping choices, and inventories remain ahead
+- **Furnishing:** a categorized eight-object catalog, four persistent style swatches, purpose-aware one-click starter sets, priced placement, collision-aware rotation, selling, budget, and functional interactions are live; object variants, per-part recolors, free rotation, snapping choices, and inventories remain ahead
 - **Households:** resident creator, relationships, personalities, skills, needs, schedules, career progression, wages, daily expenses, and household funds are live; deeper career branching and discretionary purchases remain ahead
 - **Guidance:** prioritized household wants are live for residents, beds, crowding, hygiene, meals, comfort, skill growth, relationship tension, and finances; longer-term aspirations and player-pinned goals remain ahead
 - **Daily life:** autonomous choices, direct control, conversations, cooking, sleep, work, school, travel, celebrations, and emergencies
@@ -212,6 +212,7 @@ Current vertical slice:
 - Every home now owns a persistent design budget. Room construction is priced by area, the furnishing catalog exposes item prices, purchases provide exact insufficient-funds feedback, and older saves receive safe budget defaults.
 - Selected rooms can be assigned as Living Room, Bedroom, Kitchen, Bathroom, Study, Dining Room, Nursery, or Studio without changing their geometry or budget. The semantic purpose persists beside floor and wall finishes and prepares the plan for room-aware behavior.
 - Home quality now measures five functional needs plus whether objects suit their room purpose. Bedrooms reward beds, Bathrooms showers, Kitchens fridges and tables, Studies desks and bookcases, and Living Rooms sofas, while mismatched placement remains legal for flexible builds.
+- Furnish Room creates a deterministic starter set for the selected room purpose. It keeps valid existing objects, searches collision-safe positions and rotations, respects remaining design funds, commits the result as one undoable change, and clearly reports partial placement.
 - Inspect mode selects a furnishing directly in the 3D home with a gold outline. The contextual toolbar can rotate it in 45-degree steps or sell it for a visible 50 percent refund, with selection, spending, and controls kept in sync after undo and redraw.
 - Owned furniture can be moved without repurchase. Green and red footprint previews expose valid placement before committing, while rotated-corner and oriented-overlap checks prevent objects from crossing walls, stacking together, or rotating into an invalid layout.
 - Selected furniture can switch between Natural, Light, Dark, and Colorful visual schemes without affecting the design budget. The contextual style control stays disabled until an object is selected, and older saves migrate to Natural.
@@ -251,6 +252,8 @@ Next systems are richer career branches and discretionary household purchases, d
 Room-purpose regression coverage verifies cost-free editing, redundant-change rejection, and snapshot persistence alongside the existing finish and room-removal tests.
 
 Functional-room regression coverage verifies full sleep, meal, hygiene, relaxation, and study completeness, 100% purpose alignment, mismatch detection, and the resulting home-quality difference.
+
+One-click furnishing regression coverage verifies exact Living Room cost, correct catalog contents, purpose fit, wall and overlap safety, repeat idempotence, and budget-constrained rejection.
 
 ## Milestone 3: Metropolitan scale
 

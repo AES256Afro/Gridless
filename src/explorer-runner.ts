@@ -655,6 +655,49 @@ check(
     && catalogWorld.homeQuality(mismatchedRoomHome) < catalogWorld.homeQuality(functionalRoomHome),
   "Object room mismatch did not reduce semantic alignment and home quality."
 );
+const autoFurnishWorld = new World();
+const autoFurnishHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "auto-furnish-home",
+  rooms: [{ id: "auto-living-room", kind: "Living room", x: 0, z: 0, width: 8, depth: 8 }],
+  furniture: [],
+  designSpent: 0,
+  residents: [],
+  relationships: []
+};
+autoFurnishWorld.homes = [autoFurnishHome];
+const autoFurnishResult = autoFurnishWorld.autoFurnishRoom(autoFurnishHome.id, "auto-living-room");
+check(
+  autoFurnishResult.placed === 3
+    && autoFurnishResult.spent === 2_170
+    && autoFurnishResult.skipped === 0
+    && autoFurnishHome.furniture.map(item => item.kind).sort().join(",") === "plant,sofa,table",
+  "One-click furnishing did not place the complete Living room starter set at exact cost."
+);
+check(
+  autoFurnishHome.furniture.every(item =>
+    autoFurnishWorld.canPlaceFurniture(autoFurnishHome, item.kind, item.x, item.z, item.rotation, item.id)
+    && autoFurnishWorld.furniturePurposeFit(autoFurnishHome, item) === true
+  ),
+  "One-click furnishing placed an overlapping, wall-crossing, or purpose-mismatched object."
+);
+const repeatedAutoFurnish = autoFurnishWorld.autoFurnishRoom(autoFurnishHome.id, "auto-living-room");
+check(
+  repeatedAutoFurnish.placed === 0
+    && repeatedAutoFurnish.spent === 0
+    && autoFurnishHome.designSpent === 2_170,
+  "Repeated one-click furnishing duplicated objects or charged the budget twice."
+);
+const constrainedAutoHome = structuredClone(autoFurnishHome);
+constrainedAutoHome.id = "constrained-auto-home";
+constrainedAutoHome.furniture = [];
+constrainedAutoHome.designSpent = constrainedAutoHome.designBudget - 100;
+autoFurnishWorld.homes = [constrainedAutoHome];
+check(
+  autoFurnishWorld.autoFurnishRoom(constrainedAutoHome.id, "auto-living-room").placed === 0
+    && constrainedAutoHome.furniture.length === 0,
+  "One-click furnishing exceeded the remaining design budget."
+);
 const residentCreatorWorld = new World();
 const residentCreatorHome = structuredClone(interiorHome);
 residentCreatorHome.id = "resident-creator-home";

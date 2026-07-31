@@ -518,6 +518,17 @@ const HOME_FURNITURE_PURPOSES: Record<Home["furniture"][number]["kind"], readonl
   shower: ["Bathroom"]
 };
 
+const HOME_ROOM_STARTER_SETS: Record<HomeRoomKind, readonly Home["furniture"][number]["kind"][]> = {
+  "Living room": ["sofa", "table", "plant"],
+  Bedroom: ["bed", "bookcase"],
+  Kitchen: ["fridge", "table"],
+  Bathroom: ["shower", "plant"],
+  Study: ["desk", "bookcase", "plant"],
+  "Dining room": ["table", "plant"],
+  Nursery: ["bed", "bookcase", "plant"],
+  Studio: ["sofa", "bed", "desk"]
+};
+
 export type SpatialChunk = {
   id: string;
   gridX: number;
@@ -2667,6 +2678,66 @@ export class World {
     this.checkpoint();
     room.kind = kind;
     return true;
+  }
+
+  autoFurnishRoom(homeId: string, roomId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    const roomKind = room?.kind as HomeRoomKind | undefined;
+    if (!home || !room || !roomKind || !HOME_ROOM_KINDS.includes(roomKind)) {
+      return { placed: 0, spent: 0, skipped: 0 };
+    }
+    const planned: Home["furniture"] = [];
+    let spent = 0;
+    let skipped = 0;
+    const starterSet = HOME_ROOM_STARTER_SETS[roomKind];
+    const existingKinds = new Set(home.furniture
+      .filter(item =>
+        Math.abs(item.x - room.x) <= room.width / 2
+        && Math.abs(item.z - room.z) <= room.depth / 2
+      )
+      .map(item => item.kind));
+    const candidates: Point2[] = [];
+    for (let x = room.x - room.width / 2 + .5; x <= room.x + room.width / 2 - .5; x += .5) {
+      for (let z = room.z - room.depth / 2 + .5; z <= room.z + room.depth / 2 - .5; z += .5) {
+        candidates.push({ x, z });
+      }
+    }
+    candidates.sort((first, second) =>
+      distance(second, room) - distance(first, room)
+      || first.x - second.x
+      || first.z - second.z
+    );
+    for (const kind of starterSet) {
+      if (existingKinds.has(kind)) continue;
+      if (this.homeRemainingBudget(home) - spent < HOME_BUILD_COSTS[kind]) {
+        skipped++;
+        continue;
+      }
+      const workingHome: Home = { ...home, furniture: [...home.furniture, ...planned] };
+      let placement: Home["furniture"][number] | undefined;
+      for (const rotation of [0, Math.PI / 2]) {
+        const point = candidates.find(candidate =>
+          this.canPlaceFurniture(workingHome, kind, candidate.x, candidate.z, rotation)
+        );
+        if (point) {
+          placement = { id: crypto.randomUUID(), kind, x: point.x, z: point.z, rotation, style: "natural" };
+          break;
+        }
+      }
+      if (!placement) {
+        skipped++;
+        continue;
+      }
+      planned.push(placement);
+      existingKinds.add(kind);
+      spent += HOME_BUILD_COSTS[kind];
+    }
+    if (!planned.length) return { placed: 0, spent: 0, skipped };
+    this.checkpoint();
+    home.furniture.push(...planned);
+    home.designSpent += spent;
+    return { placed: planned.length, spent, skipped };
   }
 
   removeRoom(homeId: string, roomId: string) {
