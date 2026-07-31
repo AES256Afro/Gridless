@@ -23,7 +23,7 @@ The current vertical slice proves:
 
 - A navigable 3D city at realistic human and urban scales
 - Freeform road placement without a tile grid
-- Curved road splines, intersections, generated lots, 40-step Undo and Redo history, and browser saves
+- Curved road splines, intersections, generated lots, 40-step Undo and Redo history, manual browser saves, and crash-safe autosave recovery
 - NYC-inspired region template with editable street hierarchy, districts, park, waterfront, and blank-region alternative
 - Local street, avenue, and arterial construction plus parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth

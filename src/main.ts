@@ -149,7 +149,7 @@ app.innerHTML = `
       </section>
     </div>
     <div class="actionbar">
-      <button id="undo">Undo</button><button id="redo">Redo</button><button id="save">Save city</button><button id="load">Load city</button>
+      <button id="undo">Undo</button><button id="redo">Redo</button><button id="save">Save city</button><button id="load">Load city</button><button id="recover-autosave" disabled>Recover autosave</button>
       <button id="sound-toggle" type="button" aria-pressed="false">Sound off</button>
       <select id="staffing-policy" aria-label="Service staffing">
         <option value="0.65">Lean staff · 65%</option>
@@ -545,6 +545,8 @@ let simulationSpeed = 12;
 let simulationAccumulator = 0;
 let lastMonthlyBalance = 0;
 let lastHomeActionSignature = "";
+let lastAutosaveRevision = world.changeRevision();
+let autosaveTimer = 0;
 let explorerRoadPaths: ExplorerRoadPath[] = [];
 let streetIntersections: StreetIntersection[] = [];
 let explorerRoadKey = "";
@@ -1808,6 +1810,7 @@ function syncSoundscape() {
 function renderWorld() {
   syncSoundscape();
   updateHistoryControls();
+  scheduleAutosave();
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
     explorerVehicleGroup.position.set(world.playerVehicle.position.x, .16, world.playerVehicle.position.z);
@@ -5694,6 +5697,19 @@ function updateHistoryControls() {
   document.querySelector<HTMLButtonElement>("#undo")!.disabled = !world.canUndo();
   document.querySelector<HTMLButtonElement>("#redo")!.disabled = !world.canRedo();
 }
+function scheduleAutosave(force = false) {
+  if (!force && world.changeRevision() === lastAutosaveRevision) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(() => {
+    world.saveAutosave();
+    lastAutosaveRevision = world.changeRevision();
+    const recover = document.querySelector<HTMLButtonElement>("#recover-autosave")!;
+    recover.disabled = false;
+    const recoveryHour = Math.floor(world.clock.minute / 60);
+    const recoveryMinute = Math.floor(world.clock.minute % 60);
+    recover.title = `Latest recovery: Y${world.clock.year} M${world.clock.month} D${world.clock.day} ${String(recoveryHour).padStart(2, "0")}:${String(recoveryMinute).padStart(2, "0")}`;
+  }, 700);
+}
 function applyUndo() {
   if (!world.undo()) return;
   renderWorld();
@@ -5706,8 +5722,14 @@ function applyRedo() {
 }
 document.querySelector("#undo")!.addEventListener("click", applyUndo);
 document.querySelector("#redo")!.addEventListener("click", applyRedo);
-document.querySelector("#save")!.addEventListener("click", () => { world.save(); notice("City saved locally"); });
+document.querySelector("#save")!.addEventListener("click", () => { world.save(); notice("Manual save updated"); });
 document.querySelector("#load")!.addEventListener("click", () => { notice(world.load() ? "Saved city loaded" : "No saved city found"); renderWorld(); });
+document.querySelector("#recover-autosave")!.addEventListener("click", () => {
+  notice(world.loadAutosave() ? "Autosave recovered. Undo returns to the previous state." : "No autosave found");
+  renderWorld();
+});
+document.querySelector<HTMLButtonElement>("#recover-autosave")!.disabled = !world.hasAutosave();
+addEventListener("beforeunload", () => world.saveAutosave());
 let templateResetArmed = false;
 let templateResetTimer = 0;
 document.querySelector("#apply-template")!.addEventListener("click", event => {
@@ -5783,6 +5805,7 @@ function animate() {
       const dayChanged = previousDate !== `${world.clock.year}-${world.clock.month}-${world.clock.day}`;
       if (dayChanged || currentHour !== previousHour) renderWorld();
       else updateClockDisplay();
+      if (dayChanged) scheduleAutosave(true);
       if (monthChanged) {
         updateCityStats();
         notice("Monthly budget posted to the treasury");

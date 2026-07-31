@@ -233,6 +233,31 @@ check(
   "A new edit after undo did not invalidate the abandoned redo branch."
 );
 
+const recoveryWorld = new World();
+const recoveryRevision = recoveryWorld.changeRevision();
+recoveryWorld.addRoad([{ x: 900, z: 940 }, { x: 950, z: 940 }], 9, "street");
+const recoveryRoadId = recoveryWorld.roads.at(-1)!.id;
+const recoverySnapshot = recoveryWorld.serialize();
+check(
+  recoveryWorld.changeRevision() > recoveryRevision,
+  "A recoverable world edit did not advance the change revision."
+);
+recoveryWorld.addRoad([{ x: 900, z: 960 }, { x: 950, z: 960 }], 9, "street");
+const revisionBeforeRestore = recoveryWorld.changeRevision();
+check(recoveryWorld.restore(recoverySnapshot), "A valid recovery snapshot could not be restored.");
+check(
+  recoveryWorld.roads.length === startingRoadCount + 1
+    && recoveryWorld.roads.at(-1)!.id === recoveryRoadId
+    && recoveryWorld.canUndo()
+    && recoveryWorld.changeRevision() > revisionBeforeRestore,
+  "Recovery did not restore the exact saved edit as an undoable state."
+);
+const roadsBeforeInvalidRecovery = recoveryWorld.roads.length;
+check(
+  !recoveryWorld.restore("not valid json") && recoveryWorld.roads.length === roadsBeforeInvalidRecovery,
+  "Invalid recovery data changed the live world."
+);
+
 const spawn = sidewalkSpawn(paths, { x: 0, z: 20 });
 const spawnLocation = nearestRoadLocation(paths, spawn);
 check(explorerSurface(spawnLocation) === "Sidewalk", "Explorer entry did not land on a sidewalk.");

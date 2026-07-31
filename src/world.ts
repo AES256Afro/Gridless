@@ -658,6 +658,7 @@ export class World {
   controlledResidentId?: string;
   private history: WorldSnapshot[] = [];
   private future: WorldSnapshot[] = [];
+  private revision = 0;
 
   constructor() {
     this.roads = clone(NYC_TEMPLATE.roads);
@@ -835,6 +836,7 @@ export class World {
     this.history.push(this.snapshot());
     if (this.history.length > 40) this.history.shift();
     this.future = [];
+    this.revision++;
   }
 
   addRoad(points: Point2[], width = 10, roadClass: Road["class"] = "street") {
@@ -2599,6 +2601,7 @@ export class World {
     this.future.push(this.snapshot());
     if (this.future.length > 40) this.future.shift();
     this.apply(previous);
+    this.revision++;
     return true;
   }
 
@@ -2608,6 +2611,7 @@ export class World {
     this.history.push(this.snapshot());
     if (this.history.length > 40) this.history.shift();
     this.apply(next);
+    this.revision++;
     return true;
   }
 
@@ -2619,15 +2623,17 @@ export class World {
     return this.future.length > 0;
   }
 
-  save() {
-    localStorage.setItem("gridless-world-v1", JSON.stringify(this.snapshot()));
+  changeRevision() {
+    return this.revision;
   }
 
-  load() {
-    const stored = localStorage.getItem("gridless-world-v1");
-    if (!stored) return false;
+  serialize() {
+    return JSON.stringify(this.snapshot());
+  }
+
+  restore(serialized: string) {
     try {
-      const parsed = JSON.parse(stored) as WorldSnapshot;
+      const parsed = JSON.parse(serialized) as WorldSnapshot;
       if (parsed.version !== 1) return false;
       this.checkpoint();
       this.apply(parsed);
@@ -2636,6 +2642,29 @@ export class World {
     } catch {
       return false;
     }
+  }
+
+  save() {
+    localStorage.setItem("gridless-world-v1", this.serialize());
+  }
+
+  load() {
+    const stored = localStorage.getItem("gridless-world-v1");
+    if (!stored) return false;
+    return this.restore(stored);
+  }
+
+  saveAutosave() {
+    localStorage.setItem("gridless-autosave-v1", this.serialize());
+  }
+
+  loadAutosave() {
+    const stored = localStorage.getItem("gridless-autosave-v1");
+    return stored ? this.restore(stored) : false;
+  }
+
+  hasAutosave() {
+    return Boolean(localStorage.getItem("gridless-autosave-v1"));
   }
 
   ensureHome(lot: Lot) {

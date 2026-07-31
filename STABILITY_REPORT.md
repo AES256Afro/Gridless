@@ -37,6 +37,8 @@ The largest observed snapshot was 363,133 bytes.
 
 ## Load and recovery
 
+Explorer regression coverage now serializes a changed city, makes a later edit, restores the earlier recovery snapshot, and verifies exact road identity, Undo availability, revision tracking, and safe rejection of malformed recovery data. The live browser keeps this recovery channel separate from the player's manual save.
+
 | System | Created | Resolved by cutoff | Peak active |
 | --- | ---: | ---: | ---: |
 | Fire and medical incidents | 10,800 | 10,799 | 1 |
