@@ -469,8 +469,22 @@ residentCreatorWorld.advanceMinutes(24 * 60, 0);
 check(
   residentCreatorWorld.residentCareerLevel(residentCreatorHome.residents[0]) === 2
     && residentCreatorWorld.residentCareerTitle(residentCreatorHome.residents[0]) === "Associate"
-    && residentCreatorWorld.residentSkills(residentCreatorHome.residents[0]).communication === 1,
-  "A completed workday did not advance persistent career and role-relevant skills."
+    && residentCreatorWorld.residentSkills(residentCreatorHome.residents[0]).communication === 1
+    && residentCreatorHome.lastDailyIncome === 280
+    && residentCreatorHome.lastDailyExpenses === 132
+    && residentCreatorWorld.homeHouseholdFunds(residentCreatorHome) === 15_148,
+  "A completed workday did not advance career skills or settle household finances."
+);
+check(
+  residentCreatorWorld.snapshot().homes[0].householdFunds === 15_148,
+  "Household finances were omitted from the world snapshot."
+);
+residentCreatorHome.householdFunds = -50_000;
+residentCreatorHome.lastDailyIncome = 0;
+residentCreatorHome.lastDailyExpenses = 200;
+check(
+  residentCreatorWorld.residentWellbeing(residentCreatorHome.residents[0]).pressure === "Household financial pressure",
+  "Household debt did not feed back into resident wellbeing pressure."
 );
 const directControlWorld = new World();
 const directControlHome = structuredClone(interiorHome);

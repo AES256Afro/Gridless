@@ -434,6 +434,19 @@ function integrityFailures(world: World) {
     if (!Number.isInteger(home.designSpent) || home.designSpent < 0 || home.designSpent > home.designBudget) {
       failures.push(`Home ${home.id} has invalid design spending.`);
     }
+    if (
+      !Number.isInteger(world.homeHouseholdFunds(home))
+      || world.homeHouseholdFunds(home) < -100_000
+      || world.homeHouseholdFunds(home) > 10_000_000
+      || !Number.isInteger(home.lastDailyIncome ?? 0)
+      || (home.lastDailyIncome ?? 0) < 0
+      || !Number.isInteger(home.lastDailyExpenses ?? 0)
+      || (home.lastDailyExpenses ?? 0) < 0
+      || world.homeFinancialSecurity(home) < 0
+      || world.homeFinancialSecurity(home) > 100
+    ) {
+      failures.push(`Home ${home.id} has invalid household finances.`);
+    }
     if (!interiorEntryPoint(home)) failures.push(`Home ${home.id} has no clear interior entry position.`);
     const roomIds = new Set(home.rooms.map(room => room.id));
     const furnitureIds = new Set(home.furniture.map(item => item.id));
