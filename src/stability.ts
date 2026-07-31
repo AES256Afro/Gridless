@@ -428,11 +428,9 @@ function integrityFailures(world: World) {
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
         failures.push(`Furniture ${item.id} has an invalid rotation.`);
       }
-      const containingRoom = home.rooms.find(room =>
-        Math.abs(item.x - room.x) <= room.width / 2
-        && Math.abs(item.z - room.z) <= room.depth / 2
-      );
-      if (!containingRoom) failures.push(`Furniture ${item.id} is outside every room in home ${home.id}.`);
+      if (!world.canPlaceFurniture(home, item.kind, item.x, item.z, item.rotation, item.id)) {
+        failures.push(`Furniture ${item.id} overlaps a wall or furnishing in home ${home.id}.`);
+      }
     }
     for (const resident of home.residents) {
       if (

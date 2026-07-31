@@ -250,9 +250,23 @@ const placedPlant = furniturePlacementWorld.homes[0].furniture.find(item =>
 );
 check(Boolean(placedPlant), "Home Simulator did not persist newly placed furniture.");
 check(
+  !furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
+  "Home Simulator allowed furnishings to overlap."
+);
+check(
   furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0])
     === designBudgetBeforePlacement - 120,
   "Furniture placement did not debit the home design budget."
+);
+check(
+  furniturePlacementWorld.moveFurniture(interiorHome.id, placedPlant!.id, -2, -1)
+    && placedPlant!.x === -2
+    && placedPlant!.z === -1,
+  "Selected furniture could not move to a valid position."
+);
+check(
+  !furniturePlacementWorld.moveFurniture(interiorHome.id, placedPlant!.id, 0, 0),
+  "Selected furniture moved through another furnishing."
 );
 check(
   furniturePlacementWorld.rotateFurniture(interiorHome.id, placedPlant!.id)
@@ -268,6 +282,19 @@ check(
   furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0])
     === designBudgetBeforePlacement - 60,
   "Selling furniture did not return the expected 50 percent refund."
+);
+const rotationGuardWorld = new World();
+const rotationGuardHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "rotation-guard-home",
+  rooms: [{ id: "rotation-guard-room", kind: "Bedroom", x: 0, z: 0, width: 2.4, depth: 2.4 }],
+  furniture: [{ id: "rotation-guard-bed", kind: "bed", x: 0, z: 0, rotation: 0 }]
+};
+rotationGuardWorld.homes = [rotationGuardHome];
+check(
+  !rotationGuardWorld.rotateFurniture(rotationGuardHome.id, "rotation-guard-bed")
+    && rotationGuardHome.furniture[0].rotation === 0,
+  "Furniture rotated through a room wall."
 );
 check(
   !furniturePlacementWorld.addFurniture(interiorHome.id, "plant", 20, 20),

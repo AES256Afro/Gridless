@@ -54,7 +54,7 @@ The run found no:
 - negative household or business counts
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
-- missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, invalid design budgets, overspending, invalid furniture rotation, or furniture placed outside every room
+- missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
 - invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
 - broken home, incident, failure, service, utility, or commute references
 - duplicate or invalid transit lines, source-road references, colors, stop counts, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
