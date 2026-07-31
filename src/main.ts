@@ -17,6 +17,7 @@ import {
   type CurbUse,
   type Home,
   type HomeFloorFinish,
+  type HomeFurnitureStyle,
   type HomeWallFinish,
   type Lot,
   type ParkingFacility,
@@ -319,6 +320,12 @@ app.innerHTML = `
       <div class="tool-divider"></div>
       <button id="move-furniture" disabled>Move</button>
       <button id="rotate-furniture" disabled>Rotate 45°</button>
+      <select id="furniture-style" aria-label="Selected furniture style" disabled>
+        <option value="natural">Natural</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="colorful">Colorful</option>
+      </select>
       <button id="sell-furniture" disabled>Sell</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
@@ -3577,34 +3584,35 @@ function addWall(group: THREE.Group, x: number, z: number, length: number, thick
 
 function createFurniture(item: Home["furniture"][number]) {
   const group = new THREE.Group();
+  const palette = furnitureStylePalette(item.style ?? "natural");
   group.userData.furnitureId = item.id;
   group.position.set(item.x, .25, item.z);
   group.rotation.y = item.rotation;
   if (item.kind === "sofa" || item.kind === "bed") {
     const size = item.kind === "sofa" ? [2.2, .55, .85] : [1.7, .45, 2.1];
-    const base = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshStandardMaterial({ color: item.kind === "sofa" ? 0x73907e : 0xc9b999, roughness: .9 }));
+    const base = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshStandardMaterial({ color: palette.primary, roughness: .9 }));
     base.position.y = size[1] / 2;
     base.castShadow = true;
     group.add(base);
     if (item.kind === "sofa") {
-      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, .75, .18), new THREE.MeshStandardMaterial({ color: 0x627c6c }));
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, .75, .18), new THREE.MeshStandardMaterial({ color: palette.secondary }));
       back.position.set(0, .65, .35);
       group.add(back);
     }
   } else if (item.kind === "table") {
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, .12, 24), new THREE.MeshStandardMaterial({ color: 0x8a694c }));
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, .12, 24), new THREE.MeshStandardMaterial({ color: palette.primary }));
     top.position.y = .8;
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.12, .18, .75, 12), new THREE.MeshStandardMaterial({ color: 0x684e39 }));
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.12, .18, .75, 12), new THREE.MeshStandardMaterial({ color: palette.secondary }));
     leg.position.y = .4;
     group.add(top, leg);
   } else if (item.kind === "plant") {
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .24, .42, 12), new THREE.MeshStandardMaterial({ color: 0xb37450 }));
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .24, .42, 12), new THREE.MeshStandardMaterial({ color: palette.primary }));
     pot.position.y = .21;
-    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(.5, 1), new THREE.MeshStandardMaterial({ color: 0x4f7652 }));
+    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(.5, 1), new THREE.MeshStandardMaterial({ color: palette.secondary }));
     leaves.position.y = .75;
     group.add(pot, leaves);
   } else if (item.kind === "desk") {
-    const wood = new THREE.MeshStandardMaterial({ color: 0x9a7654, roughness: .82 });
+    const wood = new THREE.MeshStandardMaterial({ color: palette.primary, roughness: .82 });
     const top = new THREE.Mesh(new THREE.BoxGeometry(1.6, .12, .75), wood);
     top.position.y = .82;
     const drawer = new THREE.Mesh(new THREE.BoxGeometry(.42, .72, .62), wood);
@@ -3613,7 +3621,7 @@ function createFurniture(item: Home["furniture"][number]) {
     leg.position.set(-.65, .4, 0);
     group.add(top, drawer, leg);
   } else if (item.kind === "bookcase") {
-    const wood = new THREE.MeshStandardMaterial({ color: 0x6f5741, roughness: .85 });
+    const wood = new THREE.MeshStandardMaterial({ color: palette.primary, roughness: .85 });
     const back = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.8, .16), wood);
     back.position.set(0, .9, .1);
     group.add(back);
@@ -3623,7 +3631,7 @@ function createFurniture(item: Home["furniture"][number]) {
       group.add(shelf);
     }
   } else if (item.kind === "fridge") {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.72, .78), new THREE.MeshStandardMaterial({ color: 0xd9ddd9, metalness: .18, roughness: .42 }));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.72, .78), new THREE.MeshStandardMaterial({ color: palette.primary, metalness: .18, roughness: .42 }));
     body.position.y = .86;
     const divider = new THREE.Mesh(new THREE.BoxGeometry(.76, .025, .02), new THREE.MeshBasicMaterial({ color: 0x6e7773 }));
     divider.position.set(0, 1.12, .401);
@@ -3631,8 +3639,8 @@ function createFurniture(item: Home["furniture"][number]) {
     handle.position.set(.31, .78, .42);
     group.add(body, divider, handle);
   } else {
-    const glass = new THREE.MeshStandardMaterial({ color: 0xb9d7dd, transparent: true, opacity: .38, roughness: .16 });
-    const base = new THREE.Mesh(new THREE.BoxGeometry(1.05, .1, 1.05), new THREE.MeshStandardMaterial({ color: 0xe9ede8, roughness: .5 }));
+    const glass = new THREE.MeshStandardMaterial({ color: palette.secondary, transparent: true, opacity: .38, roughness: .16 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.05, .1, 1.05), new THREE.MeshStandardMaterial({ color: palette.primary, roughness: .5 }));
     base.position.y = .05;
     const back = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.9, .07), glass);
     back.position.set(0, .95, .49);
@@ -3659,6 +3667,15 @@ function createFurniture(item: Home["furniture"][number]) {
     group.add(selection);
   }
   return group;
+}
+
+function furnitureStylePalette(style: HomeFurnitureStyle) {
+  return {
+    natural: { primary: 0x9a7654, secondary: 0x5f765f },
+    light: { primary: 0xe4ded1, secondary: 0xbec9c3 },
+    dark: { primary: 0x3f4544, secondary: 0x222827 },
+    colorful: { primary: 0xd36b62, secondary: 0x4f8792 }
+  }[style];
 }
 
 function formatHomeCurrency(value: number) {
@@ -3743,10 +3760,13 @@ function updateHomeBuildControls(home: Home | null) {
   const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
+  const style = document.querySelector<HTMLSelectElement>("#furniture-style")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   move.disabled = !selected;
   rotate.disabled = !selected;
+  style.disabled = !selected;
+  style.value = selected?.style ?? "natural";
   sell.disabled = !selected;
   addResident.disabled = !home || home.residents.length >= 8;
   addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
@@ -5385,6 +5405,14 @@ document.querySelector("#rotate-furniture")!.addEventListener("click", () => {
   }
   renderWorld();
   notice("Furniture rotated 45°");
+});
+document.querySelector("#furniture-style")!.addEventListener("change", event => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const style = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureStyle;
+  if (!home || !item || !world.setFurnitureStyle(home.id, item.id, style)) return;
+  renderHome();
+  notice(`${homeFurnitureLabel(item.kind)} style changed to ${style}`);
 });
 document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   const home = currentHome();
