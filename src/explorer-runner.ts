@@ -477,8 +477,19 @@ check(
   "Reapplying a room finish charged the design budget twice."
 );
 check(
-  furniturePlacementWorld.snapshot().homes[0].rooms.find(room => room.id === studio.id)?.floorFinish === "tile",
-  "Room finishes were omitted from the world snapshot."
+  furniturePlacementWorld.setRoomKind(interiorHome.id, studio.id, "Study")
+    && studio.kind === "Study"
+    && furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]) === budgetAfterFinishes,
+  "Room purpose editing did not persist as a cost-free semantic change."
+);
+check(
+  !furniturePlacementWorld.setRoomKind(interiorHome.id, studio.id, "Study"),
+  "Reapplying a room purpose created a redundant world change."
+);
+check(
+  furniturePlacementWorld.snapshot().homes[0].rooms.find(room => room.id === studio.id)?.floorFinish === "tile"
+    && furniturePlacementWorld.snapshot().homes[0].rooms.find(room => room.id === studio.id)?.kind === "Study",
+  "Room finishes or purpose were omitted from the world snapshot."
 );
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", studio.x, studio.z),

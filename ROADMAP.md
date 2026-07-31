@@ -38,7 +38,7 @@ Every foundation must remain editable. Their value comes from distinct constrain
 
 ### Home Simulator build order
 
-- **Structure:** room drawing, selectable room plans, persistent floor and wall finishes, and safe room deletion are live; multiple stories, manual doors, windows, roofs, stairs, and foundation choices remain ahead
+- **Structure:** room drawing, eight persistent room purposes, selectable plans, persistent floor and wall finishes, and safe room deletion are live; multiple stories, manual doors, windows, roofs, stairs, and foundation choices remain ahead
 - **Furnishing:** a categorized eight-object catalog, four persistent style swatches, priced placement, collision-aware rotation, selling, budget, and functional interactions are live; object variants, per-part recolors, free rotation, snapping choices, and inventories remain ahead
 - **Households:** resident creator, relationships, personalities, skills, needs, schedules, career progression, wages, daily expenses, and household funds are live; deeper career branching and discretionary purchases remain ahead
 - **Guidance:** prioritized household wants are live for residents, beds, crowding, hygiene, meals, comfort, skill growth, relationship tension, and finances; longer-term aspirations and player-pinned goals remain ahead
@@ -210,6 +210,7 @@ Current vertical slice:
 - Home Simulator rejects furniture placed outside every room, and the Explorer regression gate verifies entry access, lot transforms, room transitions, wall containment, and furniture collision.
 - Inspect mode selects either a furnishing or the room beneath it. Selected rooms expose persistent floor and wall finish palettes with surface-based pricing, visible budget impact, a protected final-room rule, automatic sale of exclusive furnishings, and a 25% structure refund on deletion.
 - Every home now owns a persistent design budget. Room construction is priced by area, the furnishing catalog exposes item prices, purchases provide exact insufficient-funds feedback, and older saves receive safe budget defaults.
+- Selected rooms can be assigned as Living Room, Bedroom, Kitchen, Bathroom, Study, Dining Room, Nursery, or Studio without changing their geometry or budget. The semantic purpose persists beside floor and wall finishes and prepares the plan for room-aware behavior.
 - Inspect mode selects a furnishing directly in the 3D home with a gold outline. The contextual toolbar can rotate it in 45-degree steps or sell it for a visible 50 percent refund, with selection, spending, and controls kept in sync after undo and redraw.
 - Owned furniture can be moved without repurchase. Green and red footprint previews expose valid placement before committing, while rotated-corner and oriented-overlap checks prevent objects from crossing walls, stacking together, or rotating into an invalid layout.
 - Selected furniture can switch between Natural, Light, Dark, and Colorful visual schemes without affecting the design budget. The contextual style control stays disabled until an object is selected, and older saves migrate to Natural.
@@ -245,6 +246,8 @@ Current vertical slice:
 Next systems are richer career branches and discretionary household purchases, deeper object variants and inventories, richer event and vehicle audio cues, and metropolitan streaming built on the current simulation level of detail.
 
 `npm run test:explorer` also verifies empty-home onboarding, pressured-household priorities, and the absence of invented wants in a fully supported healthy household.
+
+Room-purpose regression coverage verifies cost-free editing, redundant-change rejection, and snapshot persistence alongside the existing finish and room-removal tests.
 
 ## Milestone 3: Metropolitan scale
 
