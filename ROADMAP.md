@@ -318,6 +318,65 @@ Goal: make invitations frictionless while protecting the host’s city.
 
 Exit gate: four players can build and explore for an hour through a join link without save divergence.
 
+## Golden quality targets
+
+These are the highest-value next slices for reaching the clarity of Cities: Skylines and the intimacy of The Sims or Paralives without losing the shared Gridless world.
+
+### P0: Roads that feel authored
+
+- Add optional angle, tangent, parallel, and endpoint snapping without introducing a tile grid.
+- Support lane count, medians, bike lanes, bus lanes, sidewalks, trees, parking, and speed policy as editable road profiles.
+- Add elevation handles, grade limits, bridges, tunnels, roundabouts, and safe intersection rebuilding.
+- Preview demolition, parcel impact, construction cost, accessibility, and traffic consequences before committing.
+
+Exit gate: a player can reproduce a recognizable real neighborhood street pattern, then walk and drive every edited junction without visual seams or route breaks.
+
+### P0: A complete home shell
+
+- Replace rectangle-only rooms with a wall, doorway, window, stair, foundation, roof, and floor-level toolset.
+- Add copy, multi-select, eyedropper, room duplication, search, favorites, recolors, and object variants.
+- Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
+
+Exit gate: a player can build a distinctive two-story home, furnish it efficiently, and traverse every finished space from its actual city entrance.
+
+### P0: Lives with continuity
+
+- Add object ownership, personal inventories, outfits, preferences, milestones, aspirations, and household schedules.
+- Expand careers into branching workplaces that physically exist in the city and create visible commutes, coworkers, customers, and service demand.
+- Add visitors, invitations, celebrations, childcare, aging, moving, and household splits while preserving social memory.
+
+Exit gate: one household can be followed for a full in-game year with understandable goals, meaningful choices, and no continuity loss between home and city.
+
+### P1: A city with visual identity
+
+- Build region-aware architectural kits, procedural facades, storefronts, street furniture, landscaping, terrain, shoreline, and seasonal material variation.
+- Give districts readable design rules without forcing identical buildings or sacrificing player overrides.
+- Keep Builder colors diagnostic, Explorer materials grounded, and Home details warm and tactile.
+
+Exit gate: screenshots from five districts are immediately distinguishable at skyline, street, and room scales.
+
+### P1: Metropolitan performance
+
+- Move buildings and repeated props to instanced batches, add occlusion and impostors, and stream chunk assets independently from simulation state.
+- Move deterministic background ticks and path queries into workers with fixed budgets and profiling overlays.
+- Establish minimum-machine budgets for frame time, memory, save size, loading, and simulation tick duration.
+
+Exit gate: the one-million-person reference region meets its published budgets for a continuous 30-minute Builder and Explorer session.
+
+### P1: Regional foundations
+
+- Add Chicago, Houston, Seattle, and Portland as data-driven terrain, climate, street-hierarchy, transit, zoning, architecture, and economy profiles.
+- Keep every foundation flexible: players can erase, extend, remix, or combine regional rules.
+
+Exit gate: each foundation creates a recognizably different planning problem while using the same tested world systems and save format.
+
+### P2: Shared cities
+
+- Make the current command history the basis for proposals, permissions, replay, conflict resolution, and authoritative multiplayer saves.
+- Let guests enter as planners, builders, residents, or visitors through a link with explicit privacy and moderation controls.
+
+Exit gate: four players can build, travel, and inhabit one city for an hour with deterministic recovery and no divergent world state.
+
 ## Architecture boundaries
 
 - **Simulation core:** deterministic TypeScript or Rust/Wasm with no rendering dependencies
