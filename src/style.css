@@ -56,6 +56,22 @@ canvas { display: block; }
 }
 .help-trigger:hover { color: white; background: rgba(28,40,33,.94); }
 .help-trigger kbd { color: #172019; background: #f0d980; }
+.settings-trigger {
+  position: absolute;
+  z-index: 4;
+  top: 82px;
+  left: 352px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  color: #b9c3bb;
+  background: rgba(13,21,17,.84);
+  font: 700 10px "DM Sans", sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+}
+.settings-trigger:hover { color: white; background: rgba(28,40,33,.94); }
 .lod-status {
   position: absolute;
   top: 28px;
@@ -719,11 +735,55 @@ kbd {
 .controls-guide footer span { display: flex; align-items: center; gap: 6px; }
 .controls-guide footer small { flex: 1 1 100%; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); color: #7f9186; }
 
+.preferences-panel {
+  position: fixed;
+  z-index: 46;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6,10,8,.68);
+  pointer-events: auto;
+  backdrop-filter: blur(9px);
+}
+.preferences-panel[hidden] { display: none; }
+.preferences-panel > section {
+  width: min(470px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid rgba(240,217,128,.28);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(24,35,29,.99), rgba(10,17,13,.99));
+  box-shadow: 0 30px 90px rgba(0,0,0,.5);
+}
+.preferences-panel header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 16px; }
+.preferences-panel header span { color: #f0d980; font-size: 9px; font-weight: 800; letter-spacing: .15em; }
+.preferences-panel h2 { margin: 4px 0 0; font: 700 22px "Manrope", sans-serif; }
+.preferences-panel header button { padding: 3px 10px; border: 0; color: #dbe5dc; background: transparent; font-size: 24px; cursor: pointer; }
+.preferences-panel label { display: flex; align-items: flex-start; gap: 11px; padding: 13px 3px; border-top: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+.preferences-panel input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: #f0d980; }
+.preferences-panel label span, .preferences-panel label strong, .preferences-panel label small { display: block; }
+.preferences-panel label strong { font-size: 12px; }
+.preferences-panel label small { margin-top: 3px; color: #93a299; font-size: 10px; line-height: 1.4; }
+.preferences-panel p { margin: 10px 0 0; color: #74857a; font-size: 9px; }
+.reduced-motion *, .reduced-motion *::before, .reduced-motion *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; transition-duration: .001ms !important; }
+.high-contrast .stat,
+.high-contrast .panel,
+.high-contrast .mode-switcher,
+.high-contrast .actionbar,
+.high-contrast .city-tools,
+.high-contrast .city-build-tools,
+.high-contrast .home-tools,
+.high-contrast .starter-journey { border-color: rgba(255,255,255,.34); background: rgba(5,10,7,.96); }
+.high-contrast button.active { outline: 2px solid #fff2a8; outline-offset: 1px; }
+
 @media (max-width: 760px) {
   .controls-guide-grid { grid-template-columns: 1fr; }
   .controls-guide article p { min-height: 0; }
   .help-trigger { top: 16px; right: 16px; left: auto; }
   .help-trigger span { display: none; }
+  .settings-trigger { top: 16px; right: 58px; left: auto; }
+  .settings-trigger span { font-size: 0; }
+  .settings-trigger span::after { content: "⚙"; font-size: 12px; }
 }
 
 .home-editing .panel.inspecting {

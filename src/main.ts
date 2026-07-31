@@ -102,6 +102,7 @@ app.innerHTML = `
   <div class="hud">
     <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="lod-status" id="lod-status">Preparing region detail</div></div>
     <button class="help-trigger" id="help-open" type="button" aria-label="Open controls guide"><kbd>?</kbd><span>Help</span></button>
+    <button class="settings-trigger" id="settings-open" type="button" aria-label="Open interface settings"><span>Settings</span></button>
     <div class="simulation-controls">
       <div><span id="sim-date">Y1 · JAN 1</span><strong id="sim-time">08:00</strong><small id="sim-weather">Clear · 0°C</small></div>
       <button data-speed="0" aria-label="Pause simulation">Ⅱ</button>
@@ -409,6 +410,15 @@ app.innerHTML = `
         <footer><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⇧ ⌘/Ctrl Z</kbd> Redo</span><span><kbd>?</kbd> This guide</span><span><kbd>Esc</kbd> Close or step back</span><small>Manual saves are yours. Autosave recovery protects the latest world state separately.</small></footer>
       </section>
     </div>
+    <div class="preferences-panel" id="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" hidden>
+      <section>
+        <header><div><span>PLAYER COMFORT</span><h2 id="preferences-title">Interface settings</h2></div><button type="button" id="settings-close" aria-label="Close interface settings">×</button></header>
+        <label><input type="checkbox" id="preference-reduced-motion"><span><strong>Reduced motion</strong><small>Removes walking camera sway, sprint lens changes, and animated precipitation.</small></span></label>
+        <label><input type="checkbox" id="preference-high-contrast"><span><strong>High contrast interface</strong><small>Strengthens panel surfaces, boundaries, and active control states.</small></span></label>
+        <label><input type="checkbox" id="preference-starter"><span><strong>Show starter journey</strong><small>Restores the four guided first-play goals in City Builder.</small></span></label>
+        <p>These preferences are stored only in this browser.</p>
+      </section>
+    </div>
     <div class="explorer-status" aria-label="Explorer movement status">
       <div><span>Location</span><strong id="explorer-location">City streets</strong></div>
       <div><span>Surface</span><strong id="explorer-surface">Sidewalk</strong></div>
@@ -566,7 +576,21 @@ let lastMonthlyBalance = 0;
 let lastHomeActionSignature = "";
 let lastAutosaveRevision = world.changeRevision();
 let autosaveTimer = 0;
-let starterJourneyDismissed = false;
+type UiPreferences = { reducedMotion: boolean; highContrast: boolean; showStarterJourney: boolean };
+function loadUiPreferences(): UiPreferences {
+  try {
+    const saved = JSON.parse(localStorage.getItem("gridless-ui-preferences-v1") ?? "{}") as Partial<UiPreferences>;
+    return {
+      reducedMotion: saved.reducedMotion ?? matchMedia("(prefers-reduced-motion: reduce)").matches,
+      highContrast: saved.highContrast ?? false,
+      showStarterJourney: saved.showStarterJourney ?? true
+    };
+  } catch {
+    return { reducedMotion: false, highContrast: false, showStarterJourney: true };
+  }
+}
+let uiPreferences = loadUiPreferences();
+let starterJourneyDismissed = !uiPreferences.showStarterJourney;
 let explorerRoadPaths: ExplorerRoadPath[] = [];
 let streetIntersections: StreetIntersection[] = [];
 let explorerRoadKey = "";
@@ -1827,6 +1851,21 @@ function syncSoundscape() {
   return profile;
 }
 
+function applyUiPreferences() {
+  document.body.classList.toggle("reduced-motion", uiPreferences.reducedMotion);
+  document.body.classList.toggle("high-contrast", uiPreferences.highContrast);
+  document.querySelector<HTMLInputElement>("#preference-reduced-motion")!.checked = uiPreferences.reducedMotion;
+  document.querySelector<HTMLInputElement>("#preference-high-contrast")!.checked = uiPreferences.highContrast;
+  document.querySelector<HTMLInputElement>("#preference-starter")!.checked = uiPreferences.showStarterJourney;
+}
+
+function saveUiPreferences() {
+  localStorage.setItem("gridless-ui-preferences-v1", JSON.stringify(uiPreferences));
+  applyUiPreferences();
+}
+
+applyUiPreferences();
+
 function renderStarterJourney() {
   const panel = document.querySelector<HTMLElement>("#starter-journey");
   if (!panel) return;
@@ -2542,7 +2581,7 @@ function updateClockDisplay() {
     scene.fog.color.copy(sky);
     scene.fog.density = .00052 + (1 - weather.visibility) * .00115;
   }
-  const precipitationVisible = mode !== "home" && !explorerInteriorHomeId;
+  const precipitationVisible = !uiPreferences.reducedMotion && mode !== "home" && !explorerInteriorHomeId;
   rainField.visible = weather.kind === "rain" && precipitationVisible;
   snowField.visible = weather.kind === "snow" && precipitationVisible;
   roadMaterial.color.set(weather.kind === "rain" ? 0x252d2e : weather.kind === "snow" ? 0x3b4140 : 0x303533);
@@ -5184,6 +5223,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
 addEventListener("keydown", event => {
   keys.add(event.code);
   const controlsGuide = document.querySelector<HTMLElement>("#controls-guide")!;
+  const preferencesPanel = document.querySelector<HTMLElement>("#preferences-panel")!;
   if (event.code === "Slash" && event.shiftKey && !event.repeat) {
     event.preventDefault();
     controlsGuide.hidden = !controlsGuide.hidden;
@@ -5194,6 +5234,12 @@ addEventListener("keydown", event => {
     event.preventDefault();
     controlsGuide.hidden = true;
     document.querySelector<HTMLButtonElement>("#help-open")!.focus();
+    return;
+  }
+  if (event.code === "Escape" && !preferencesPanel.hidden) {
+    event.preventDefault();
+    preferencesPanel.hidden = true;
+    document.querySelector<HTMLButtonElement>("#settings-open")!.focus();
     return;
   }
   if (event.code === "Escape" && !document.querySelector<HTMLElement>("#resident-creator")!.hidden) {
@@ -5365,6 +5411,37 @@ document.querySelector("#controls-guide")!.addEventListener("click", event => {
   if (event.target !== event.currentTarget) return;
   document.querySelector<HTMLElement>("#controls-guide")!.hidden = true;
 });
+document.querySelector("#settings-open")!.addEventListener("click", () => {
+  applyUiPreferences();
+  document.querySelector<HTMLElement>("#preferences-panel")!.hidden = false;
+  document.querySelector<HTMLButtonElement>("#settings-close")!.focus();
+});
+document.querySelector("#settings-close")!.addEventListener("click", () => {
+  document.querySelector<HTMLElement>("#preferences-panel")!.hidden = true;
+  document.querySelector<HTMLButtonElement>("#settings-open")!.focus();
+});
+document.querySelector("#preferences-panel")!.addEventListener("click", event => {
+  if (event.target !== event.currentTarget) return;
+  document.querySelector<HTMLElement>("#preferences-panel")!.hidden = true;
+});
+document.querySelector<HTMLInputElement>("#preference-reduced-motion")!.addEventListener("change", event => {
+  uiPreferences.reducedMotion = (event.currentTarget as HTMLInputElement).checked;
+  saveUiPreferences();
+  renderWorld();
+  notice(uiPreferences.reducedMotion ? "Reduced motion enabled" : "Full motion enabled");
+});
+document.querySelector<HTMLInputElement>("#preference-high-contrast")!.addEventListener("change", event => {
+  uiPreferences.highContrast = (event.currentTarget as HTMLInputElement).checked;
+  saveUiPreferences();
+  notice(uiPreferences.highContrast ? "High contrast interface enabled" : "Standard contrast interface enabled");
+});
+document.querySelector<HTMLInputElement>("#preference-starter")!.addEventListener("change", event => {
+  uiPreferences.showStarterJourney = (event.currentTarget as HTMLInputElement).checked;
+  starterJourneyDismissed = !uiPreferences.showStarterJourney;
+  saveUiPreferences();
+  renderStarterJourney();
+  notice(uiPreferences.showStarterJourney ? "Starter journey restored" : "Starter journey hidden");
+});
 renderer.domElement.addEventListener("pointermove", event => {
   if (mode !== "home" || !selectedLot) return;
   pointer.set(event.clientX / innerWidth * 2 - 1, -(event.clientY / innerHeight) * 2 + 1);
@@ -5395,6 +5472,8 @@ addEventListener("mousemove", event => {
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(button => button.addEventListener("click", () => setMode(button.dataset.mode as Mode)));
 document.querySelector("#starter-dismiss")!.addEventListener("click", () => {
   starterJourneyDismissed = true;
+  uiPreferences.showStarterJourney = false;
+  saveUiPreferences();
   renderStarterJourney();
   notice("Starter journey hidden. The field guide remains available from Help.");
 });
@@ -5994,14 +6073,14 @@ function animate() {
         }
       }
       if (explorerGrounded && traveled > .0001) explorerStepPhase += traveled * (sprinting ? 3.1 : 2.65);
-      const bob = explorerGrounded && movementSpeed > .3
+      const bob = !uiPreferences.reducedMotion && explorerGrounded && movementSpeed > .3
         ? Math.sin(explorerStepPhase) * (sprinting ? .055 : .032)
         : 0;
-      const roll = explorerGrounded && movementSpeed > .3
+      const roll = !uiPreferences.reducedMotion && explorerGrounded && movementSpeed > .3
         ? Math.sin(explorerStepPhase * .5) * (sprinting ? .009 : .004)
         : 0;
       camera.position.y = (interior ? 2.02 : 1.82) + explorerVerticalOffset + bob;
-      const targetFov = photoMode ? photoFov : sprinting && movementSpeed > 5 ? 60 : 55;
+      const targetFov = photoMode ? photoFov : !uiPreferences.reducedMotion && sprinting && movementSpeed > 5 ? 60 : 55;
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 7, dt);
       if (Math.abs(nextFov - camera.fov) > .001) {
         camera.fov = nextFov;
