@@ -279,6 +279,14 @@ export type TransitLine = {
   fareRevenue: number;
 };
 
+export type TransitTransfer = {
+  lineId: string;
+  lineName: string;
+  stopId: string;
+  otherStopId: string;
+  distance: number;
+};
+
 export type CityEventKind = "concert" | "market" | "parade" | "sports";
 export type CityEventTiming = "now" | "tonight" | "tomorrow";
 
@@ -1077,6 +1085,21 @@ export class World {
     return true;
   }
 
+  setTransitLineName(lineId: string, requestedName: string) {
+    const line = this.transitLines.find(item => item.id === lineId);
+    if (!line) return false;
+    const name = requestedName.trim().replace(/\s+/g, " ").slice(0, 32);
+    if (
+      !name
+      || !/^[\p{L}\p{M}\p{N} &'().-]+$/u.test(name)
+      || this.transitLines.some(item => item.id !== lineId && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())
+      || line.name === name
+    ) return false;
+    this.checkpoint();
+    line.name = name;
+    return true;
+  }
+
   addTransitLine(roadId: string) {
     const road = this.roads.find(item => item.id === roadId);
     if (!road || road.points.length < 2 || this.transitLines.length >= 8) return undefined;
@@ -1107,6 +1130,40 @@ export class World {
     this.transitLines.splice(index, 1);
     this.rebuildAccessibilityEntrances();
     return true;
+  }
+
+  transitTransfersAtStop(line: TransitLine, stop: TransitStop, maximumDistance = 55): TransitTransfer[] {
+    return this.transitLines
+      .filter(otherLine => otherLine.id !== line.id)
+      .map(otherLine => {
+        const closest = otherLine.stops
+          .map(otherStop => ({
+            otherStop,
+            distance: distance(stop.position, otherStop.position)
+          }))
+          .sort((first, second) => first.distance - second.distance)[0];
+        return closest && closest.distance <= maximumDistance
+          ? {
+              lineId: otherLine.id,
+              lineName: otherLine.name,
+              stopId: stop.id,
+              otherStopId: closest.otherStop.id,
+              distance: closest.distance
+            }
+          : undefined;
+      })
+      .filter((transfer): transfer is TransitTransfer => Boolean(transfer));
+  }
+
+  transitTransfersForLine(line: TransitLine, maximumDistance = 55) {
+    const closestByLine = new Map<string, TransitTransfer>();
+    for (const stop of line.stops) {
+      for (const transfer of this.transitTransfersAtStop(line, stop, maximumDistance)) {
+        const previous = closestByLine.get(transfer.lineId);
+        if (!previous || transfer.distance < previous.distance) closestByLine.set(transfer.lineId, transfer);
+      }
+    }
+    return [...closestByLine.values()].sort((first, second) => first.distance - second.distance);
   }
 
   transitStopDemand(
@@ -1142,7 +1199,8 @@ export class World {
     );
     const accessFactor = entrance && this.entranceIsUsable(entrance) ? 1 : .72;
     const eventDemand = elapsedMinute < 0 ? 0 : this.cityEventTransitDemand(stop.position, elapsedMinute);
-    return Math.max(0, (localDemand * timeFactor + eventDemand) * frequencyFactor * fareFactor * accessFactor);
+    const transferFactor = 1 + Math.min(.48, this.transitTransfersAtStop(line, stop).length * .16);
+    return Math.max(0, (localDemand * timeFactor + eventDemand) * frequencyFactor * fareFactor * accessFactor * transferFactor);
   }
 
   transitLineDemand(

@@ -894,7 +894,7 @@ kbd {
   border-left: 1px solid rgba(255,255,255,.12);
 }
 .city-tool-settings.active { display: flex; }
-.city-build-tools select {
+.city-build-tools select, .city-build-tools input {
   min-width: 145px;
   max-width: 215px;
   padding: 8px 9px;
@@ -904,6 +904,9 @@ kbd {
   background: #27312b;
   font: 500 11px "DM Sans", sans-serif;
 }
+.city-build-tools input { min-width: 120px; max-width: 160px; }
+[data-city-tool-settings="transit"] #transit-stops { min-width: 102px; width: 102px; }
+[data-city-tool-settings="transit"] #transit-name { min-width: 125px; width: 125px; }
 .tool-label { margin-left: 3px; color: #8ea095; font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 
 .explorer-status {
