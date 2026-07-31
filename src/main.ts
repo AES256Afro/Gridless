@@ -75,6 +75,7 @@ import {
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
+type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
@@ -147,99 +148,122 @@ app.innerHTML = `
       <button id="apply-template">Start new region</button>
     </div>
     <div class="city-build-tools" aria-label="City building tools">
-      <button data-city-tool="road" class="active">Draw road</button>
-      <select id="road-class" aria-label="Road class">
-        <option value="street">Local street · 9m</option>
-        <option value="avenue">Avenue · 12m</option>
-        <option value="arterial">Arterial · 16m</option>
-      </select>
-      <div class="tool-divider"></div>
-      <button data-city-tool="inspect">Inspect</button>
-      <span class="tool-label">Zone</span>
-      <button data-city-tool="residential">Residential</button>
-      <button data-city-tool="commercial">Commercial</button>
-      <button data-city-tool="mixed">Mixed use</button>
-      <button data-city-tool="industrial">Industrial</button>
-      <button data-city-tool="civic">Civic</button>
-      <div class="tool-divider"></div>
-      <button data-city-tool="service">Place service</button>
-      <select id="service-kind" aria-label="Municipal service">
-        <option value="power">Power plant · $780k/mo</option>
-        <option value="water">Water tower · $520k/mo</option>
-        <option value="sewage">Sewage plant · $610k/mo</option>
-        <option value="waste">Waste depot · $470k/mo</option>
-        <option value="fire">Fire station · $360k/mo</option>
-        <option value="health">Health clinic · $440k/mo</option>
-        <option value="school">Public school · $390k/mo</option>
-      </select>
-      <button data-city-tool="utility">Draw utility</button>
-      <select id="utility-kind" aria-label="Utility network">
-        <option value="power">Power line</option>
-        <option value="water">Water main</option>
-        <option value="sewage">Sewage pipe</option>
-        <option value="waste">Waste collection route</option>
-      </select>
-      <button data-city-tool="parking">Place parking</button>
-      <select id="parking-kind" aria-label="Parking type">
-        <option value="curb">Curb bay · 2 spaces</option>
-        <option value="surface">Surface lot · 18 spaces</option>
-        <option value="garage">Garage · 84 spaces</option>
-      </select>
-      <select id="parking-price" aria-label="Parking hourly price">
-        <option value="0">Free parking</option>
-        <option value="2">Economy · $2/hr</option>
-        <option value="4">Market · $4/hr</option>
-        <option value="6" selected>Premium · $6/hr</option>
-        <option value="10">Event · $10/hr</option>
-      </select>
-      <button data-city-tool="curb">Manage curb</button>
-      <select id="curb-use" aria-label="Curb use">
-        <option value="parking">Flexible parking</option>
-        <option value="loading">Commercial loading</option>
-        <option value="restricted">No parking</option>
-        <option value="event">Special event</option>
-      </select>
-      <select id="curb-schedule" aria-label="Curb schedule">
-        <option value="all-day">All day</option>
-        <option value="business-hours" selected>Business hours · 7–19</option>
-        <option value="rush-hours">Rush hours · 7–10 / 16–19</option>
-        <option value="evening">Evening event · 17–23</option>
-      </select>
-      <button data-city-tool="event">Plan city event</button>
-      <select id="event-kind" aria-label="City event type">
-        <option value="market">Street market</option>
-        <option value="concert">Outdoor concert</option>
-        <option value="parade">City parade</option>
-        <option value="sports">City match</option>
-      </select>
-      <select id="event-timing" aria-label="City event timing">
-        <option value="now">Start now</option>
-        <option value="tonight" selected>Next event time</option>
-        <option value="tomorrow">Tomorrow</option>
-      </select>
-      <button data-city-tool="transit">Transit operations</button>
-      <select id="transit-line" aria-label="Selected transit line"></select>
-      <select id="transit-frequency" aria-label="Transit service frequency">
-        <option value="18">Basic service · 18m</option>
-        <option value="10" selected>Frequent service · 10m</option>
-        <option value="6">Rapid service · 6m</option>
-      </select>
-      <select id="transit-fare" aria-label="Transit fare">
-        <option value="0">Fare-free</option>
-        <option value="2.75" selected>Standard fare · $2.75</option>
-        <option value="4">Premium fare · $4</option>
-      </select>
-      <select id="transit-stops" aria-label="Transit stop count">
-        <option value="4">4 stops</option>
-        <option value="5">5 stops</option>
-        <option value="6">6 stops</option>
-        <option value="7">7 stops</option>
-        <option value="8">8 stops</option>
-        <option value="9">9 stops</option>
-        <option value="10">10 stops</option>
-      </select>
-      <button id="transit-remove" type="button">Remove line</button>
-      <button data-city-tool="access">Improve access</button>
+      <div class="city-tool-categories" role="tablist" aria-label="City tool categories">
+        <button data-city-tool-group="build" class="active" role="tab">Build</button>
+        <button data-city-tool-group="zone" role="tab">Zones</button>
+        <button data-city-tool-group="services" role="tab">Services</button>
+        <button data-city-tool-group="mobility" role="tab">Mobility</button>
+        <button data-city-tool-group="events" role="tab">Events</button>
+      </div>
+      <div class="city-tool-options active" data-city-group-panel="build">
+        <button data-city-tool="road" class="active">Draw road</button>
+        <select id="road-class" aria-label="Road class">
+          <option value="street">Local street · 9m</option>
+          <option value="avenue">Avenue · 12m</option>
+          <option value="arterial">Arterial · 16m</option>
+        </select>
+        <button data-city-tool="inspect">Inspect parcels</button>
+      </div>
+      <div class="city-tool-options" data-city-group-panel="zone">
+        <span class="tool-label">Paint zone</span>
+        <button data-city-tool="residential">Residential</button>
+        <button data-city-tool="commercial">Commercial</button>
+        <button data-city-tool="mixed">Mixed use</button>
+        <button data-city-tool="industrial">Industrial</button>
+        <button data-city-tool="civic">Civic</button>
+      </div>
+      <div class="city-tool-options" data-city-group-panel="services">
+        <button data-city-tool="service">Place service</button>
+        <select id="service-kind" aria-label="Municipal service">
+          <option value="power">Power plant · $780k/mo</option>
+          <option value="water">Water tower · $520k/mo</option>
+          <option value="sewage">Sewage plant · $610k/mo</option>
+          <option value="waste">Waste depot · $470k/mo</option>
+          <option value="fire">Fire station · $360k/mo</option>
+          <option value="health">Health clinic · $440k/mo</option>
+          <option value="school">Public school · $390k/mo</option>
+        </select>
+        <button data-city-tool="utility">Draw utility</button>
+        <select id="utility-kind" aria-label="Utility network">
+          <option value="power">Power line</option>
+          <option value="water">Water main</option>
+          <option value="sewage">Sewage pipe</option>
+          <option value="waste">Waste collection route</option>
+        </select>
+        <button data-city-tool="access">Improve access</button>
+      </div>
+      <div class="city-tool-options" data-city-group-panel="mobility">
+        <div class="city-tool-actions">
+          <button data-city-tool="parking">Parking</button>
+          <button data-city-tool="curb">Curbs</button>
+          <button data-city-tool="transit">Transit</button>
+        </div>
+        <div class="city-tool-settings active" data-city-tool-settings="parking">
+          <select id="parking-kind" aria-label="Parking type">
+            <option value="curb">Curb bay · 2 spaces</option>
+            <option value="surface">Surface lot · 18 spaces</option>
+            <option value="garage">Garage · 84 spaces</option>
+          </select>
+          <select id="parking-price" aria-label="Parking hourly price">
+            <option value="0">Free parking</option>
+            <option value="2">Economy · $2/hr</option>
+            <option value="4">Market · $4/hr</option>
+            <option value="6" selected>Premium · $6/hr</option>
+            <option value="10">Event · $10/hr</option>
+          </select>
+        </div>
+        <div class="city-tool-settings" data-city-tool-settings="curb">
+          <select id="curb-use" aria-label="Curb use">
+            <option value="parking">Flexible parking</option>
+            <option value="loading">Commercial loading</option>
+            <option value="restricted">No parking</option>
+            <option value="event">Special event</option>
+          </select>
+          <select id="curb-schedule" aria-label="Curb schedule">
+            <option value="all-day">All day</option>
+            <option value="business-hours" selected>Business hours · 7–19</option>
+            <option value="rush-hours">Rush hours · 7–10 / 16–19</option>
+            <option value="evening">Evening event · 17–23</option>
+          </select>
+        </div>
+        <div class="city-tool-settings" data-city-tool-settings="transit">
+          <select id="transit-line" aria-label="Selected transit line"></select>
+          <select id="transit-frequency" aria-label="Transit service frequency">
+            <option value="18">Basic service · 18m</option>
+            <option value="10" selected>Frequent service · 10m</option>
+            <option value="6">Rapid service · 6m</option>
+          </select>
+          <select id="transit-fare" aria-label="Transit fare">
+            <option value="0">Fare-free</option>
+            <option value="2.75" selected>Standard fare · $2.75</option>
+            <option value="4">Premium fare · $4</option>
+          </select>
+          <select id="transit-stops" aria-label="Transit stop count">
+            <option value="4">4 stops</option>
+            <option value="5">5 stops</option>
+            <option value="6">6 stops</option>
+            <option value="7">7 stops</option>
+            <option value="8">8 stops</option>
+            <option value="9">9 stops</option>
+            <option value="10">10 stops</option>
+          </select>
+          <button id="transit-remove" type="button">Remove line</button>
+        </div>
+      </div>
+      <div class="city-tool-options" data-city-group-panel="events">
+        <button data-city-tool="event">Plan city event</button>
+        <select id="event-kind" aria-label="City event type">
+          <option value="market">Street market</option>
+          <option value="concert">Outdoor concert</option>
+          <option value="parade">City parade</option>
+          <option value="sports">City match</option>
+        </select>
+        <select id="event-timing" aria-label="City event timing">
+          <option value="now">Start now</option>
+          <option value="tonight" selected>Next event time</option>
+          <option value="tomorrow">Tomorrow</option>
+        </select>
+      </div>
     </div>
     <div class="home-tools" aria-label="Home building tools">
       <button data-home-tool="select" class="active">Inspect</button>
@@ -348,6 +372,7 @@ let draft: Point2[] = [];
 let selectedLot: Lot | null = null;
 let selectedTransitLineId: string | null = world.transitLines[0]?.id ?? null;
 let cityTool: CityTool = "road";
+let cityToolGroup: CityToolGroup = "build";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
 let yaw = Math.PI;
@@ -4379,8 +4404,49 @@ document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(button => b
   document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(item => item.classList.toggle("active", item === button));
   notice(simulationSpeed === 0 ? "Simulation paused" : simulationSpeed >= 360 ? "Maximum simulation speed" : simulationSpeed >= 72 ? "Fast simulation speed" : "Simulation running");
 }));
+
+const cityToolGroupByTool: Record<CityTool, CityToolGroup> = {
+  road: "build",
+  inspect: "build",
+  residential: "zone",
+  commercial: "zone",
+  mixed: "zone",
+  industrial: "zone",
+  civic: "zone",
+  service: "services",
+  utility: "services",
+  access: "services",
+  parking: "mobility",
+  curb: "mobility",
+  transit: "mobility",
+  event: "events"
+};
+
+function setCityToolGroup(group: CityToolGroup, selectDefault = false) {
+  cityToolGroup = group;
+  document.querySelectorAll<HTMLButtonElement>("[data-city-tool-group]").forEach(button => {
+    const active = button.dataset.cityToolGroup === group;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll<HTMLElement>("[data-city-group-panel]").forEach(panel => {
+    panel.classList.toggle("active", panel.dataset.cityGroupPanel === group);
+  });
+  if (selectDefault && cityToolGroupByTool[cityTool] !== group) {
+    document.querySelector<HTMLButtonElement>(`[data-city-group-panel="${group}"] [data-city-tool]`)?.click();
+  }
+}
+
+document.querySelectorAll<HTMLButtonElement>("[data-city-tool-group]").forEach(button => button.addEventListener("click", () => {
+  setCityToolGroup(button.dataset.cityToolGroup as CityToolGroup, true);
+}));
+
 document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button => button.addEventListener("click", () => {
   cityTool = button.dataset.cityTool as CityTool;
+  setCityToolGroup(cityToolGroupByTool[cityTool]);
+  document.querySelectorAll<HTMLElement>("[data-city-tool-settings]").forEach(settings => {
+    settings.classList.toggle("active", settings.dataset.cityToolSettings === cityTool);
+  });
   draft = [];
   renderDraft();
   document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(item => item.classList.toggle("active", item === button));

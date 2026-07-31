@@ -45,6 +45,7 @@ The current vertical slice proves:
 - Procedural city massing
 - One-key transition between planning and first-person exploration, with continuous spline-generated curbs, sidewalks, road markings, and intersection-aware sidewalk entry
 - Scale-aware street rendering: true intersections receive clean layered junction caps, while dense crosswalk, signal, window, and building-shadow detail is reserved for Explorer so the planning view remains legible without depth-fighting artifacts
+- A focused City Builder command deck with Build, Zones, Services, Mobility, and Events workspaces; each exposes only the relevant tools and settings instead of compressing the entire simulation into one toolbar
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout
 - Detected street intersections with zebra crossings, curb-ramp pads, and deterministic two-direction traffic signals
 - Right-hand AI traffic lanes with red-light stopping, green-light movement, visible brake lights, and signal-ahead guidance while driving
