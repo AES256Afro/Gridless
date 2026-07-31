@@ -617,6 +617,44 @@ check(
     && catalogWorld.snapshot().homes[0].furniture.find(item => item.id === catalogDesk.id)?.style === "colorful",
   "Expanded catalog furniture or its selected style was omitted from the world snapshot."
 );
+const functionalRoomHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "functional-room-home",
+  rooms: [
+    { id: "bedroom-purpose", kind: "Bedroom", x: -10, z: 0, width: 4, depth: 4 },
+    { id: "bathroom-purpose", kind: "Bathroom", x: -5, z: 0, width: 4, depth: 4 },
+    { id: "kitchen-purpose", kind: "Kitchen", x: 0, z: 0, width: 4, depth: 4 },
+    { id: "living-purpose", kind: "Living room", x: 5, z: 0, width: 4, depth: 4 },
+    { id: "study-purpose", kind: "Study", x: 10, z: 0, width: 4, depth: 4 }
+  ],
+  furniture: [
+    { id: "purpose-bed", kind: "bed", x: -10, z: 0, rotation: 0 },
+    { id: "purpose-shower", kind: "shower", x: -5, z: 0, rotation: 0 },
+    { id: "purpose-fridge", kind: "fridge", x: 0, z: 0, rotation: 0 },
+    { id: "purpose-sofa", kind: "sofa", x: 5, z: 0, rotation: 0 },
+    { id: "purpose-desk", kind: "desk", x: 10, z: 0, rotation: 0 }
+  ],
+  residents: [],
+  relationships: []
+};
+const mismatchedRoomHome = structuredClone(functionalRoomHome);
+mismatchedRoomHome.id = "mismatched-room-home";
+mismatchedRoomHome.rooms.forEach(room => { room.kind = "Living room"; });
+const functionalRooms = catalogWorld.homeFunctionality(functionalRoomHome);
+const mismatchedRooms = catalogWorld.homeFunctionality(mismatchedRoomHome);
+check(
+  functionalRooms.completeness === 100
+    && functionalRooms.alignment === 100
+    && catalogWorld.furniturePurposeFit(functionalRoomHome, functionalRoomHome.furniture[1]) === true,
+  "Complete purpose-matched rooms did not receive full functional credit."
+);
+check(
+  mismatchedRooms.completeness === 100
+    && mismatchedRooms.alignment < functionalRooms.alignment
+    && catalogWorld.furniturePurposeFit(mismatchedRoomHome, mismatchedRoomHome.furniture[1]) === false
+    && catalogWorld.homeQuality(mismatchedRoomHome) < catalogWorld.homeQuality(functionalRoomHome),
+  "Object room mismatch did not reduce semantic alignment and home quality."
+);
 const residentCreatorWorld = new World();
 const residentCreatorHome = structuredClone(interiorHome);
 residentCreatorHome.id = "resident-creator-home";

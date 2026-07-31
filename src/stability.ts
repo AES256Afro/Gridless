@@ -433,6 +433,17 @@ function integrityFailures(world: World) {
   for (const home of world.homes) {
     if (!lotIds.has(home.lotId)) failures.push(`Home ${home.id} points to a missing lot.`);
     if (!home.rooms.length) failures.push(`Home ${home.id} has no interior rooms.`);
+    const functionality = world.homeFunctionality(home);
+    if (
+      world.homeQuality(home) < 0
+      || world.homeQuality(home) > 100
+      || functionality.completeness < 0
+      || functionality.completeness > 100
+      || functionality.alignment < 0
+      || functionality.alignment > 100
+      || functionality.score < 0
+      || functionality.score > 100
+    ) failures.push(`Home ${home.id} has invalid functional room scoring.`);
     if (!Number.isInteger(home.designBudget) || home.designBudget <= 0) failures.push(`Home ${home.id} has an invalid design budget.`);
     if (!Number.isInteger(home.designSpent) || home.designSpent < 0 || home.designSpent > home.designBudget) {
       failures.push(`Home ${home.id} has invalid design spending.`);
