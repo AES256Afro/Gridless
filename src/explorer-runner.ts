@@ -337,6 +337,51 @@ check(
     === designBudgetBeforeRoom - 2_640,
   "Room construction did not debit its area-based cost."
 );
+const studio = furniturePlacementWorld.homes[0].rooms.find(room => room.kind === "Studio")!;
+const budgetBeforeFinishes = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
+check(
+  furniturePlacementWorld.setRoomFloorFinish(interiorHome.id, studio.id, "tile")
+    && furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]) === budgetBeforeFinishes - 780,
+  "Room floor customization did not persist or debit its area-based cost."
+);
+const budgetBeforeWalls = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
+check(
+  furniturePlacementWorld.setRoomWallFinish(interiorHome.id, studio.id, "sage")
+    && furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]) === budgetBeforeWalls - 314,
+  "Room wall customization did not persist or debit its surface cost."
+);
+const budgetAfterFinishes = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
+check(
+  !furniturePlacementWorld.setRoomFloorFinish(interiorHome.id, studio.id, "tile")
+    && furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]) === budgetAfterFinishes,
+  "Reapplying a room finish charged the design budget twice."
+);
+check(
+  furniturePlacementWorld.snapshot().homes[0].rooms.find(room => room.id === studio.id)?.floorFinish === "tile",
+  "Room finishes were omitted from the world snapshot."
+);
+check(
+  furniturePlacementWorld.addFurniture(interiorHome.id, "plant", studio.x, studio.z),
+  "Home Simulator could not furnish a newly drawn room."
+);
+const studioPlant = furniturePlacementWorld.homes[0].furniture.find(item => item.x === studio.x && item.z === studio.z)!;
+const budgetBeforeRoomRemoval = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
+check(
+  furniturePlacementWorld.removeRoom(interiorHome.id, studio.id)
+    && !furniturePlacementWorld.homes[0].rooms.some(room => room.id === studio.id)
+    && !furniturePlacementWorld.homes[0].furniture.some(item => item.id === studioPlant.id)
+    && furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]) === budgetBeforeRoomRemoval + 720,
+  "Room deletion did not remove exclusive furniture and return the expected partial refund."
+);
+const finalRoomWorld = new World();
+const finalRoomHome = structuredClone(interiorHome);
+finalRoomHome.id = "final-room-home";
+finalRoomHome.rooms = [finalRoomHome.rooms[0]];
+finalRoomWorld.homes = [finalRoomHome];
+check(
+  !finalRoomWorld.removeRoom(finalRoomHome.id, finalRoomHome.rooms[0].id),
+  "Home Simulator allowed deletion of the final room."
+);
 furniturePlacementWorld.homes[0].designSpent = furniturePlacementWorld.homes[0].designBudget - 100;
 check(
   !furniturePlacementWorld.addFurniture(interiorHome.id, "bed", 0, 0),
