@@ -82,10 +82,13 @@ import {
 } from "./transit";
 
 type Mode = "city" | "explore" | "home";
-type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
+type HomeFurnitureKind = Home["furniture"][number]["kind"];
+type HomeTool = "select" | "room" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events" | "views";
 type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development";
+const HOME_FURNITURE_KINDS: HomeFurnitureKind[] = ["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"];
+const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_FURNITURE_KINDS.includes(value as HomeFurnitureKind);
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
@@ -290,10 +293,29 @@ app.innerHTML = `
       <button data-home-tool="select" class="active">Inspect</button>
       <button data-home-tool="room">Draw room</button>
       <div class="tool-divider"></div>
-      <button data-home-tool="sofa">Sofa · $1.4k</button>
-      <button data-home-tool="table">Table · $650</button>
-      <button data-home-tool="bed">Bed · $1.2k</button>
-      <button data-home-tool="plant">Plant · $120</button>
+      <select id="home-catalog" aria-label="Home object catalog">
+        <optgroup label="Living">
+          <option value="sofa">Sofa · $1.4k</option>
+          <option value="table">Dining table · $650</option>
+        </optgroup>
+        <optgroup label="Bedroom">
+          <option value="bed">Bed · $1.2k</option>
+        </optgroup>
+        <optgroup label="Study">
+          <option value="desk">Desk · $900</option>
+          <option value="bookcase">Bookcase · $720</option>
+        </optgroup>
+        <optgroup label="Kitchen">
+          <option value="fridge">Fridge · $1.1k</option>
+        </optgroup>
+        <optgroup label="Bathroom">
+          <option value="shower">Shower · $1.65k</option>
+        </optgroup>
+        <optgroup label="Decor">
+          <option value="plant">Plant · $120</option>
+        </optgroup>
+      </select>
+      <button id="place-catalog-item">Place sofa</button>
       <div class="tool-divider"></div>
       <button id="move-furniture" disabled>Move</button>
       <button id="rotate-furniture" disabled>Rotate 45°</button>
@@ -2845,7 +2867,7 @@ function renderDraft() {
   if (mode === "home" && selectedLot && homePreviewPoint) {
     const home = currentHome();
     const movingItem = home?.furniture.find(item => item.id === movingFurnitureId);
-    const kind = movingItem?.kind ?? (homeTool === "sofa" || homeTool === "table" || homeTool === "bed" || homeTool === "plant" ? homeTool : null);
+    const kind = movingItem?.kind ?? (isHomeFurnitureKind(homeTool) ? homeTool : null);
     if (home && kind) {
       const rotation = movingItem?.rotation ?? 0;
       const valid = world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, rotation, movingItem?.id);
@@ -3575,17 +3597,60 @@ function createFurniture(item: Home["furniture"][number]) {
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(.12, .18, .75, 12), new THREE.MeshStandardMaterial({ color: 0x684e39 }));
     leg.position.y = .4;
     group.add(top, leg);
-  } else {
+  } else if (item.kind === "plant") {
     const pot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .24, .42, 12), new THREE.MeshStandardMaterial({ color: 0xb37450 }));
     pot.position.y = .21;
     const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(.5, 1), new THREE.MeshStandardMaterial({ color: 0x4f7652 }));
     leaves.position.y = .75;
     group.add(pot, leaves);
+  } else if (item.kind === "desk") {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x9a7654, roughness: .82 });
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.6, .12, .75), wood);
+    top.position.y = .82;
+    const drawer = new THREE.Mesh(new THREE.BoxGeometry(.42, .72, .62), wood);
+    drawer.position.set(.5, .4, 0);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(.1, .72, .62), wood);
+    leg.position.set(-.65, .4, 0);
+    group.add(top, drawer, leg);
+  } else if (item.kind === "bookcase") {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x6f5741, roughness: .85 });
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.8, .16), wood);
+    back.position.set(0, .9, .1);
+    group.add(back);
+    for (const y of [.12, .58, 1.04, 1.5, 1.78]) {
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.2, .08, .38), wood);
+      shelf.position.y = y;
+      group.add(shelf);
+    }
+  } else if (item.kind === "fridge") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.72, .78), new THREE.MeshStandardMaterial({ color: 0xd9ddd9, metalness: .18, roughness: .42 }));
+    body.position.y = .86;
+    const divider = new THREE.Mesh(new THREE.BoxGeometry(.76, .025, .02), new THREE.MeshBasicMaterial({ color: 0x6e7773 }));
+    divider.position.set(0, 1.12, .401);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(.035, .54, .04), new THREE.MeshStandardMaterial({ color: 0x737b78, metalness: .7 }));
+    handle.position.set(.31, .78, .42);
+    group.add(body, divider, handle);
+  } else {
+    const glass = new THREE.MeshStandardMaterial({ color: 0xb9d7dd, transparent: true, opacity: .38, roughness: .16 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.05, .1, 1.05), new THREE.MeshStandardMaterial({ color: 0xe9ede8, roughness: .5 }));
+    base.position.y = .05;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.9, .07), glass);
+    back.position.set(0, .95, .49);
+    const side = new THREE.Mesh(new THREE.BoxGeometry(.07, 1.9, 1.05), glass);
+    side.position.set(-.49, .95, 0);
+    const showerHead = new THREE.Mesh(new THREE.SphereGeometry(.1, 12, 8), new THREE.MeshStandardMaterial({ color: 0x9da9a5, metalness: .72, roughness: .28 }));
+    showerHead.position.set(0, 1.55, .38);
+    group.add(base, back, side, showerHead);
   }
+  group.traverse(child => {
+    if (child instanceof THREE.Mesh) child.castShadow = child.receiveShadow = true;
+  });
   group.traverse(child => { child.userData.furnitureId = item.id; });
   if (mode === "home" && selectedFurnitureId === item.id) {
+    const size = HOME_FURNITURE_SIZE[item.kind];
+    const outerRadius = Math.max(size.width, size.depth) * .62 + .16;
     const selection = new THREE.Mesh(
-      new THREE.RingGeometry(item.kind === "plant" ? .62 : 1.2, item.kind === "plant" ? .76 : 1.36, 32),
+      new THREE.RingGeometry(Math.max(.28, outerRadius - .12), outerRadius, 32),
       new THREE.MeshBasicMaterial({ color: 0xf0d980, transparent: true, opacity: .92, side: THREE.DoubleSide })
     );
     selection.rotation.x = -Math.PI / 2;
@@ -3603,6 +3668,19 @@ function formatHomeCurrency(value: number) {
 
 function formatSignedHomeCurrency(value: number) {
   return `${value >= 0 ? "+" : "-"}$${Math.abs(Math.round(value)).toLocaleString("en-US")}`;
+}
+
+function homeFurnitureLabel(kind: HomeFurnitureKind) {
+  return {
+    sofa: "sofa",
+    table: "dining table",
+    bed: "bed",
+    plant: "plant",
+    desk: "desk",
+    bookcase: "bookcase",
+    fridge: "fridge",
+    shower: "shower"
+  }[kind];
 }
 
 function residentRoleLabel(role: ResidentRole) {
@@ -5260,17 +5338,35 @@ document.querySelector("#staffing-policy")!.addEventListener("change", event => 
   renderWorld();
   notice(`Service staffing set to ${Math.round(funding * 100)}%`);
 });
-document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(button => button.addEventListener("click", () => {
-  homeTool = button.dataset.homeTool as HomeTool;
+function activateHomeTool(next: HomeTool) {
+  homeTool = next;
   homeDraft = null;
   movingFurnitureId = null;
   if (homeTool !== "select") selectedFurnitureId = null;
   if (homeTool !== "select") selectedRoomId = null;
   renderDraft();
   renderHome();
-  document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item === button));
-  notice(homeTool === "room" ? "Click two corners to draw a room" : homeTool === "select" ? "Inspect mode" : `Click inside the home to place a ${homeTool}`);
+  document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item.dataset.homeTool === homeTool));
+  document.querySelector("#place-catalog-item")!.classList.toggle("active", isHomeFurnitureKind(homeTool));
+  notice(homeTool === "room"
+    ? "Click two corners to draw a room"
+    : homeTool === "select"
+      ? "Inspect mode"
+      : `Click inside the home to place a ${homeFurnitureLabel(homeTool)}`);
+}
+
+document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(button => button.addEventListener("click", () => {
+  activateHomeTool(button.dataset.homeTool as HomeTool);
 }));
+document.querySelector("#home-catalog")!.addEventListener("change", event => {
+  const kind = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureKind;
+  document.querySelector("#place-catalog-item")!.textContent = `Place ${homeFurnitureLabel(kind)}`;
+  if (isHomeFurnitureKind(homeTool)) activateHomeTool(kind);
+});
+document.querySelector("#place-catalog-item")!.addEventListener("click", () => {
+  const kind = (document.querySelector("#home-catalog") as HTMLSelectElement).value as HomeFurnitureKind;
+  activateHomeTool(kind);
+});
 document.querySelector("#move-furniture")!.addEventListener("click", () => {
   const home = currentHome();
   const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);

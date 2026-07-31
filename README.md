@@ -69,7 +69,7 @@ The current vertical slice proves:
 - Selectable Home Simulator rooms with persistent oak, tile, concrete, or carpet floors; warm white, sage, clay, or slate walls; area-based finish costs; protected final-room deletion; automatic furnishing cleanup; and partial refunds
 - Live household activity and utility-disruption context inside the same persistent furnished home
 - Direct household control from resident cards or the interior `C` control, with persistent in-home positions and observer switching
-- Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables, and tending plants through the same need-changing action system used by autonomous residents
+- Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables or fridges, tending plants, studying at desks or bookcases, and showering through the same need-changing action system used by autonomous residents
 - Proximity conversations between household members with a four-choice intent menu: Friendly Chat, Offer Support, Tell a Joke, or Confront
 - Intent-specific paired actions with distinct social, calm, stress, duration, personality, and relationship effects plus a persistent recent-outcome history
 - Persistent bounded social memories with tension, conflict counts, repaired-conflict counts, initiator history, and contextual Apologize actions
@@ -81,7 +81,7 @@ The current vertical slice proves:
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots
-- Room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, priced room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
+- Room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
 - A focused household creator for resident name, adult or child life stage, daily role, and exactly two behavior-shaping personality traits, with an eight-person household limit and immediate profile preview
 
 This is a visual and interaction prototype with local persistence and a deterministic early economic simulation. The current reference scenario passes its automated ten-year stability gate; qualitative diagnosis and fun remain playtest questions.

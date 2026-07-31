@@ -38,7 +38,11 @@ const FURNITURE_INTERACTIONS: Record<Home["furniture"][number]["kind"], Furnitur
   bed: { action: "sleep", label: "Sleep", effect: "Restores energy and health" },
   sofa: { action: "relax", label: "Relax", effect: "Improves comfort and reduces stress" },
   table: { action: "eat", label: "Have a meal", effect: "Restores energy, comfort, and health" },
-  plant: { action: "tend-plants", label: "Tend plant", effect: "Improves health, comfort, and calm" }
+  plant: { action: "tend-plants", label: "Tend plant", effect: "Improves health, comfort, and calm" },
+  desk: { action: "study", label: "Study", effect: "Builds creativity and practical skill" },
+  bookcase: { action: "study", label: "Read", effect: "Builds creativity and practical skill" },
+  fridge: { action: "eat", label: "Get a meal", effect: "Restores energy, comfort, and health" },
+  shower: { action: "shower", label: "Take a shower", effect: "Improves health, comfort, and calm" }
 };
 
 export function lotLocalToWorld(point: Point2, lot: Lot): Point2 {
