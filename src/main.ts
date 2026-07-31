@@ -267,7 +267,7 @@ app.innerHTML = `
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xb8c9cb);
 scene.fog = new THREE.FogExp2(0xb8c9cb, 0.00052);
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .1, 2400);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .25, 2400);
 camera.position.set(520, 650, 850);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -291,6 +291,8 @@ sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = sun.shadow.camera.bottom = -300;
 sun.shadow.camera.right = sun.shadow.camera.top = 300;
+sun.shadow.bias = -.00015;
+sun.shadow.normalBias = .08;
 scene.add(sun);
 
 const ground = new THREE.Mesh(
@@ -534,7 +536,7 @@ function ribbon(points: Point2[], width: number, material: THREE.Material) {
 
 function roadCenterLine(road: Road) {
   const curve = new THREE.CatmullRomCurve3(
-    road.points.map(point => new THREE.Vector3(point.x, .205, point.z)),
+    road.points.map(point => new THREE.Vector3(point.x, .335, point.z)),
     false,
     "centripetal"
   );
@@ -567,6 +569,7 @@ function rebuildExplorerRoadNavigation() {
 
 function renderStreetFurniture() {
   streetFurnitureGroup.clear();
+  streetFurnitureGroup.visible = mode === "explore";
   const stripeMaterial = new THREE.MeshBasicMaterial({ color: 0xf3efe3 });
   const rampMaterial = new THREE.MeshStandardMaterial({ color: 0xd1c5a7, roughness: 1 });
   for (const intersection of streetIntersections) {
@@ -593,7 +596,7 @@ function addCrossingSurface(
     );
     crossing.position.set(
       intersection.point.x + tangent.x * offset,
-      .255,
+      .355,
       intersection.point.z + tangent.z * offset
     );
     crossing.rotation.y = rotation;
@@ -604,7 +607,7 @@ function addCrossingSurface(
     const ramp = new THREE.Mesh(new THREE.BoxGeometry(1.9, .1, 1.55), rampMaterial);
     ramp.position.set(
       intersection.point.x + normal.x * side * (roadWidth / 2 + 1.25),
-      .235,
+      .275,
       intersection.point.z + normal.z * side * (roadWidth / 2 + 1.25)
     );
     ramp.rotation.y = rotation;
@@ -1001,7 +1004,7 @@ function setInteriorSceneVisibility(inside: boolean) {
   water.visible = !inside;
   terrainGroup.visible = !inside;
   worldGroup.visible = !inside;
-  streetFurnitureGroup.visible = !inside;
+  streetFurnitureGroup.visible = !inside && mode === "explore";
   accessibilityGroup.visible = !inside && mode === "explore";
   accessibleRouteGroup.visible = !inside;
   transitGroup.visible = !inside;
@@ -1545,33 +1548,41 @@ function renderWorld() {
   worldGroup.clear();
   for (const road of world.roads) {
     const curb = ribbon(road.points, road.width + 5.2, curbMaterial);
-    curb.position.y = .01;
+    curb.position.y = 0;
     worldGroup.add(curb);
     const sidewalk = ribbon(road.points, road.width + 4.4, sidewalkMaterial);
-    sidewalk.position.y = .025;
+    sidewalk.position.y = .08;
     worldGroup.add(sidewalk);
-    for (const point of road.points) {
-      const curbJunction = new THREE.Mesh(new THREE.CircleGeometry((road.width + 5.2) * .55, 24), curbMaterial);
-      curbJunction.rotation.x = -Math.PI / 2;
-      curbJunction.position.set(point.x, .14, point.z);
-      worldGroup.add(curbJunction);
-      const sidewalkJunction = new THREE.Mesh(new THREE.CircleGeometry((road.width + 4.4) * .55, 24), sidewalkMaterial);
-      sidewalkJunction.rotation.x = -Math.PI / 2;
-      sidewalkJunction.position.set(point.x, .16, point.z);
-      worldGroup.add(sidewalkJunction);
-    }
   }
   for (const road of world.roads) {
     const roadway = ribbon(road.points, road.width, roadMaterial);
-    roadway.position.y = .055;
+    roadway.position.y = road.class === "arterial" ? .166 : road.class === "avenue" ? .163 : .16;
     worldGroup.add(roadway);
-    for (const point of road.points) {
-      const junction = new THREE.Mesh(new THREE.CircleGeometry(road.width * .55, 24), roadMaterial);
-      junction.rotation.x = -Math.PI / 2;
-      junction.position.set(point.x, .18, point.z);
-      worldGroup.add(junction);
-    }
     worldGroup.add(roadCenterLine(road));
+  }
+  for (const intersection of streetIntersections) {
+    const width = Math.max(intersection.roadAWidth, intersection.roadBWidth);
+    const curbJunction = new THREE.Mesh(
+      new THREE.CircleGeometry((width + 5.2) * .56, 32),
+      curbMaterial
+    );
+    curbJunction.rotation.x = -Math.PI / 2;
+    curbJunction.position.set(intersection.point.x, .15, intersection.point.z);
+    worldGroup.add(curbJunction);
+    const sidewalkJunction = new THREE.Mesh(
+      new THREE.CircleGeometry((width + 4.4) * .56, 32),
+      sidewalkMaterial
+    );
+    sidewalkJunction.rotation.x = -Math.PI / 2;
+    sidewalkJunction.position.set(intersection.point.x, .23, intersection.point.z);
+    worldGroup.add(sidewalkJunction);
+    const roadwayJunction = new THREE.Mesh(
+      new THREE.CircleGeometry(width * .56, 32),
+      roadMaterial
+    );
+    roadwayJunction.rotation.x = -Math.PI / 2;
+    roadwayJunction.position.set(intersection.point.x, .31, intersection.point.z);
+    worldGroup.add(roadwayJunction);
   }
   for (const utility of world.utilities) {
     const failure = world.activeUtilityFailures(utility.kind).find(item =>
@@ -1615,7 +1626,7 @@ function renderWorld() {
       lot.id === selectedLot?.id ? lotSelectedMaterial : zoneLotMaterials[lot.zone]
     );
     lotMesh.rotation.set(-Math.PI / 2, 0, lot.rotation);
-    lotMesh.position.set(lot.center.x, .16, lot.center.z);
+    lotMesh.position.set(lot.center.x, .105, lot.center.z);
     lotMesh.userData.lotId = lot.id;
     worldGroup.add(lotMesh);
     if (mode === "city" && cityTool === "inspect" && lot.id === selectedLot?.id) {
@@ -1648,9 +1659,11 @@ function renderWorld() {
     );
     shell.position.set(lot.center.x, height / 2, lot.center.z);
     shell.rotation.y = lot.rotation;
-    shell.castShadow = shell.receiveShadow = true;
+    shell.castShadow = shell.receiveShadow = mode !== "city";
     worldGroup.add(shell);
-    if (progress >= 1) addBuildingWindows(lot, height, darkness, occupiedShare);
+    if (progress >= 1 && mode !== "city") {
+      addBuildingWindows(lot, height, darkness, occupiedShare);
+    }
     if (progress < 1) {
       const scaffold = new THREE.Mesh(
         new THREE.BoxGeometry(lot.width * .72, fullHeight, lot.depth * .68),

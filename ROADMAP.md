@@ -152,7 +152,8 @@ Exit gate: players can navigate across town without developer tools and can reco
 
 Current vertical slice:
 
-- Every existing or player-drawn road spline generates a layered curb, continuous sidewalk, roadway, junction surface, and dashed center marking.
+- Every existing or player-drawn road spline generates a layered curb, continuous sidewalk, roadway, true-intersection junction surface, and dashed center marking. Road layers use distinct elevations and intersection caps instead of overlapping a disc at every curve point.
+- The City Builder planning view uses a clean visual level of detail without dense crosswalk, signal, facade-window, or building-shadow aliasing. City Explorer restores those human-scale details at street level.
 - City Explorer finds a clear sidewalk near the selected lot or active street activity instead of dropping the player on a roadway or inside a building.
 - Walking now uses acceleration and deceleration, realistic walk and sprint speeds, head movement, sprint field of view, and a grounded jump.
 - Collision checks keep the player inside land boundaries, stop movement through oriented building footprints and municipal facilities, and preserve wall sliding where one movement axis remains clear.
