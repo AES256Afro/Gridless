@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   CITY_EVENT_DEFINITIONS,
   HOME_BUILD_COSTS,
+  HOME_FURNITURE_SIZE,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
@@ -276,6 +277,7 @@ app.innerHTML = `
       <button data-home-tool="bed">Bed · $1.2k</button>
       <button data-home-tool="plant">Plant · $120</button>
       <div class="tool-divider"></div>
+      <button id="move-furniture" disabled>Move</button>
       <button id="rotate-furniture" disabled>Rotate 45°</button>
       <button id="sell-furniture" disabled>Sell</button>
       <div class="tool-divider"></div>
@@ -382,6 +384,8 @@ let cityToolGroup: CityToolGroup = "build";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
+let movingFurnitureId: string | null = null;
+let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
 let pitch = 0;
 let simulationSpeed = 12;
@@ -2612,6 +2616,29 @@ function renderDraft() {
     marker.position.set(position.x, .3, position.z);
     previewGroup.add(marker);
   }
+  if (mode === "home" && selectedLot && homePreviewPoint) {
+    const home = currentHome();
+    const movingItem = home?.furniture.find(item => item.id === movingFurnitureId);
+    const kind = movingItem?.kind ?? (homeTool === "sofa" || homeTool === "table" || homeTool === "bed" || homeTool === "plant" ? homeTool : null);
+    if (home && kind) {
+      const rotation = movingItem?.rotation ?? 0;
+      const valid = world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, rotation, movingItem?.id);
+      const size = HOME_FURNITURE_SIZE[kind];
+      const footprint = new THREE.Mesh(
+        new THREE.BoxGeometry(size.width, .06, size.depth),
+        new THREE.MeshBasicMaterial({
+          color: valid ? 0x73c68b : 0xd96c5f,
+          transparent: true,
+          opacity: .58,
+          depthWrite: false
+        })
+      );
+      const worldPosition = localToWorld(homePreviewPoint, selectedLot);
+      footprint.position.set(worldPosition.x, .42, worldPosition.z);
+      footprint.rotation.y = selectedLot.rotation + rotation;
+      previewGroup.add(footprint);
+    }
+  }
 }
 
 function currentRoadConfig() {
@@ -3324,10 +3351,14 @@ function formatHomeCurrency(value: number) {
 
 function updateHomeBuildControls(home: Home | null) {
   const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
+  const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
+  move.disabled = !selected;
   rotate.disabled = !selected;
   sell.disabled = !selected;
+  move.textContent = movingFurnitureId && selected ? `Cancel ${selected.kind} move` : "Move";
+  move.classList.toggle("active", Boolean(movingFurnitureId && selected));
   rotate.textContent = selected ? `Rotate ${selected.kind} 45°` : "Rotate 45°";
   sell.textContent = selected
     ? `Sell ${selected.kind} · ${formatHomeCurrency(HOME_BUILD_COSTS[selected.kind] * .5)}`
@@ -3519,6 +3550,11 @@ function setMode(next: Mode) {
     world.setControlledResident();
   }
   mode = next;
+  if (next !== "home") {
+    selectedFurnitureId = null;
+    movingFurnitureId = null;
+    homePreviewPoint = null;
+  }
   setInteriorSceneVisibility(false);
   updateInteriorInteractionPrompt();
   if (next !== "explore") {
@@ -4103,7 +4139,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     const furnitureHit = raycaster
       .intersectObjects(homeGroup.children, true)
       .find(item => item.object.userData.furnitureId);
-    if (homeTool === "select" && home && furnitureHit) {
+    if (homeTool === "select" && !movingFurnitureId && home && furnitureHit) {
       selectedFurnitureId = furnitureHit.object.userData.furnitureId as string;
       renderHome();
       const selected = home.furniture.find(item => item.id === selectedFurnitureId);
@@ -4128,6 +4164,19 @@ renderer.domElement.addEventListener("pointerdown", event => {
       return;
     }
     if (!home) return;
+    if (movingFurnitureId) {
+      const movingItem = home.furniture.find(item => item.id === movingFurnitureId);
+      if (!movingItem || !world.moveFurniture(home.id, movingFurnitureId, point.x, point.z)) {
+        notice("That position overlaps a wall or another furnishing");
+        renderDraft();
+        return;
+      }
+      movingFurnitureId = null;
+      renderWorld();
+      renderDraft();
+      notice(`${movingItem.kind[0].toUpperCase()}${movingItem.kind.slice(1)} moved`);
+      return;
+    }
     if (homeTool === "select") {
       selectedFurnitureId = null;
       renderHome();
@@ -4379,6 +4428,14 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
+  if (mode === "home" && event.code === "Escape" && (movingFurnitureId || homeDraft)) {
+    event.preventDefault();
+    movingFurnitureId = null;
+    homeDraft = null;
+    renderHome();
+    renderDraft();
+    notice("Home edit cancelled");
+  }
   if (
     mode === "explore"
     && explorerInteriorHomeId
@@ -4491,6 +4548,27 @@ addEventListener("keydown", event => {
 });
 addEventListener("keyup", event => keys.delete(event.code));
 addEventListener("blur", () => keys.clear());
+renderer.domElement.addEventListener("pointermove", event => {
+  if (mode !== "home" || !selectedLot) return;
+  pointer.set(event.clientX / innerWidth * 2 - 1, -(event.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  const foundationHit = raycaster.intersectObjects(homeGroup.children, true).find(item => item.object.userData.homeSurface);
+  const placementHit = foundationHit ?? raycaster.intersectObject(ground)[0];
+  if (!placementHit) {
+    homePreviewPoint = null;
+  } else {
+    const point = worldToLocal(placementHit.point, selectedLot);
+    homePreviewPoint = Math.abs(point.x) <= selectedLot.width / 2 && Math.abs(point.z) <= selectedLot.depth / 2
+      ? point
+      : null;
+  }
+  renderDraft();
+});
+renderer.domElement.addEventListener("pointerleave", () => {
+  if (mode !== "home") return;
+  homePreviewPoint = null;
+  renderDraft();
+});
 addEventListener("mousemove", event => {
   if (mode !== "explore" || explorerDriving || transitRide || document.pointerLockElement !== renderer.domElement) return;
   yaw -= event.movementX * .002;
@@ -4672,15 +4750,29 @@ document.querySelector("#staffing-policy")!.addEventListener("change", event => 
 document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(button => button.addEventListener("click", () => {
   homeTool = button.dataset.homeTool as HomeTool;
   homeDraft = null;
+  movingFurnitureId = null;
   if (homeTool !== "select") selectedFurnitureId = null;
   renderDraft();
   renderHome();
   document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item === button));
   notice(homeTool === "room" ? "Click two corners to draw a room" : homeTool === "select" ? "Inspect mode" : `Click inside the home to place a ${homeTool}`);
 }));
+document.querySelector("#move-furniture")!.addEventListener("click", () => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  if (!home || !item) return;
+  movingFurnitureId = movingFurnitureId === item.id ? null : item.id;
+  renderHome();
+  renderDraft();
+  notice(movingFurnitureId ? `Choose a new position for the ${item.kind}` : "Furniture move cancelled");
+});
 document.querySelector("#rotate-furniture")!.addEventListener("click", () => {
   const home = currentHome();
-  if (!home || !selectedFurnitureId || !world.rotateFurniture(home.id, selectedFurnitureId)) return;
+  if (!home || !selectedFurnitureId) return;
+  if (!world.rotateFurniture(home.id, selectedFurnitureId)) {
+    notice("Rotation blocked by a wall or another furnishing");
+    return;
+  }
   renderWorld();
   notice("Furniture rotated 45°");
 });
@@ -4690,6 +4782,7 @@ document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   if (!home || !item || !world.removeFurniture(home.id, item.id)) return;
   const refund = HOME_BUILD_COSTS[item.kind] * .5;
   selectedFurnitureId = null;
+  movingFurnitureId = null;
   renderWorld();
   notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
 });

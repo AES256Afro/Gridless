@@ -438,6 +438,13 @@ export const HOME_BUILD_COSTS = {
   plant: 120
 } as const;
 
+export const HOME_FURNITURE_SIZE: Record<Home["furniture"][number]["kind"], { width: number; depth: number }> = {
+  sofa: { width: 2.2, depth: .85 },
+  table: { width: 1.6, depth: 1.6 },
+  bed: { width: 1.7, depth: 2.1 },
+  plant: { width: .65, depth: .65 }
+};
+
 export type SpatialChunk = {
   id: string;
   gridX: number;
@@ -2290,21 +2297,45 @@ export class World {
 
   addFurniture(homeId: string, kind: Home["furniture"][number]["kind"], x: number, z: number) {
     const home = this.homes.find(item => item.id === homeId);
-    const size = {
-      sofa: { width: 2.2, depth: .85 },
-      table: { width: 1.6, depth: 1.6 },
-      bed: { width: 1.7, depth: 2.1 },
-      plant: { width: .65, depth: .65 }
-    }[kind];
-    const room = home?.rooms.find(item =>
-      Math.abs(x - item.x) <= item.width / 2 - size.width / 2 - .1
-      && Math.abs(z - item.z) <= item.depth / 2 - size.depth / 2 - .1
-    );
     const cost = HOME_BUILD_COSTS[kind];
-    if (!home || !room || this.homeRemainingBudget(home) < cost) return false;
+    if (!home || !this.canPlaceFurniture(home, kind, x, z, 0) || this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
     home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0 });
     home.designSpent += cost;
+    return true;
+  }
+
+  canPlaceFurniture(
+    home: Home,
+    kind: Home["furniture"][number]["kind"],
+    x: number,
+    z: number,
+    rotation: number,
+    ignoreFurnitureId?: string
+  ) {
+    const candidate = { kind, x, z, rotation };
+    const corners = furnitureCorners(candidate);
+    const containingRoom = home.rooms.find(room => corners.every(corner =>
+      Math.abs(corner.x - room.x) <= room.width / 2 - .1
+      && Math.abs(corner.z - room.z) <= room.depth / 2 - .1
+    ));
+    if (!containingRoom) return false;
+    return !home.furniture.some(item =>
+      item.id !== ignoreFurnitureId && furnitureRectanglesOverlap(candidate, item, .08)
+    );
+  }
+
+  moveFurniture(homeId: string, furnitureId: string, x: number, z: number) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (
+      !home
+      || !furniture
+      || !this.canPlaceFurniture(home, furniture.kind, x, z, furniture.rotation, furniture.id)
+    ) return false;
+    this.checkpoint();
+    furniture.x = x;
+    furniture.z = z;
     return true;
   }
 
@@ -2316,11 +2347,13 @@ export class World {
     const home = this.homes.find(item => item.id === homeId);
     const furniture = home?.furniture.find(item => item.id === furnitureId);
     if (!home || !furniture) return false;
-    this.checkpoint();
-    furniture.rotation = positiveModulo(
+    const rotation = positiveModulo(
       furniture.rotation + quarterTurns * Math.PI / 4,
       Math.PI * 2
     );
+    if (!this.canPlaceFurniture(home, furniture.kind, furniture.x, furniture.z, rotation, furniture.id)) return false;
+    this.checkpoint();
+    furniture.rotation = rotation;
     return true;
   }
 
@@ -3465,6 +3498,45 @@ function polygonCenter(points: Point2[]) {
 
 function positiveModulo(value: number, divisor: number) {
   return ((value % divisor) + divisor) % divisor;
+}
+
+type FurnitureRectangle = Pick<Home["furniture"][number], "kind" | "x" | "z" | "rotation">;
+
+function furnitureCorners(item: FurnitureRectangle) {
+  const size = HOME_FURNITURE_SIZE[item.kind];
+  const cosine = Math.cos(item.rotation);
+  const sine = Math.sin(item.rotation);
+  return [
+    { x: -size.width / 2, z: -size.depth / 2 },
+    { x: size.width / 2, z: -size.depth / 2 },
+    { x: size.width / 2, z: size.depth / 2 },
+    { x: -size.width / 2, z: size.depth / 2 }
+  ].map(point => ({
+    x: item.x + cosine * point.x + sine * point.z,
+    z: item.z - sine * point.x + cosine * point.z
+  }));
+}
+
+function furnitureRectanglesOverlap(first: FurnitureRectangle, second: FurnitureRectangle, padding = 0) {
+  const firstSize = HOME_FURNITURE_SIZE[first.kind];
+  const secondSize = HOME_FURNITURE_SIZE[second.kind];
+  const firstAxes = [
+    { x: Math.cos(first.rotation), z: -Math.sin(first.rotation) },
+    { x: Math.sin(first.rotation), z: Math.cos(first.rotation) }
+  ];
+  const secondAxes = [
+    { x: Math.cos(second.rotation), z: -Math.sin(second.rotation) },
+    { x: Math.sin(second.rotation), z: Math.cos(second.rotation) }
+  ];
+  const centerDelta = { x: second.x - first.x, z: second.z - first.z };
+  return [...firstAxes, ...secondAxes].every(axis => {
+    const distanceBetweenCenters = Math.abs(centerDelta.x * axis.x + centerDelta.z * axis.z);
+    const firstRadius = firstSize.width / 2 * Math.abs(axis.x * firstAxes[0].x + axis.z * firstAxes[0].z)
+      + firstSize.depth / 2 * Math.abs(axis.x * firstAxes[1].x + axis.z * firstAxes[1].z);
+    const secondRadius = secondSize.width / 2 * Math.abs(axis.x * secondAxes[0].x + axis.z * secondAxes[0].z)
+      + secondSize.depth / 2 * Math.abs(axis.x * secondAxes[1].x + axis.z * secondAxes[1].z);
+    return distanceBetweenCenters < firstRadius + secondRadius + padding;
+  });
 }
 
 function defaultParkingRate(kind: ParkingKind) {

@@ -1,9 +1,10 @@
-import type {
-  AccessibilityEntrance,
-  Home,
-  Lot,
-  Point2,
-  ResidentActionKind
+import {
+  HOME_FURNITURE_SIZE,
+  type AccessibilityEntrance,
+  type Home,
+  type Lot,
+  type Point2,
+  type ResidentActionKind
 } from "./world";
 
 export type InteriorDoorway = {
@@ -25,13 +26,6 @@ export type InteriorExteriorDoorway = {
 export type InteriorEntryStatus = {
   allowed: boolean;
   reason: string;
-};
-
-const FURNITURE_SIZE: Record<Home["furniture"][number]["kind"], { width: number; depth: number }> = {
-  sofa: { width: 2.2, depth: .85 },
-  table: { width: 1.6, depth: 1.6 },
-  bed: { width: 1.7, depth: 2.1 },
-  plant: { width: .65, depth: .65 }
 };
 
 export type FurnitureInteraction = {
@@ -295,7 +289,7 @@ function pointInsideFurniture(
   item: Home["furniture"][number],
   playerRadius: number
 ) {
-  const size = FURNITURE_SIZE[item.kind];
+  const size = HOME_FURNITURE_SIZE[item.kind];
   const dx = point.x - item.x;
   const dz = point.z - item.z;
   const cosine = Math.cos(item.rotation);
