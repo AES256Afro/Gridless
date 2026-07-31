@@ -23,7 +23,7 @@ The current vertical slice proves:
 
 - A navigable 3D city at realistic human and urban scales
 - Freeform road placement without a tile grid
-- Curved road splines, intersections, generated lots, undo, and browser saves
+- Curved road splines, intersections, generated lots, 40-step Undo and Redo history, and browser saves
 - NYC-inspired region template with editable street hierarchy, districts, park, waterfront, and blank-region alternative
 - Local street, avenue, and arterial construction plus parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
@@ -71,6 +71,7 @@ The current vertical slice proves:
 - Selectable Home Simulator rooms with persistent Living Room, Bedroom, Kitchen, Bathroom, Study, Dining Room, Nursery, or Studio purposes; oak, tile, concrete, or carpet floors; warm white, sage, clay, or slate walls; area-based finish costs; protected final-room deletion; automatic furnishing cleanup; and partial refunds
 - Functional-room scoring across sleep, meals, hygiene, relaxation, and study, with visible room-purpose alignment that rewards sensible layouts without blocking unconventional object placement
 - Deterministic one-click starter furnishing for every room purpose, with exact pricing, existing-object recognition, wall and overlap safety, and graceful partial placement when space or design budget is limited
+- Builder-wide Redo after Undo through visible controls, `Cmd/Ctrl+Shift+Z`, or `Ctrl+Y`, with exact state restoration and safe branch invalidation after a new edit
 - Live household activity and utility-disruption context inside the same persistent furnished home
 - Direct household control from resident cards or the interior `C` control, with persistent in-home positions and observer switching
 - Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables or fridges, tending plants, studying at desks or bookcases, and showering through the same need-changing action system used by autonomous residents

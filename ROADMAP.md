@@ -47,6 +47,8 @@ Every foundation must remain editable. Their value comes from distinct constrain
 
 The project should grow through complete playable slices. “Massive” comes from streaming, aggregation, and level-of-detail systems, not from simulating every citizen at full fidelity all the time.
 
+City and Home edits share a bounded 40-step Undo and Redo history. Visible buttons reflect availability, `Cmd/Ctrl+Z` undoes, `Cmd/Ctrl+Shift+Z` and `Ctrl+Y` redo, exact snapshots restore cross-system state, and a new edit after Undo safely starts a fresh branch.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
@@ -254,6 +256,8 @@ Room-purpose regression coverage verifies cost-free editing, redundant-change re
 Functional-room regression coverage verifies full sleep, meal, hygiene, relaxation, and study completeness, 100% purpose alignment, mismatch detection, and the resulting home-quality difference.
 
 One-click furnishing regression coverage verifies exact Living Room cost, correct catalog contents, purpose fit, wall and overlap safety, repeat idempotence, and budget-constrained rejection.
+
+History regression coverage verifies edit capture, exact Undo, exact Redo, availability state, and redo-branch invalidation after a new edit.
 
 ## Milestone 3: Metropolitan scale
 

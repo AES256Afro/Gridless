@@ -147,7 +147,7 @@ app.innerHTML = `
       </section>
     </div>
     <div class="actionbar">
-      <button id="undo">Undo</button><button id="save">Save city</button><button id="load">Load city</button>
+      <button id="undo">Undo</button><button id="redo">Redo</button><button id="save">Save city</button><button id="load">Load city</button>
       <button id="sound-toggle" type="button" aria-pressed="false">Sound off</button>
       <select id="staffing-policy" aria-label="Service staffing">
         <option value="0.65">Lean staff · 65%</option>
@@ -1805,6 +1805,7 @@ function syncSoundscape() {
 
 function renderWorld() {
   syncSoundscape();
+  updateHistoryControls();
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
     explorerVehicleGroup.position.set(world.playerVehicle.position.x, .16, world.playerVehicle.position.z);
@@ -5224,7 +5225,12 @@ addEventListener("keydown", event => {
   }
   if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ") {
     event.preventDefault();
-    if (world.undo()) { renderWorld(); notice("Construction undone"); }
+    if (event.shiftKey) applyRedo();
+    else applyUndo();
+  }
+  if ((event.metaKey || event.ctrlKey) && event.code === "KeyY") {
+    event.preventDefault();
+    applyRedo();
   }
   if (event.code === "Escape" && mode === "explore" && photoMode) {
     event.preventDefault();
@@ -5655,7 +5661,22 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
   renderWorld();
   notice(`${name.trim()} joined the household`);
 });
-document.querySelector("#undo")!.addEventListener("click", () => { if (world.undo()) { renderWorld(); notice("Construction undone"); } });
+function updateHistoryControls() {
+  document.querySelector<HTMLButtonElement>("#undo")!.disabled = !world.canUndo();
+  document.querySelector<HTMLButtonElement>("#redo")!.disabled = !world.canRedo();
+}
+function applyUndo() {
+  if (!world.undo()) return;
+  renderWorld();
+  notice("Change undone");
+}
+function applyRedo() {
+  if (!world.redo()) return;
+  renderWorld();
+  notice("Change restored");
+}
+document.querySelector("#undo")!.addEventListener("click", applyUndo);
+document.querySelector("#redo")!.addEventListener("click", applyRedo);
 document.querySelector("#save")!.addEventListener("click", () => { world.save(); notice("City saved locally"); });
 document.querySelector("#load")!.addEventListener("click", () => { notice(world.load() ? "Saved city loaded" : "No saved city found"); renderWorld(); });
 let templateResetArmed = false;

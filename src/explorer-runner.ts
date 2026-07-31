@@ -204,6 +204,35 @@ check(Boolean(nearest), "Curved road lookup did not return a location.");
 check(nearest!.roadName === "Test Avenue", "Road lookup lost the road name.");
 check(nearest!.distance < 2, "Curved road lookup is too far from the visible spline.");
 
+const historyWorld = new World();
+const startingRoadCount = historyWorld.roads.length;
+historyWorld.addRoad([{ x: 900, z: 900 }, { x: 950, z: 900 }], 9, "street");
+const authoredRoadId = historyWorld.roads.at(-1)!.id;
+check(
+  historyWorld.roads.length === startingRoadCount + 1
+    && historyWorld.canUndo()
+    && !historyWorld.canRedo(),
+  "A world edit did not enter the undo history."
+);
+check(
+  historyWorld.undo()
+    && historyWorld.roads.length === startingRoadCount
+    && historyWorld.canRedo(),
+  "Undo did not restore the prior world or expose redo."
+);
+check(
+  historyWorld.redo()
+    && historyWorld.roads.length === startingRoadCount + 1
+    && historyWorld.roads.at(-1)!.id === authoredRoadId,
+  "Redo did not restore the exact authored world state."
+);
+check(historyWorld.undo(), "History branch setup could not undo the restored road.");
+historyWorld.addRoad([{ x: 900, z: 920 }, { x: 950, z: 920 }], 9, "street");
+check(
+  !historyWorld.canRedo() && !historyWorld.redo(),
+  "A new edit after undo did not invalidate the abandoned redo branch."
+);
+
 const spawn = sidewalkSpawn(paths, { x: 0, z: 20 });
 const spawnLocation = nearestRoadLocation(paths, spawn);
 check(explorerSurface(spawnLocation) === "Sidewalk", "Explorer entry did not land on a sidewalk.");

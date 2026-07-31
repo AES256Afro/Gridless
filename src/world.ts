@@ -648,6 +648,7 @@ export class World {
   lastDailyActivity = { households: 0, businesses: 0 };
   controlledResidentId?: string;
   private history: WorldSnapshot[] = [];
+  private future: WorldSnapshot[] = [];
 
   constructor() {
     this.roads = clone(NYC_TEMPLATE.roads);
@@ -824,6 +825,7 @@ export class World {
   private checkpoint() {
     this.history.push(this.snapshot());
     if (this.history.length > 40) this.history.shift();
+    this.future = [];
   }
 
   addRoad(points: Point2[], width = 10, roadClass: Road["class"] = "street") {
@@ -2585,8 +2587,27 @@ export class World {
   undo() {
     const previous = this.history.pop();
     if (!previous) return false;
+    this.future.push(this.snapshot());
+    if (this.future.length > 40) this.future.shift();
     this.apply(previous);
     return true;
+  }
+
+  redo() {
+    const next = this.future.pop();
+    if (!next) return false;
+    this.history.push(this.snapshot());
+    if (this.history.length > 40) this.history.shift();
+    this.apply(next);
+    return true;
+  }
+
+  canUndo() {
+    return this.history.length > 0;
+  }
+
+  canRedo() {
+    return this.future.length > 0;
   }
 
   save() {
