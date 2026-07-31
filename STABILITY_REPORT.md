@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `b2dc7fc9`
+Deterministic signature: `b4559861`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, eight persistent spatial chunks, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent personality, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
+The gate creates a fixed NYC reference city with 296 lots, eight persistent spatial chunks, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent personality, skills, career growth, household finances, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -27,13 +27,13 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Treasury | $25.00m | $292.22m |
 | City wellbeing | 78% | 74% |
 | Service staffing | 85% | 85% |
-| Resident wellbeing | 77% | 86% |
+| Resident wellbeing | 77% | 77% |
 | Completed resident actions | 0 | 14,399 |
 | Event occurrences | 0 | 120 |
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 336 KB | 356 KB |
 
-The largest observed snapshot was 363,066 bytes.
+The largest observed snapshot was 363,133 bytes.
 
 ## Load and recovery
 
@@ -58,6 +58,7 @@ The run found no:
 - invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
 - non-finite or out-of-range learned resident social preferences derived from relationship memories
 - non-integer or out-of-range resident skill points, career levels, or career experience
+- non-integer, negative-income, negative-expense, out-of-range household balances, or invalid financial-security scores
 - broken home, incident, failure, service, utility, or commute references
 - non-finite or out-of-range road traffic pressure used by City Builder planning views
 - non-finite or out-of-range deterministic temperature, wind, precipitation, or visibility

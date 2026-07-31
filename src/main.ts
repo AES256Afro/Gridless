@@ -3583,7 +3583,12 @@ function createFurniture(item: Home["furniture"][number]) {
 }
 
 function formatHomeCurrency(value: number) {
-  return `$${Math.round(value).toLocaleString("en-US")}`;
+  const rounded = Math.round(value);
+  return `${rounded < 0 ? "-" : ""}$${Math.abs(rounded).toLocaleString("en-US")}`;
+}
+
+function formatSignedHomeCurrency(value: number) {
+  return `${value >= 0 ? "+" : "-"}$${Math.abs(Math.round(value)).toLocaleString("en-US")}`;
 }
 
 function residentRoleLabel(role: ResidentRole) {
@@ -3703,7 +3708,7 @@ function updateHouseholdSummary(home: Home) {
       ? ` Right now, ${activeHouseholdActions.join(" and ")}.`
       : "";
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -3716,6 +3721,8 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Utilities</span><strong>${utility}%</strong></div>
         <div><span>Neighborhood</span><strong>${neighborhood}%</strong></div>
         <div><span>Entrance</span><strong>${entrance ? entranceAccessLabel(entrance) : "Not connected"}</strong></div>
+        <div><span>Household funds</span><strong>${formatHomeCurrency(world.homeHouseholdFunds(home))}</strong></div>
+        <div><span>Last daily net</span><strong>${formatSignedHomeCurrency(world.homeDailyNet(home))}</strong></div>
       </div>
       ${outages.length ? `
         <div class="home-outage">
@@ -3750,7 +3757,7 @@ function updateHouseholdSummary(home: Home) {
               </div>
               <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
               <div class="resident-growth">
-                <span><strong>${world.residentCareerTitle(resident)}</strong><small>${world.residentSkillLabel(topSkill[0])} · skill ${world.residentSkillLevel(resident, topSkill[0])}</small></span>
+                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentSkillLabel(topSkill[0])} · skill ${world.residentSkillLevel(resident, topSkill[0])}</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
                 <em>${resident.role === "home" ? "Home" : `${careerProgress}%`}</em>
               </div>

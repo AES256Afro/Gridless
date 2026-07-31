@@ -160,6 +160,7 @@ export type ResidentWellbeing = {
   utilityReliability: number;
   neighborhoodSupport: number;
   commuteBurden: number;
+  financialSecurity: number;
   pressure: string;
 };
 
@@ -468,6 +469,9 @@ export type Home = {
   furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant"; x: number; z: number; rotation: number }>;
   designBudget: number;
   designSpent: number;
+  householdFunds?: number;
+  lastDailyIncome?: number;
+  lastDailyExpenses?: number;
   residents: Resident[];
   relationships: ResidentRelationship[];
 };
@@ -1895,6 +1899,13 @@ export class World {
     return clamp((resident.careerXp ?? 0) / (this.residentCareerLevel(resident) * 40), 0, 1);
   }
 
+  residentDailyWage(resident: Resident) {
+    const level = this.residentCareerLevel(resident);
+    if (resident.role === "office") return 190 + level * 45;
+    if (resident.role === "service") return 150 + level * 32;
+    return 0;
+  }
+
   residentTopSkill(resident: Resident) {
     const skills = this.residentSkills(resident);
     return (Object.entries(skills) as Array<[ResidentSkill, number]>)
@@ -2216,12 +2227,14 @@ export class World {
     const utilityReliability = lot ? this.lotUtilityReliability(lot, totalPopulation, effectiveStaffing) : 50;
     const neighborhoodSupport = lot ? this.lotNeighborhoodSupport(lot, totalPopulation, effectiveStaffing) : 50;
     const commuteBurden = this.residentCommuteBurden(resident);
+    const financialSecurity = home ? this.homeFinancialSecurity(home) : 50;
     const score = Math.round(clamp(
-      resident.energy * .17
-      + resident.social * .16
-      + resident.comfort * .19
-      + resident.health * .24
-      + (100 - resident.stress) * .24,
+      resident.energy * .15
+      + resident.social * .14
+      + resident.comfort * .17
+      + resident.health * .22
+      + (100 - resident.stress) * .22
+      + financialSecurity * .1,
       0,
       100
     ));
@@ -2231,6 +2244,7 @@ export class World {
       { value: commuteBurden, text: "Commute burden" },
       { value: 100 - homeQuality, text: "Crowded or under-furnished home" },
       { value: resident.stress, text: "High daily stress" },
+      { value: 100 - financialSecurity, text: "Household financial pressure" },
       { value: 100 - resident.social, text: "Social isolation" },
       { value: 100 - neighborhoodSupport, text: "Limited neighborhood support" }
     ].sort((a, b) => b.value - a.value);
@@ -2241,6 +2255,7 @@ export class World {
       utilityReliability,
       neighborhoodSupport,
       commuteBurden,
+      financialSecurity,
       pressure: pressureCandidates[0].value >= 34 ? pressureCandidates[0].text : "Needs are balanced"
     };
   }
@@ -2526,6 +2541,9 @@ export class World {
       ],
       designBudget: 60_000,
       designSpent: HOME_BUILD_COSTS.sofa + HOME_BUILD_COSTS.plant,
+      householdFunds: 15_000,
+      lastDailyIncome: 0,
+      lastDailyExpenses: 0,
       residents: [],
       relationships: []
     };
@@ -2644,6 +2662,20 @@ export class World {
 
   homeRemainingBudget(home: Home) {
     return Math.max(0, home.designBudget - home.designSpent);
+  }
+
+  homeHouseholdFunds(home: Home) {
+    return Math.round(home.householdFunds ?? 15_000);
+  }
+
+  homeDailyNet(home: Home) {
+    return Math.round((home.lastDailyIncome ?? 0) - (home.lastDailyExpenses ?? 0));
+  }
+
+  homeFinancialSecurity(home: Home) {
+    const funds = this.homeHouseholdFunds(home);
+    const dailyNet = this.homeDailyNet(home);
+    return Math.round(clamp(48 + funds / 420 + dailyNet * .1, 0, 100));
   }
 
   rotateFurniture(homeId: string, furnitureId: string, quarterTurns = 1) {
@@ -2792,6 +2824,9 @@ export class World {
           home.designSpent
           ?? (home.furniture ?? []).reduce((total, item) => total + HOME_BUILD_COSTS[item.kind], 0)
         )),
+        householdFunds: Math.round(clamp(home.householdFunds ?? 15_000, -100_000, 10_000_000)),
+        lastDailyIncome: Math.max(0, Math.round(home.lastDailyIncome ?? 0)),
+        lastDailyExpenses: Math.max(0, Math.round(home.lastDailyExpenses ?? 0)),
         residents,
         relationships: normalizeRelationships(residents, home.relationships ?? [])
       };
@@ -3115,6 +3150,7 @@ export class World {
         : undefined;
     }
     this.advanceResidentCareers();
+    this.settleHouseholdFinances(totalPopulation, effectiveStaffing);
     this.lastDailyActivity = activity;
     this.rebuildCommutes();
   }
@@ -3142,6 +3178,25 @@ export class World {
         resident.careerLevel = level;
         resident.careerXp = level >= 10 ? 0 : xp;
       }
+    }
+  }
+
+  private settleHouseholdFinances(totalPopulation: number, effectiveStaffing: number) {
+    for (const home of this.homes) {
+      const lot = this.lots.find(item => item.id === home.lotId);
+      const utilityReliability = lot
+        ? this.lotUtilityReliability(lot, totalPopulation, effectiveStaffing)
+        : 50;
+      const income = home.residents.reduce((total, resident) => total + this.residentDailyWage(resident), 0);
+      const expenses = Math.round(
+        home.residents.length * 32
+        + home.rooms.length * (home.residents.length ? 12 : 4)
+        + home.furniture.length * 2
+        + Math.max(0, 100 - utilityReliability) * .8
+      );
+      home.lastDailyIncome = income;
+      home.lastDailyExpenses = expenses;
+      home.householdFunds = Math.round(clamp(this.homeHouseholdFunds(home) + income - expenses, -100_000, 10_000_000));
     }
   }
 
