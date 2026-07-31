@@ -414,7 +414,7 @@ app.innerHTML = `
           <article><b>02</b><h3>City Explorer</h3><p>Walk, drive, ride transit, follow accessible routes, and enter homes from their real street entrances.</p><dl><dt>W A S D</dt><dd>Move or drive</dd><dt>Shift / Space</dt><dd>Sprint / jump</dd><dt>E / T / F</dt><dd>Vehicle / transit / home</dd><dt>R / O</dt><dd>Route / photo mode</dd></dl></article>
           <article><b>03</b><h3>Home Simulator</h3><p>Draw rooms, choose their purpose and finishes, furnish around real collisions, and guide a household.</p><dl><dt>Select</dt><dd>Edit a room or object</dd><dt>Click</dt><dd>Place or move</dd><dt>R</dt><dd>Rotate selected furniture</dd><dt>C / E</dt><dd>Choose resident / interact</dd></dl></article>
         </div>
-        <footer><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⇧ ⌘/Ctrl Z</kbd> Redo</span><span><kbd>?</kbd> This guide</span><span><kbd>Esc</kbd> Close or step back</span><small>Help, Settings, and Resident Creator pause time and restore your exact prior speed. Manual saves are yours. Autosave recovery protects the latest world state separately.</small></footer>
+        <footer><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⌘/Ctrl S</kbd> Save</span><span><kbd>Alt 1/2/3</kbd> Change scale</span><span><kbd>Backquote</kbd> Pause or resume</span><span><kbd>?</kbd> This guide</span><span><kbd>Esc</kbd> Close or step back</span><small>Text fields keep their native typing and Undo controls. Help, Settings, and Resident Creator pause time and restore your exact prior speed. Autosave recovery protects the latest world state separately.</small></footer>
       </section>
     </div>
     <div class="preferences-panel" id="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" hidden>
@@ -583,6 +583,7 @@ let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
 let pitch = 0;
 let simulationSpeed = 12;
+let lastNonZeroSimulationSpeed = 12;
 let modalResumeSpeed: number | null = null;
 let simulationAccumulator = 0;
 let lastMonthlyBalance = 0;
@@ -5303,19 +5304,10 @@ renderer.domElement.addEventListener("pointerdown", event => {
 });
 
 addEventListener("keydown", event => {
-  keys.add(event.code);
   const controlsGuide = document.querySelector<HTMLElement>("#controls-guide")!;
   const preferencesPanel = document.querySelector<HTMLElement>("#preferences-panel")!;
   const activityCenter = document.querySelector<HTMLElement>("#activity-center")!;
-  if (event.code === "Slash" && event.shiftKey && !event.repeat) {
-    event.preventDefault();
-    controlsGuide.hidden = !controlsGuide.hidden;
-    if (!controlsGuide.hidden) {
-      pauseForModal();
-      document.querySelector<HTMLButtonElement>("#help-close")!.focus();
-    } else resumeAfterModal();
-    return;
-  }
+  const residentCreator = document.querySelector<HTMLElement>("#resident-creator")!;
   if (event.code === "Escape" && !controlsGuide.hidden) {
     event.preventDefault();
     controlsGuide.hidden = true;
@@ -5336,12 +5328,45 @@ addEventListener("keydown", event => {
     document.querySelector<HTMLButtonElement>("#activity-open")!.focus();
     return;
   }
-  if (event.code === "Escape" && !document.querySelector<HTMLElement>("#resident-creator")!.hidden) {
+  if (event.code === "Escape" && !residentCreator.hidden) {
     event.preventDefault();
     closeResidentCreator();
     notice("Resident creation cancelled");
     return;
   }
+  if (!controlsGuide.hidden || !preferencesPanel.hidden || !residentCreator.hidden) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+  if (event.code === "Slash" && event.shiftKey && !event.repeat) {
+    event.preventDefault();
+    controlsGuide.hidden = false;
+    pauseForModal();
+    document.querySelector<HTMLButtonElement>("#help-close")!.focus();
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && event.code === "KeyS") {
+    event.preventDefault();
+    world.save();
+    notice("Manual save updated");
+    return;
+  }
+  if (event.altKey && ["Digit1", "Digit2", "Digit3"].includes(event.code)) {
+    event.preventDefault();
+    setMode(({ Digit1: "city", Digit2: "explore", Digit3: "home" } as const)[event.code as "Digit1" | "Digit2" | "Digit3"]);
+    return;
+  }
+  if (event.code === "Backquote" && !event.repeat) {
+    event.preventDefault();
+    if (simulationSpeed === 0) simulationSpeed = lastNonZeroSimulationSpeed;
+    else {
+      lastNonZeroSimulationSpeed = simulationSpeed;
+      simulationSpeed = 0;
+    }
+    syncSimulationSpeedControls();
+    notice(simulationSpeed === 0 ? "Simulation paused" : "Simulation resumed");
+    return;
+  }
+  keys.add(event.code);
   if (mode === "explore" && event.code === "KeyO" && !event.repeat) {
     event.preventDefault();
     setPhotoMode(!photoMode);
@@ -5663,6 +5688,7 @@ document.querySelector("#sound-toggle")!.addEventListener("click", async () => {
 });
 document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(button => button.addEventListener("click", () => {
   simulationSpeed = Number(button.dataset.speed);
+  if (simulationSpeed > 0) lastNonZeroSimulationSpeed = simulationSpeed;
   syncSimulationSpeedControls();
   notice(simulationSpeed === 0 ? "Simulation paused" : simulationSpeed >= 360 ? "Maximum simulation speed" : simulationSpeed >= 72 ? "Fast simulation speed" : "Simulation running");
 }));
