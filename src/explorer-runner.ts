@@ -688,9 +688,30 @@ const eventStop = [...eventLine.stops].sort((a, b) =>
 const transitDemandWithoutEvent = eventWorld.transitStopDemand(eventLine, eventStop, 18 * 60, -1);
 check(!eventWorld.cityEventActiveAt(cityEvent), "Template city event started before its scheduled time.");
 check(eventWorld.parkingPermitted(eventCurb), "Scheduled city event restricted its curb before starting.");
+check(
+  cityEvent.roadId === eventLine.roadId
+    && Boolean(cityEvent.closureRoadIds?.includes(eventLine.roadId ?? ""))
+    && cityEvent.temporaryTransitLineId === eventLine.id,
+  "Template city event did not bind its road closure and temporary transit service."
+);
+check(
+  eventWorld.transitEffectiveHeadway(eventLine) === eventLine.headwayMinutes,
+  "Scheduled temporary transit service started before its event."
+);
 eventWorld.advanceMinutes(cityEvent.startAt, eventWorld.cityEconomy().monthlyBalance);
 check(eventWorld.cityEventActiveAt(cityEvent), "Named city event did not activate on schedule.");
 check(eventWorld.cityEventTrafficPressure() > 0, "Active city event did not add traffic pressure.");
+check(
+  eventWorld.cityEventClosedRoads().some(road => road.id === cityEvent.roadId)
+    && eventWorld.cityEventRoadClosure(cityEvent.roadId ?? "")?.id === cityEvent.id
+    && eventWorld.cityEventRouteClosurePenalty(eventLine.route) >= 12,
+  "Active city event did not close its road or delay intersecting routes."
+);
+check(
+  eventWorld.transitEffectiveHeadway(eventLine) === cityEvent.temporaryTransitHeadwayMinutes
+    && eventWorld.transitActiveFleetSize(eventLine) > transitFleetSize(eventLine),
+  "Active city event did not add temporary transit frequency and vehicles."
+);
 check(
   eventWorld.curbEffectiveUse(eventCurb) === "event" && !eventWorld.parkingPermitted(eventCurb),
   "Active city event did not place its nearby curb under event control."
@@ -717,8 +738,12 @@ check(
 );
 const concert = eventWorld.addCityEvent("concert", cityEvent.position, "now");
 check(
-  concert.name.endsWith("Live") && eventWorld.cityEventActiveAt(concert),
-  "Builder-created city event was not named or started with the selected timing."
+  concert.name.endsWith("Live")
+    && eventWorld.cityEventActiveAt(concert)
+    && Boolean(concert.roadId)
+    && Boolean(concert.closureRoadIds?.length)
+    && Boolean(concert.temporaryTransitLineId),
+  "Builder-created city event was not named, activated, or connected to street operations."
 );
 const eventEconomy = eventWorld.cityEconomy();
 check(
@@ -733,8 +758,23 @@ check(
   eventSnapshot?.kind === "market"
     && eventSnapshot.occurrences === cityEvent.occurrences
     && eventSnapshot.totalAttendance === cityEvent.totalAttendance
-    && eventSnapshot.revenue === cityEvent.revenue,
-  "City event schedule, attendance, and revenue were not included in the world snapshot."
+    && eventSnapshot.revenue === cityEvent.revenue
+    && eventSnapshot.roadId === cityEvent.roadId
+    && eventSnapshot.closureRoadIds?.join(",") === cityEvent.closureRoadIds?.join(",")
+    && eventSnapshot.temporaryTransitLineId === cityEvent.temporaryTransitLineId
+    && eventSnapshot.temporaryTransitHeadwayMinutes === cityEvent.temporaryTransitHeadwayMinutes,
+  "City event schedule, operations, attendance, and revenue were not included in the world snapshot."
+);
+check(
+  eventWorld.transitEffectiveHeadway(
+    eventLine,
+    cityEvent.startAt + cityEvent.durationMinutes + 1
+  ) === eventLine.headwayMinutes
+    && !eventWorld.cityEventRoadClosure(
+      cityEvent.roadId ?? "",
+      cityEvent.startAt + cityEvent.durationMinutes + 1
+    ),
+  "Road closure or temporary transit service continued after the city event ended."
 );
 const zonedLots = mobilityWorld.lots.filter(item => item.zone !== "unassigned");
 const lotEntrances = mobilityWorld.accessibilityEntrances.filter(item => item.targetKind === "lot");
