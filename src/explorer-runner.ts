@@ -22,6 +22,7 @@ import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { soundscapeProfile } from "./soundscape";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
+import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
   buildAccessibleRoute,
@@ -53,6 +54,36 @@ import {
   type ParkingFacility,
   type Road
 } from "./world";
+
+let activityHistory: ReturnType<typeof recordActivity> = [];
+for (let index = 0; index < 35; index++) {
+  activityHistory = recordActivity(activityHistory, {
+    text: `Update ${index}`,
+    date: "Y1 JAN 1",
+    time: String(index).padStart(2, "0")
+  });
+}
+check(
+  activityHistory.length === 30
+    && activityHistory[0].text === "Update 34"
+    && activityHistory.at(-1)?.text === "Update 5",
+  "Activity history did not retain the newest bounded entries."
+);
+const activityLength = activityHistory.length;
+activityHistory = recordActivity(activityHistory, {
+  text: "Update 34",
+  date: "Y1 JAN 2",
+  time: "08:15"
+});
+check(
+  activityHistory.length === activityLength
+    && activityHistory[0].date === "Y1 JAN 2"
+    && activityHistory[0].time === "08:15",
+  "Repeated activity did not refresh its timestamp without duplicating the entry."
+);
+const authoredActivity = '<img src=x onerror="throw new Error()">';
+activityHistory = recordActivity(activityHistory, { text: authoredActivity, date: "Y1 JAN 2", time: "08:16" });
+check(activityHistory[0].text === authoredActivity, "Activity history altered player-authored text before safe DOM rendering.");
 
 const weatherWorld = new World();
 const matchingWeatherWorld = new World();

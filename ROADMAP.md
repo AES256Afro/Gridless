@@ -57,6 +57,8 @@ New cities expose a compact starter journey in City Builder. Its four goals read
 
 Player comfort settings persist separately from the city save. Reduced motion removes first-person camera sway, sprint lens changes, interface transitions, and animated precipitation while retaining weather lighting. High contrast strengthens HUD surfaces and active states. The same panel can restore or hide the starter journey.
 
+The global activity center retains the latest 30 notices for the current play session instead of replacing history with each new message. Entries carry the saved simulation date and time, use text-only rendering for player-authored names, track unread updates, and can be cleared without changing the city.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.

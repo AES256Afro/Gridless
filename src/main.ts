@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
+import { recordActivity, type ActivityEntry } from "./activity";
 import {
   CITY_EVENT_DEFINITIONS,
   HOME_BUILD_COSTS,
@@ -96,6 +97,7 @@ type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" 
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events" | "views";
 type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development";
 const HOME_FURNITURE_KINDS: HomeFurnitureKind[] = ["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"];
+const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_FURNITURE_KINDS.includes(value as HomeFurnitureKind);
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -103,6 +105,7 @@ app.innerHTML = `
     <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="lod-status" id="lod-status">Preparing region detail</div></div>
     <button class="help-trigger" id="help-open" type="button" aria-label="Open controls guide"><kbd>?</kbd><span>Help</span></button>
     <button class="settings-trigger" id="settings-open" type="button" aria-label="Open interface settings"><span>Settings</span></button>
+    <button class="activity-trigger" id="activity-open" type="button" aria-label="Open activity center"><span>Activity</span><b id="activity-count" hidden>0</b></button>
     <div class="simulation-controls">
       <div><span id="sim-date">Y1 · JAN 1</span><strong id="sim-time">08:00</strong><small id="sim-weather">Clear · 0°C</small></div>
       <button data-speed="0" aria-label="Pause simulation">Ⅱ</button>
@@ -162,7 +165,7 @@ app.innerHTML = `
         <option value="0.85" selected>Standard staff · 85%</option>
         <option value="1">Full staff · 100%</option>
       </select>
-      <span id="notice">World ready</span>
+      <span id="notice" aria-live="polite">World ready</span>
     </div>
     <div class="city-tools">
       <div>
@@ -419,6 +422,11 @@ app.innerHTML = `
         <p>These preferences are stored only in this browser.</p>
       </section>
     </div>
+    <aside class="activity-center" id="activity-center" role="dialog" aria-labelledby="activity-title" hidden>
+      <header><div><span>CITY AND HOUSEHOLD</span><h2 id="activity-title">Recent activity</h2></div><button type="button" id="activity-close" aria-label="Close activity center">×</button></header>
+      <div id="activity-list"></div>
+      <button type="button" id="activity-clear">Clear activity</button>
+    </aside>
     <div class="explorer-status" aria-label="Explorer movement status">
       <div><span>Location</span><strong id="explorer-location">City streets</strong></div>
       <div><span>Surface</span><strong id="explorer-surface">Sidewalk</strong></div>
@@ -591,6 +599,8 @@ function loadUiPreferences(): UiPreferences {
 }
 let uiPreferences = loadUiPreferences();
 let starterJourneyDismissed = !uiPreferences.showStarterJourney;
+let activityLog: ActivityEntry[] = [];
+let unreadActivity = 0;
 let explorerRoadPaths: ExplorerRoadPath[] = [];
 let streetIntersections: StreetIntersection[] = [];
 let explorerRoadKey = "";
@@ -2557,10 +2567,9 @@ function utilityCapacityFactor(kind: ServiceKind, population: number) {
 function updateClockDisplay() {
   const { year, month, day, minute } = world.clock;
   const weather = world.weather();
-  const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
   const hours = Math.floor(minute / 60);
   const minutes = Math.floor(minute % 60);
-  document.querySelector("#sim-date")!.textContent = `Y${year} · ${monthNames[month - 1]} ${day}`;
+  document.querySelector("#sim-date")!.textContent = `Y${year} · ${MONTH_NAMES[month - 1]} ${day}`;
   document.querySelector("#sim-time")!.textContent = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
   document.querySelector("#sim-weather")!.textContent = `${weather.label} · ${weather.temperatureC}°C · ${weather.windKph} km/h`;
   updatePhotoModePanel();
@@ -4200,8 +4209,45 @@ function utilityKindLabel(kind: UtilityKind) {
   return kind === "power" ? "Power" : kind === "water" ? "Water" : kind === "sewage" ? "Sewage" : "Waste";
 }
 
+function renderActivityCenter() {
+  const list = document.querySelector<HTMLElement>("#activity-list");
+  const badge = document.querySelector<HTMLElement>("#activity-count");
+  const trigger = document.querySelector<HTMLButtonElement>("#activity-open");
+  if (!list || !badge || !trigger) return;
+  list.replaceChildren();
+  if (!activityLog.length) {
+    const empty = document.createElement("p");
+    empty.className = "activity-empty";
+    empty.textContent = "New city and household updates will appear here.";
+    list.append(empty);
+  } else {
+    activityLog.forEach(entry => {
+      const item = document.createElement("article");
+      const timestamp = document.createElement("span");
+      const message = document.createElement("p");
+      timestamp.textContent = `${entry.date} · ${entry.time}`;
+      message.textContent = entry.text;
+      item.append(timestamp, message);
+      list.append(item);
+    });
+  }
+  badge.textContent = String(Math.min(99, unreadActivity));
+  badge.hidden = unreadActivity === 0;
+  trigger.setAttribute("aria-label", unreadActivity ? `Open activity center, ${unreadActivity} unread` : "Open activity center");
+}
+
 function notice(text: string) {
   document.querySelector("#notice")!.textContent = text;
+  const hour = Math.floor(world.clock.minute / 60);
+  const minute = Math.floor(world.clock.minute % 60);
+  const entry: ActivityEntry = {
+    text,
+    date: `Y${world.clock.year} ${MONTH_NAMES[world.clock.month - 1]} ${world.clock.day}`,
+    time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+  };
+  activityLog = recordActivity(activityLog, entry);
+  if (document.querySelector<HTMLElement>("#activity-center")!.hidden) unreadActivity++;
+  renderActivityCenter();
 }
 
 function updatePhotoModePanel() {
@@ -5224,6 +5270,7 @@ addEventListener("keydown", event => {
   keys.add(event.code);
   const controlsGuide = document.querySelector<HTMLElement>("#controls-guide")!;
   const preferencesPanel = document.querySelector<HTMLElement>("#preferences-panel")!;
+  const activityCenter = document.querySelector<HTMLElement>("#activity-center")!;
   if (event.code === "Slash" && event.shiftKey && !event.repeat) {
     event.preventDefault();
     controlsGuide.hidden = !controlsGuide.hidden;
@@ -5240,6 +5287,12 @@ addEventListener("keydown", event => {
     event.preventDefault();
     preferencesPanel.hidden = true;
     document.querySelector<HTMLButtonElement>("#settings-open")!.focus();
+    return;
+  }
+  if (event.code === "Escape" && !activityCenter.hidden) {
+    event.preventDefault();
+    activityCenter.hidden = true;
+    document.querySelector<HTMLButtonElement>("#activity-open")!.focus();
     return;
   }
   if (event.code === "Escape" && !document.querySelector<HTMLElement>("#resident-creator")!.hidden) {
@@ -5441,6 +5494,21 @@ document.querySelector<HTMLInputElement>("#preference-starter")!.addEventListene
   saveUiPreferences();
   renderStarterJourney();
   notice(uiPreferences.showStarterJourney ? "Starter journey restored" : "Starter journey hidden");
+});
+document.querySelector("#activity-open")!.addEventListener("click", () => {
+  unreadActivity = 0;
+  renderActivityCenter();
+  document.querySelector<HTMLElement>("#activity-center")!.hidden = false;
+  document.querySelector<HTMLButtonElement>("#activity-close")!.focus();
+});
+document.querySelector("#activity-close")!.addEventListener("click", () => {
+  document.querySelector<HTMLElement>("#activity-center")!.hidden = true;
+  document.querySelector<HTMLButtonElement>("#activity-open")!.focus();
+});
+document.querySelector("#activity-clear")!.addEventListener("click", () => {
+  activityLog = [];
+  unreadActivity = 0;
+  renderActivityCenter();
 });
 renderer.domElement.addEventListener("pointermove", event => {
   if (mode !== "home" || !selectedLot) return;
@@ -6096,6 +6164,9 @@ function animate() {
 
 renderWorld();
 setMode("city");
+notice("World ready");
+unreadActivity = 0;
+renderActivityCenter();
 animate();
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
