@@ -55,7 +55,7 @@ The run found no:
 - cohort or sector sum mismatches
 - resident needs, functional-room scores, or home quality outside 0 to 100
 - missing, undersized, duplicate, unreachable, or invalidly finished home rooms, duplicate or unknown catalog furnishings, invalid furniture styles, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
-- invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
+- invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, conversation counts, or household purchase records
 - non-finite or out-of-range learned resident social preferences derived from relationship memories
 - non-integer or out-of-range resident skill points, career levels, or career experience
 - non-integer, negative-income, negative-expense, out-of-range household balances, or invalid financial-security scores

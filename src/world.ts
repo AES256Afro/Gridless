@@ -102,6 +102,13 @@ export type SocialMemory = {
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "study" | "shower" | "socialize" | "tend-plants" | "idle";
 export type ResidentSkill = "communication" | "creativity" | "wellness" | "practical";
 export type ResidentSkills = Record<ResidentSkill, number>;
+export type ResidentPurchaseKind = "meal-delivery" | "creative-supplies" | "wellness-care";
+
+export const RESIDENT_PURCHASES: Record<ResidentPurchaseKind, { label: string; cost: number; effect: string }> = {
+  "meal-delivery": { label: "Order a meal", cost: 35, effect: "Energy, comfort, and practical skill" },
+  "creative-supplies": { label: "Buy creative supplies", cost: 90, effect: "Creativity, comfort, and calm" },
+  "wellness-care": { label: "Book wellness care", cost: 120, effect: "Health, wellness, and calm" }
+};
 
 export type ResidentAction = {
   kind: ResidentActionKind;
@@ -475,6 +482,8 @@ export type Home = {
   householdFunds?: number;
   lastDailyIncome?: number;
   lastDailyExpenses?: number;
+  discretionarySpent?: number;
+  lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
   residents: Resident[];
   relationships: ResidentRelationship[];
 };
@@ -2648,6 +2657,7 @@ export class World {
       householdFunds: 15_000,
       lastDailyIncome: 0,
       lastDailyExpenses: 0,
+      discretionarySpent: 0,
       residents: [],
       relationships: []
     };
@@ -2860,6 +2870,38 @@ export class World {
     return Math.round(clamp(48 + funds / 420 + dailyNet * .1, 0, 100));
   }
 
+  purchaseForResident(homeId: string, residentId: string, kind: ResidentPurchaseKind) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    const purchase = RESIDENT_PURCHASES[kind];
+    if (!home || !resident || !purchase) return { ok: false, reason: "That purchase is unavailable" };
+    if (this.homeHouseholdFunds(home) < purchase.cost) {
+      return { ok: false, reason: `${purchase.label} needs $${purchase.cost}. The household has $${this.homeHouseholdFunds(home)}.` };
+    }
+    this.checkpoint();
+    home.householdFunds = this.homeHouseholdFunds(home) - purchase.cost;
+    home.discretionarySpent = Math.max(0, Math.round(home.discretionarySpent ?? 0)) + purchase.cost;
+    home.lastPurchase = { kind, residentId, cost: purchase.cost, at: this.clock.elapsedMinutes };
+    const skills = this.residentSkills(resident);
+    if (kind === "meal-delivery") {
+      resident.energy = clamp(resident.energy + 12, 0, 100);
+      resident.comfort = clamp(resident.comfort + 5, 0, 100);
+      resident.health = clamp(resident.health + 1, 0, 100);
+      skills.practical = clamp(skills.practical + 1, 0, 100);
+    } else if (kind === "creative-supplies") {
+      resident.comfort = clamp(resident.comfort + 8, 0, 100);
+      resident.stress = clamp(resident.stress - 10, 0, 100);
+      skills.creativity = clamp(skills.creativity + 5, 0, 100);
+    } else {
+      resident.health = clamp(resident.health + 10, 0, 100);
+      resident.comfort = clamp(resident.comfort + 6, 0, 100);
+      resident.stress = clamp(resident.stress - 14, 0, 100);
+      skills.wellness = clamp(skills.wellness + 4, 0, 100);
+    }
+    resident.skills = skills;
+    return { ok: true, reason: `${purchase.label} for ${resident.name} · $${purchase.cost}` };
+  }
+
   rotateFurniture(homeId: string, furnitureId: string, quarterTurns = 1) {
     const home = this.homes.find(item => item.id === homeId);
     const furniture = home?.furniture.find(item => item.id === furnitureId);
@@ -3012,6 +3054,14 @@ export class World {
         householdFunds: Math.round(clamp(home.householdFunds ?? 15_000, -100_000, 10_000_000)),
         lastDailyIncome: Math.max(0, Math.round(home.lastDailyIncome ?? 0)),
         lastDailyExpenses: Math.max(0, Math.round(home.lastDailyExpenses ?? 0)),
+        discretionarySpent: Math.max(0, Math.round(home.discretionarySpent ?? 0)),
+        lastPurchase: home.lastPurchase && RESIDENT_PURCHASES[home.lastPurchase.kind]
+          ? {
+              ...home.lastPurchase,
+              cost: RESIDENT_PURCHASES[home.lastPurchase.kind].cost,
+              at: Math.max(0, Math.round(home.lastPurchase.at ?? 0))
+            }
+          : undefined,
         residents,
         relationships: normalizeRelationships(residents, home.relationships ?? [])
       };

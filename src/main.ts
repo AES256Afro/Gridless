@@ -10,6 +10,7 @@ import {
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
   HOME_ROOM_KINDS,
+  RESIDENT_PURCHASES,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
@@ -30,6 +31,7 @@ import {
   type Point2,
   type Road,
   type ResidentRole,
+  type ResidentPurchaseKind,
   type ResidentTrait,
   type ServiceKind,
   type SpatialChunk,
@@ -3919,6 +3921,25 @@ function updateHouseholdSummary(home: Home) {
           `).join("")}
         </section>
       ` : ""}
+      ${home.residents.length ? `
+        <section class="household-shop" aria-label="Household purchases">
+          <div class="relationship-title">Household purchases</div>
+          <div>
+            <select id="purchase-resident" aria-label="Purchase recipient">
+              ${home.residents.map(resident => `<option value="${resident.id}">${resident.name}</option>`).join("")}
+            </select>
+            <select id="purchase-kind" aria-label="Household purchase">
+              ${(Object.entries(RESIDENT_PURCHASES) as Array<[ResidentPurchaseKind, (typeof RESIDENT_PURCHASES)[ResidentPurchaseKind]]>).map(([kind, purchase]) =>
+                `<option value="${kind}">${purchase.label} · ${formatHomeCurrency(purchase.cost)}</option>`
+              ).join("")}
+            </select>
+            <button type="button" id="make-resident-purchase">Buy</button>
+          </div>
+          <small>${home.lastPurchase
+            ? `Last: ${RESIDENT_PURCHASES[home.lastPurchase.kind].label} · ${formatHomeCurrency(home.lastPurchase.cost)} · total extras ${formatHomeCurrency(home.discretionarySpent ?? 0)}`
+            : "Uses household funds, not the home design budget."}</small>
+        </section>
+      ` : ""}
       ${outages.length ? `
         <div class="home-outage">
           <span>Utility disruption</span>
@@ -4009,6 +4030,14 @@ function updateHouseholdSummary(home: Home) {
       ` : ""}
     `;
     details.classList.add("visible");
+    details.querySelector("#make-resident-purchase")?.addEventListener("click", () => {
+      const residentId = details.querySelector<HTMLSelectElement>("#purchase-resident")?.value;
+      const kind = details.querySelector<HTMLSelectElement>("#purchase-kind")?.value as ResidentPurchaseKind | undefined;
+      if (!residentId || !kind) return;
+      const result = world.purchaseForResident(home.id, residentId, kind);
+      if (result.ok) renderWorld();
+      notice(result.reason);
+    });
     details.querySelectorAll<HTMLButtonElement>("[data-home-advisor-action]").forEach(button => {
       button.addEventListener("click", () => {
         const action = button.dataset.homeAdvisorAction;
