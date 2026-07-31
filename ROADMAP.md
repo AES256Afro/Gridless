@@ -55,6 +55,8 @@ A global field guide is available from every scale through the visible Help butt
 
 New cities expose a compact starter journey in City Builder. Its four goals read actual world state for zoning, services, Explorer entry, and meaningful home changes; unfinished goals open the correct scale and tool, completed goals become visibly quiet, and experienced players can dismiss the panel.
 
+Player comfort settings persist separately from the city save. Reduced motion removes first-person camera sway, sprint lens changes, interface transitions, and animated precipitation while retaining weather lighting. High contrast strengthens HUD surfaces and active states. The same panel can restore or hide the starter journey.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
