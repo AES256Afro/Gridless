@@ -102,6 +102,8 @@ const VALID_CONVERSATION_INTENTS = new Set([
 ]);
 const VALID_HOME_FLOOR_FINISHES = new Set(["oak", "tile", "concrete", "carpet"]);
 const VALID_HOME_WALL_FINISHES = new Set(["warm-white", "sage", "clay", "slate"]);
+const VALID_HOME_FURNITURE = new Set(["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"]);
+const VALID_RESIDENT_ACTIONS = new Set(["sleep", "eat", "relax", "study", "shower", "socialize", "tend-plants", "idle"]);
 
 export function createStabilityScenario() {
   const world = new World();
@@ -464,6 +466,7 @@ function integrityFailures(world: World) {
       if (!VALID_HOME_WALL_FINISHES.has(room.wallFinish ?? "warm-white")) failures.push(`Room ${room.id} has an invalid wall finish.`);
     }
     for (const item of home.furniture) {
+      if (!VALID_HOME_FURNITURE.has(item.kind)) failures.push(`Furniture ${item.id} has an unknown catalog kind.`);
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
         failures.push(`Furniture ${item.id} has an invalid rotation.`);
       }
@@ -472,6 +475,12 @@ function integrityFailures(world: World) {
       }
     }
     for (const resident of home.residents) {
+      if (resident.currentAction && !VALID_RESIDENT_ACTIONS.has(resident.currentAction.kind)) {
+        failures.push(`Resident ${resident.id} has an invalid current action.`);
+      }
+      if (resident.lastActionKind && !VALID_RESIDENT_ACTIONS.has(resident.lastActionKind)) {
+        failures.push(`Resident ${resident.id} has an invalid completed action.`);
+      }
       if (!resident.name || resident.name.length > 24 || !/^[\p{L}\p{M}\p{N} .'-]+$/u.test(resident.name)) {
         failures.push(`Resident ${resident.id} has an invalid display name.`);
       }

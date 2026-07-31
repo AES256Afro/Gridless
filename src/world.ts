@@ -99,7 +99,7 @@ export type SocialMemory = {
   initiatorResidentId: string;
 };
 
-export type ResidentActionKind = "sleep" | "eat" | "relax" | "socialize" | "tend-plants" | "idle";
+export type ResidentActionKind = "sleep" | "eat" | "relax" | "study" | "shower" | "socialize" | "tend-plants" | "idle";
 export type ResidentSkill = "communication" | "creativity" | "wellness" | "practical";
 export type ResidentSkills = Record<ResidentSkill, number>;
 
@@ -466,7 +466,7 @@ export type Home = {
   name: string;
   floors: number;
   rooms: HomeRoom[];
-  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant"; x: number; z: number; rotation: number }>;
+  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number }>;
   designBudget: number;
   designSpent: number;
   householdFunds?: number;
@@ -481,7 +481,11 @@ export const HOME_BUILD_COSTS = {
   sofa: 1_400,
   table: 650,
   bed: 1_200,
-  plant: 120
+  plant: 120,
+  desk: 900,
+  bookcase: 720,
+  fridge: 1_100,
+  shower: 1_650
 } as const;
 
 export const HOME_FINISH_COSTS = {
@@ -493,7 +497,11 @@ export const HOME_FURNITURE_SIZE: Record<Home["furniture"][number]["kind"], { wi
   sofa: { width: 2.2, depth: .85 },
   table: { width: 1.6, depth: 1.6 },
   bed: { width: 1.7, depth: 2.1 },
-  plant: { width: .65, depth: .65 }
+  plant: { width: .65, depth: .65 },
+  desk: { width: 1.6, depth: .75 },
+  bookcase: { width: 1.2, depth: .38 },
+  fridge: { width: .9, depth: .78 },
+  shower: { width: 1.05, depth: 1.05 }
 };
 
 export type SpatialChunk = {
@@ -1803,6 +1811,8 @@ export class World {
       sleep: "Sleeping",
       eat: "Having a meal",
       relax: "Relaxing",
+      study: "Studying",
+      shower: "Taking a shower",
       "tend-plants": "Tending plants",
       idle: "Taking a breather"
     }[action.kind];
@@ -2075,7 +2085,11 @@ export class World {
       bed: { kind: "sleep" as const, duration: 90 },
       sofa: { kind: "relax" as const, duration: 75 },
       table: { kind: "eat" as const, duration: 45 },
-      plant: { kind: "tend-plants" as const, duration: 45 }
+      plant: { kind: "tend-plants" as const, duration: 45 },
+      desk: { kind: "study" as const, duration: 75 },
+      bookcase: { kind: "study" as const, duration: 60 },
+      fridge: { kind: "eat" as const, duration: 35 },
+      shower: { kind: "shower" as const, duration: 35 }
     }[furniture.kind];
     this.checkpoint();
     resident.currentAction = {
@@ -3444,7 +3458,11 @@ export class World {
       bed: home.furniture.find(item => item.kind === "bed"),
       sofa: home.furniture.find(item => item.kind === "sofa"),
       table: home.furniture.find(item => item.kind === "table"),
-      plant: home.furniture.find(item => item.kind === "plant")
+      plant: home.furniture.find(item => item.kind === "plant"),
+      desk: home.furniture.find(item => item.kind === "desk"),
+      bookcase: home.furniture.find(item => item.kind === "bookcase"),
+      fridge: home.furniture.find(item => item.kind === "fridge"),
+      shower: home.furniture.find(item => item.kind === "shower")
     };
     const candidates: Array<{
       kind: ResidentActionKind;
@@ -3461,13 +3479,28 @@ export class World {
         kind: "eat",
         score: (resident.energy < 64 ? 30 : 12)
           + ([7, 8, 12, 13, 18, 19].includes(Math.floor(hour)) ? 28 : 0)
-          + (furniture.table ? 12 : -8),
-        targetFurnitureId: furniture.table?.id ?? furniture.sofa?.id
+          + (furniture.table || furniture.fridge ? 12 : -8),
+        targetFurnitureId: furniture.table?.id ?? furniture.fridge?.id ?? furniture.sofa?.id
       },
       {
         kind: "relax",
         score: (100 - resident.comfort) * .92 + resident.stress * .62 + (furniture.sofa ? 15 : 0),
         targetFurnitureId: furniture.sofa?.id ?? furniture.bed?.id
+      },
+      {
+        kind: "study",
+        score: (100 - resident.comfort) * .28
+          + (100 - this.residentSkills(resident).creativity) * .04
+          + (furniture.desk || furniture.bookcase ? 24 : -48),
+        targetFurnitureId: furniture.desk?.id ?? furniture.bookcase?.id
+      },
+      {
+        kind: "shower",
+        score: (100 - resident.health) * .5
+          + (100 - resident.comfort) * .4
+          + resident.stress * .25
+          + (furniture.shower ? 24 : -48),
+        targetFurnitureId: furniture.shower?.id
       },
       {
         kind: "socialize",
@@ -3502,8 +3535,10 @@ export class World {
       ? sleepingHours ? 360 : 90
       : choice.kind === "eat" ? 45
         : choice.kind === "relax" ? 75
-          : choice.kind === "socialize" ? autonomousConversationIntent === "apologize" ? 45 : 60
-            : choice.kind === "tend-plants" ? 45 : 30;
+          : choice.kind === "study" ? 60
+            : choice.kind === "shower" ? 35
+              : choice.kind === "socialize" ? autonomousConversationIntent === "apologize" ? 45 : 60
+                : choice.kind === "tend-plants" ? 45 : 30;
     return {
       kind: choice.kind,
       startedAt: now,
@@ -3527,6 +3562,13 @@ export class World {
     } else if (action.kind === "relax") {
       resident.comfort = clamp(resident.comfort + 14, 0, 100);
       resident.stress = clamp(resident.stress - 12, 0, 100);
+    } else if (action.kind === "study") {
+      resident.comfort = clamp(resident.comfort + 5, 0, 100);
+      resident.stress = clamp(resident.stress - 3, 0, 100);
+    } else if (action.kind === "shower") {
+      resident.comfort = clamp(resident.comfort + 12, 0, 100);
+      resident.health = clamp(resident.health + 5, 0, 100);
+      resident.stress = clamp(resident.stress - 8, 0, 100);
     } else if (action.kind === "socialize") {
       const intent = action.conversationIntent ?? "chat";
       const effects = {
@@ -3667,6 +3709,13 @@ export class World {
         } else if (action?.kind === "relax") {
           comfortTarget = 96;
           stressTarget = clamp(stressTarget - 28, 0, 100);
+        } else if (action?.kind === "study") {
+          comfortTarget = Math.max(comfortTarget, 78);
+          stressTarget = clamp(stressTarget - 8, 0, 100);
+        } else if (action?.kind === "shower") {
+          comfortTarget = 96;
+          healthTarget = clamp(healthTarget + 12, 0, 100);
+          stressTarget = clamp(stressTarget - 20, 0, 100);
         } else if (action?.kind === "socialize") {
           socialTarget = 98;
           comfortTarget = Math.max(comfortTarget, 82);
@@ -3783,6 +3832,8 @@ function residentActionSkillGains(action: ResidentAction): Partial<ResidentSkill
   if (action.kind === "sleep") return { wellness: 2 };
   if (action.kind === "eat") return { practical: 2, wellness: 1 };
   if (action.kind === "relax") return { wellness: 2, creativity: 1 };
+  if (action.kind === "study") return { creativity: 4, practical: 1 };
+  if (action.kind === "shower") return { wellness: 3 };
   if (action.kind === "tend-plants") return { practical: 3, wellness: 1 };
   if (action.kind === "socialize") {
     if (action.conversationIntent === "joke") return { communication: 2, creativity: 2 };

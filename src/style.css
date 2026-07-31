@@ -464,6 +464,15 @@ kbd {
 }
 
 .home-tools.visible { display: flex; }
+.home-tools select {
+  max-width: 152px;
+  padding: 8px 9px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  color: #e5ebe7;
+  background: #27312b;
+  font: 600 11px "DM Sans", sans-serif;
+}
 .home-tools button { padding: 9px 12px; white-space: nowrap; }
 .home-tools button:hover { color: white; background: rgba(255,255,255,.08); }
 .home-tools button.active { color: #172019; background: #f0d980; }

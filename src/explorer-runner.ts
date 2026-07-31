@@ -401,6 +401,79 @@ check(
   furniturePlacementWorld.snapshot().homes[0].designBudget === 60_000,
   "Home design budget was omitted from the world snapshot."
 );
+const catalogWorld = new World();
+const catalogHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "catalog-home",
+  rooms: [{ id: "catalog-room", kind: "Studio", x: 0, z: 0, width: 12, depth: 12 }],
+  furniture: [],
+  designSpent: 0,
+  residents: [{
+    id: "catalog-resident",
+    name: "Casey",
+    age: "adult",
+    role: "home",
+    energy: 58,
+    social: 60,
+    comfort: 50,
+    health: 70,
+    stress: 48,
+    traits: ["creative", "organized"],
+    completedActions: 0
+  }],
+  relationships: []
+};
+catalogWorld.homes = [catalogHome];
+catalogWorld.clock.minute = 20 * 60;
+check(
+  catalogWorld.addFurniture(catalogHome.id, "desk", -3, -3)
+    && catalogWorld.addFurniture(catalogHome.id, "bookcase", 3, -3)
+    && catalogWorld.addFurniture(catalogHome.id, "fridge", -3, 3)
+    && catalogWorld.addFurniture(catalogHome.id, "shower", 3, 3),
+  "The expanded object catalog could not place its study, kitchen, and bathroom objects."
+);
+check(
+  catalogWorld.homeRemainingBudget(catalogHome) === 60_000 - 4_370,
+  "Expanded catalog purchases did not debit the exact design budget."
+);
+check(
+  furnitureInteraction("desk").action === "study"
+    && furnitureInteraction("bookcase").action === "study"
+    && furnitureInteraction("fridge").action === "eat"
+    && furnitureInteraction("shower").action === "shower",
+  "Expanded catalog objects did not expose their expected resident interactions."
+);
+check(catalogWorld.setControlledResident("catalog-resident"), "Catalog resident could not enter direct control.");
+const catalogDesk = catalogHome.furniture.find(item => item.kind === "desk")!;
+check(
+  catalogWorld.commandResidentFurnitureAction(catalogHome.id, "catalog-resident", catalogDesk.id).ok
+    && catalogHome.residents[0].currentAction?.kind === "study",
+  "The desk did not start a directed study action."
+);
+catalogWorld.advanceMinutes(75, 0);
+check(
+  catalogHome.residents[0].lastActionKind === "study"
+    && catalogWorld.residentSkills(catalogHome.residents[0]).creativity === 4
+    && catalogWorld.residentSkills(catalogHome.residents[0]).practical === 1,
+  "Study did not complete or build the expected persistent skills."
+);
+const catalogShower = catalogHome.furniture.find(item => item.kind === "shower")!;
+const wellnessBeforeShower = catalogWorld.residentSkills(catalogHome.residents[0]).wellness;
+check(
+  catalogWorld.commandResidentFurnitureAction(catalogHome.id, "catalog-resident", catalogShower.id).ok
+    && catalogHome.residents[0].currentAction?.kind === "shower",
+  "The shower did not start a directed hygiene action."
+);
+catalogWorld.advanceMinutes(35, 0);
+check(
+  catalogHome.residents[0].lastActionKind === "shower"
+    && catalogWorld.residentSkills(catalogHome.residents[0]).wellness === wellnessBeforeShower + 3,
+  "Showering did not complete or build wellness skill."
+);
+check(
+  catalogWorld.snapshot().homes[0].furniture.some(item => item.kind === "fridge"),
+  "Expanded catalog furniture was omitted from the world snapshot."
+);
 const residentCreatorWorld = new World();
 const residentCreatorHome = structuredClone(interiorHome);
 residentCreatorHome.id = "resident-creator-home";
