@@ -3043,7 +3043,11 @@ export class World {
 
   private apply(snapshot: WorldSnapshot) {
     const savedCityName = snapshot.cityName?.trim().replace(/\s+/g, " ") ?? "New Gridless City";
-    this.cityName = savedCityName.length >= 2 && savedCityName.length <= 40 ? savedCityName : "New Gridless City";
+    this.cityName = savedCityName.length >= 2
+      && savedCityName.length <= 40
+      && /^[\p{L}\p{N} .'-]+$/u.test(savedCityName)
+      ? savedCityName
+      : "New Gridless City";
     this.templateId = snapshot.templateId ?? "nyc";
     this.spatialChunkSize = Math.round(clamp(snapshot.spatialChunkSize ?? 256, 128, 1024));
     this.roads = clone(snapshot.roads);
@@ -3064,6 +3068,7 @@ export class World {
       };
     });
     this.homes = clone(snapshot.homes).map(home => {
+      const savedHomeName = home.name?.trim().replace(/\s+/g, " ") ?? "New household";
       const residents = (home.residents ?? []).map((resident, index) => ({
         ...resident,
         role: resident.role ?? (resident.age === "child" ? "student" : index % 2 === 0 ? "office" : "service"),
@@ -3091,6 +3096,11 @@ export class World {
       }));
       return {
         ...home,
+        name: savedHomeName.length >= 2
+          && savedHomeName.length <= 40
+          && /^[\p{L}\p{N} .'-]+$/u.test(savedHomeName)
+          ? savedHomeName
+          : "New household",
         rooms: (home.rooms ?? []).map(room => ({
           ...room,
           floorFinish: room.floorFinish ?? "oak",
