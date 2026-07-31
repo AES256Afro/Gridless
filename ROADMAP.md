@@ -49,6 +49,8 @@ The project should grow through complete playable slices. “Massive” comes fr
 
 City and Home edits share a bounded 40-step Undo and Redo history. Visible buttons reflect availability, `Cmd/Ctrl+Z` undoes, `Cmd/Ctrl+Shift+Z` and `Ctrl+Y` redo, exact snapshots restore cross-system state, and a new edit after Undo safely starts a fresh branch.
 
+The browser keeps manual saves separate from a debounced recovery snapshot. Every authored change, simulated day, and clean page exit refreshes the recovery copy. Recovering is itself undoable, while malformed or incompatible recovery data leaves the current city untouched.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
