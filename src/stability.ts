@@ -469,6 +469,16 @@ function integrityFailures(world: World) {
       ) {
         failures.push(`Resident ${resident.id} has invalid personality traits.`);
       }
+      const preference = world.residentLearnedPreferences(home, resident);
+      if (
+        !Number.isFinite(preference.preferredScore)
+        || !Number.isFinite(preference.avoidedScore)
+        || preference.socialBias < -12
+        || preference.socialBias > 18
+        || preference.evidenceCount < 0
+      ) {
+        failures.push(`Resident ${resident.id} has invalid learned social preferences.`);
+      }
       if (resident.homePosition && !isInteriorPositionValid(home, resident.homePosition)) {
         failures.push(`Resident ${resident.id} has an invalid saved home position.`);
       }

@@ -811,6 +811,55 @@ check(
   autonomousSocialWorld.snapshot().homes[0].residents[0].traits.join(",") === "outgoing,empathetic",
   "Resident personality traits were not included in the world snapshot."
 );
+const learnedPreferenceWorld = new World();
+const learnedPreferenceHome = structuredClone(autonomousSocialHome);
+learnedPreferenceHome.id = "learned-preference-home";
+learnedPreferenceHome.residents.forEach(resident => {
+  resident.currentAction = undefined;
+  resident.lastActionAt = undefined;
+});
+learnedPreferenceHome.residents[0].social = 4;
+learnedPreferenceHome.relationships[0].memories = [{
+  intent: "support",
+  relationshipChange: 11,
+  tensionChange: -12,
+  occurredAt: 200,
+  initiatorResidentId: "autonomous-outgoing"
+}, {
+  intent: "support",
+  relationshipChange: 9,
+  tensionChange: -10,
+  occurredAt: 140,
+  initiatorResidentId: "autonomous-outgoing"
+}, {
+  intent: "confront",
+  relationshipChange: -5,
+  tensionChange: 30,
+  occurredAt: 80,
+  initiatorResidentId: "autonomous-outgoing"
+}];
+learnedPreferenceWorld.homes = [learnedPreferenceHome];
+learnedPreferenceWorld.clock.minute = 20 * 60;
+const learnedPreference = learnedPreferenceWorld.residentLearnedPreferences(
+  learnedPreferenceHome,
+  learnedPreferenceHome.residents[0]
+);
+check(
+  learnedPreference.preferredIntent === "support"
+    && learnedPreference.avoidedIntent === "confront"
+    && learnedPreference.evidenceCount === 3
+    && learnedPreferenceWorld.residentPreferenceSummary(
+      learnedPreferenceHome,
+      learnedPreferenceHome.residents[0]
+    ).includes("Prefers Offer Support"),
+  "Repeated social memories did not form a readable resident preference."
+);
+learnedPreferenceWorld.advanceMinutes(1, 0);
+check(
+  learnedPreferenceHome.residents[0].currentAction?.kind === "socialize"
+    && learnedPreferenceHome.residents[0].currentAction?.conversationIntent === "support",
+  "A learned social preference did not influence autonomous conversation choice."
+);
 const curbParking: ParkingFacility = {
   id: "test-curb",
   kind: "curb",

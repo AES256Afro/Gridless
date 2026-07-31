@@ -56,6 +56,7 @@ The run found no:
 - resident needs outside 0 to 100
 - missing, undersized, duplicate, unreachable, or invalidly finished home rooms, duplicate furnishings, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
 - invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
+- non-finite or out-of-range learned resident social preferences derived from relationship memories
 - broken home, incident, failure, service, utility, or commute references
 - non-finite or out-of-range road traffic pressure used by City Builder planning views
 - non-finite or out-of-range deterministic temperature, wind, precipitation, or visibility

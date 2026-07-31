@@ -1854,6 +1854,54 @@ export class World {
       .join(" and ");
   }
 
+  residentLearnedPreferences(home: Home, resident: Resident) {
+    const scores: Record<ConversationIntent, number> = {
+      chat: 0,
+      support: 0,
+      joke: 0,
+      confront: 0,
+      apologize: 0
+    };
+    let evidenceCount = 0;
+    for (const relationship of home.relationships) {
+      if (!relationship.residentIds.includes(resident.id)) continue;
+      for (const [index, memory] of (relationship.memories ?? []).entries()) {
+        const perspective = memory.initiatorResidentId === resident.id ? 1 : .72;
+        const recency = Math.max(.55, 1 - index * .08);
+        const outcome = memory.relationshipChange - Math.max(0, memory.tensionChange) * .28;
+        scores[memory.intent] += outcome * perspective * recency;
+        evidenceCount += 1;
+      }
+    }
+    const preferredEntry = (["chat", "support", "joke"] as ConversationIntent[])
+      .map(intent => ({ intent, score: scores[intent] }))
+      .sort((first, second) => second.score - first.score)[0];
+    const avoidedEntry = (Object.entries(scores) as Array<[ConversationIntent, number]>)
+      .sort((first, second) => first[1] - second[1])[0];
+    const positive = Object.values(scores).reduce((total, score) => total + Math.max(0, score), 0);
+    const negative = Object.values(scores).reduce((total, score) => total + Math.min(0, score), 0);
+    return {
+      preferredIntent: preferredEntry?.score >= 6 ? preferredEntry.intent : undefined,
+      preferredScore: Math.round(preferredEntry?.score ?? 0),
+      avoidedIntent: avoidedEntry?.[1] <= -6 ? avoidedEntry[0] : undefined,
+      avoidedScore: Math.round(avoidedEntry?.[1] ?? 0),
+      socialBias: Math.round(clamp((positive + negative) / 5, -12, 18)),
+      evidenceCount
+    };
+  }
+
+  residentPreferenceSummary(home: Home, resident: Resident) {
+    const preference = this.residentLearnedPreferences(home, resident);
+    if (!preference.evidenceCount) return "Still discovering social preferences";
+    const preferred = preference.preferredIntent
+      ? `Prefers ${this.conversationIntentLabel(preference.preferredIntent)}`
+      : "Social style still forming";
+    const avoided = preference.avoidedIntent
+      ? ` · avoids ${this.conversationIntentLabel(preference.avoidedIntent)}`
+      : "";
+    return `${preferred}${avoided} · ${preference.evidenceCount} remembered ${preference.evidenceCount === 1 ? "moment" : "moments"}`;
+  }
+
   relationshipCompatibility(firstResident: Resident, secondResident: Resident) {
     return residentCompatibility(firstResident, secondResident);
   }
@@ -3250,12 +3298,13 @@ export class World {
       })
       .sort((first, second) => second.score - first.score)[0];
     const availablePartner = availablePartnerMatch?.resident;
+    const learnedPreference = this.residentLearnedPreferences(home, resident);
     const autonomousConversationIntent: ConversationIntent =
       availablePartnerMatch
       && availablePartnerMatch.tension >= 25
       && (resident.traits.includes("empathetic") || availablePartnerMatch.tension >= 45)
         ? "apologize"
-        : "chat";
+        : learnedPreference.preferredIntent ?? "chat";
     const furniture = {
       bed: home.furniture.find(item => item.kind === "bed"),
       sofa: home.furniture.find(item => item.kind === "sofa"),
@@ -3290,6 +3339,7 @@ export class World {
         score: (100 - resident.social) * 1.08
           + (availablePartner ? 24 : -32)
           + (furniture.table || furniture.sofa ? 10 : 0)
+          + learnedPreference.socialBias
           + (autonomousConversationIntent === "apologize" ? availablePartnerMatch?.tension ?? 0 : 0) * .45,
         targetFurnitureId: furniture.table?.id ?? furniture.sofa?.id,
         partnerResidentId: availablePartner?.id

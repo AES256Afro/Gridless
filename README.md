@@ -72,6 +72,7 @@ The current vertical slice proves:
 - Proximity conversations between household members with a four-choice intent menu: Friendly Chat, Offer Support, Tell a Joke, or Confront
 - Intent-specific paired actions with distinct social, calm, stress, duration, personality, and relationship effects plus a persistent recent-outcome history
 - Persistent bounded social memories with tension, conflict counts, repaired-conflict counts, initiator history, and contextual Apologize actions
+- Emergent resident social preferences derived from repeated remembered outcomes, with visible preferred and avoided conversation styles plus preference-weighted autonomous choices
 - Autonomous reconciliation attempts from empathetic residents when household tension remains unresolved
 - Relationship-driven autonomous conversations that choose an available partner from familiarity, personality compatibility, and social need, then reserve both residents for the shared activity
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
