@@ -181,6 +181,47 @@ canvas { display: block; }
 .stat span { display: block; color: #aebbb1; font-size: 11px; }
 .stat strong { display: block; overflow: hidden; margin-top: 2px; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 
+.starter-journey {
+  display: none;
+  position: absolute;
+  top: 258px;
+  right: 28px;
+  width: 258px;
+  padding: 13px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 13px;
+  background: rgba(13,21,17,.9);
+  box-shadow: 0 16px 44px rgba(0,0,0,.25);
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+}
+.city-editing .starter-journey:not(.dismissed) { display: block; }
+.starter-journey header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 0 2px 9px; }
+.starter-journey header span { display: block; color: #f0d980; font-size: 8px; font-weight: 800; letter-spacing: .14em; }
+.starter-journey header strong { display: block; margin-top: 3px; font-size: 12px; }
+.starter-journey header button { padding: 0 4px; border: 0; color: #829289; background: transparent; font-size: 18px; cursor: pointer; }
+#starter-steps { display: grid; gap: 5px; }
+#starter-steps button {
+  display: grid;
+  grid-template-columns: 25px 1fr;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 9px;
+  color: #dce5de;
+  background: rgba(255,255,255,.035);
+  text-align: left;
+  cursor: pointer;
+}
+#starter-steps button:hover { border-color: rgba(240,217,128,.32); background: rgba(240,217,128,.07); }
+#starter-steps i { display: grid; width: 23px; height: 23px; border-radius: 50%; place-items: center; color: #172019; background: #f0d980; font-size: 9px; font-style: normal; font-weight: 800; }
+#starter-steps strong, #starter-steps small { display: block; }
+#starter-steps strong { font-size: 10px; }
+#starter-steps small { margin-top: 2px; color: #89998f; font-size: 9px; }
+#starter-steps button.complete { opacity: .58; cursor: default; }
+#starter-steps button.complete i { color: #dbe8dc; background: #47715a; }
+
 .panel {
   position: absolute;
   left: 28px;
@@ -1305,6 +1346,7 @@ kbd {
 
 @media (max-width: 1100px) {
   .stats { top: 76px; width: 350px; }
+  .starter-journey { top: 300px; }
   .home-editing .actionbar { top: 186px; }
   .city-editing .actionbar { top: 186px; }
   .city-editing .city-tools { top: 238px; }
@@ -1327,6 +1369,7 @@ kbd {
   .mode-switcher button { flex: 1; padding: 9px 5px; }
   .mode-switcher button span { display: none; }
   .actionbar { display: none; }
+  .starter-journey { display: none !important; }
   .city-tools {
     right: 16px;
     bottom: 16px;

@@ -50,6 +50,7 @@ The current vertical slice proves:
 - Scale-aware street rendering: true intersections receive clean layered junction caps, while dense crosswalk, signal, window, and building-shadow detail is reserved for Explorer so the planning view remains legible without depth-fighting artifacts
 - A focused City Builder command deck with Build, Zones, Services, Mobility, Events, and Views workspaces; each exposes only the relevant tools and settings instead of compressing the entire simulation into one toolbar
 - A persistent `?` field guide that explains City Builder, City Explorer, Home Simulator, shared history, saves, and the most important controls without leaving the live world
+- A live four-step starter journey that recognizes zoning, municipal service, street exploration, and meaningful home edits, then routes unfinished goals directly to the right scale and tool
 - Live traffic, utilities, wellbeing, and development planning overlays derived from the same roads, commuter routes, service networks, households, and construction state used by the simulation
 - Persistent 256-meter spatial chunks with exact road and lot membership, population/job aggregates, focus-driven agent, active, and aggregate tiers, live regional-detail diagnostics, save migration, and a large-region renderer cutoff
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout

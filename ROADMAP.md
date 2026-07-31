@@ -53,6 +53,8 @@ The browser keeps manual saves separate from a debounced recovery snapshot. Ever
 
 A global field guide is available from every scale through the visible Help button or `?`. It groups controls by City Builder, City Explorer, and Home Simulator, documents shared history and recovery behavior, closes with `Esc` or the backdrop, and remains usable on narrow screens.
 
+New cities expose a compact starter journey in City Builder. Its four goals read actual world state for zoning, services, Explorer entry, and meaningful home changes; unfinished goals open the correct scale and tool, completed goals become visibly quiet, and experienced players can dismiss the panel.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
