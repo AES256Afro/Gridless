@@ -854,7 +854,7 @@ kbd {
 .city-build-tools button.active { color: #172019; background: #d9e8d7; }
 .city-tool-categories {
   display: grid;
-  grid-template-columns: repeat(5, minmax(90px, 1fr));
+  grid-template-columns: repeat(6, minmax(80px, 1fr));
   gap: 4px;
   width: 100%;
   padding-bottom: 6px;
@@ -908,6 +908,12 @@ kbd {
 [data-city-tool-settings="transit"] #transit-stops { min-width: 102px; width: 102px; }
 [data-city-tool-settings="transit"] #transit-name { min-width: 125px; width: 125px; }
 .tool-label { margin-left: 3px; color: #8ea095; font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.city-view-options button.active { color: #172019; background: #f0d980; }
+.city-view-legend { display: flex; align-items: center; gap: 7px; min-width: 190px; padding-left: 7px; border-left: 1px solid rgba(255,255,255,.12); color: #aebbb1; font-size: 10px; }
+.city-view-legend i { width: 58px; height: 7px; border-radius: 999px; background: linear-gradient(90deg, #d95f52, #e8c96a, #68b77c); }
+.city-view-legend.normal i { background: linear-gradient(90deg, #87977f, #b7b4aa, #8e8ca0); }
+.city-view-legend.traffic i { background: linear-gradient(90deg, #68b77c, #e8c96a, #d95f52); }
+.city-view-legend.development i { background: linear-gradient(90deg, #66716a, #d7a956, #70b4d0); }
 
 .explorer-status {
   display: none;
@@ -1123,6 +1129,6 @@ kbd {
     width: auto;
     transform: none;
   }
-  .city-tool-categories { grid-template-columns: repeat(5, minmax(70px, 1fr)); overflow-x: auto; }
+  .city-tool-categories { grid-template-columns: repeat(6, minmax(70px, 1fr)); overflow-x: auto; }
   .city-tool-options { overflow-x: auto; justify-content: flex-start; }
 }

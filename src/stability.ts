@@ -379,6 +379,12 @@ function integrityFailures(world: World) {
   if (accessibilityEntranceIds.size !== world.accessibilityEntrances.length) {
     failures.push("Duplicate accessibility entrance IDs were found.");
   }
+  for (const road of world.roads) {
+    const pressure = world.roadTrafficPressure(road);
+    if (!Number.isFinite(pressure) || pressure < 0 || pressure > 1) {
+      failures.push(`Road ${road.id} has invalid planning-view traffic pressure.`);
+    }
+  }
   const spatialChunkIds = new Set(world.spatialChunks.map(chunk => chunk.id));
   const spatialLotIds = world.spatialChunks.flatMap(chunk => chunk.lotIds);
   const spatialPopulation = world.spatialChunks.reduce((total, chunk) => total + chunk.population, 0);
