@@ -20,6 +20,8 @@ import {
   type ParkingKind,
   type Point2,
   type Road,
+  type ResidentRole,
+  type ResidentTrait,
   type ServiceKind,
   type SpatialChunk,
   type UtilityKind,
@@ -284,6 +286,32 @@ app.innerHTML = `
       <button id="add-resident">+ Resident</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
+    </div>
+    <div class="resident-creator" id="resident-creator" role="dialog" aria-modal="true" aria-labelledby="resident-creator-title" hidden>
+      <form id="resident-creator-form">
+        <header>
+          <div><span>HOUSEHOLD CREATOR</span><h2 id="resident-creator-title">Create a resident</h2></div>
+          <button type="button" id="resident-creator-close" aria-label="Close resident creator">×</button>
+        </header>
+        <label class="resident-field">Name<input id="resident-name" maxlength="24" autocomplete="off" required></label>
+        <div class="resident-field-row">
+          <label class="resident-field">Life stage<select id="resident-age"><option value="adult">Adult</option><option value="child">Child</option></select></label>
+          <label class="resident-field">Daily role<select id="resident-role"><option value="office">Office worker</option><option value="service">Service worker</option><option value="student">Student</option><option value="home">Home-based</option></select></label>
+        </div>
+        <fieldset>
+          <legend>Choose exactly two personality traits</legend>
+          <div class="resident-trait-picker">
+            <label><input type="checkbox" value="outgoing"><span><strong>Outgoing</strong><small>Seeks company</small></span></label>
+            <label><input type="checkbox" value="homebody"><span><strong>Homebody</strong><small>Recharges at home</small></span></label>
+            <label><input type="checkbox" value="active"><span><strong>Active</strong><small>Prefers hands-on activity</small></span></label>
+            <label><input type="checkbox" value="creative"><span><strong>Creative</strong><small>Chooses expressive downtime</small></span></label>
+            <label><input type="checkbox" value="organized"><span><strong>Organized</strong><small>Likes reliable routines</small></span></label>
+            <label><input type="checkbox" value="empathetic"><span><strong>Empathetic</strong><small>Builds bonds easily</small></span></label>
+          </div>
+        </fieldset>
+        <div class="resident-profile-preview"><span>PROFILE PREVIEW</span><strong id="resident-preview-name">New resident</strong><p id="resident-preview-copy">Adult · Office worker · Choose two traits</p></div>
+        <div class="resident-creator-actions"><button type="button" id="resident-creator-cancel">Cancel</button><button type="submit" class="primary">Add to household</button></div>
+      </form>
     </div>
     <div class="explorer-status" aria-label="Explorer movement status">
       <div><span>Location</span><strong id="explorer-location">City streets</strong></div>
@@ -3349,14 +3377,73 @@ function formatHomeCurrency(value: number) {
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
+function residentRoleLabel(role: ResidentRole) {
+  return {
+    office: "Office worker",
+    service: "Service worker",
+    student: "Student",
+    home: "Home-based"
+  }[role];
+}
+
+function selectedCreatorTraits() {
+  return [...document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input:checked")]
+    .map(input => input.value as ResidentTrait);
+}
+
+function updateResidentCreatorPreview() {
+  const name = (document.querySelector<HTMLInputElement>("#resident-name")!.value.trim() || "New resident").slice(0, 24);
+  const age = document.querySelector<HTMLSelectElement>("#resident-age")!.value as "adult" | "child";
+  const roleSelect = document.querySelector<HTMLSelectElement>("#resident-role")!;
+  if (age === "child") {
+    roleSelect.value = "student";
+    roleSelect.disabled = true;
+  } else {
+    roleSelect.disabled = false;
+    if (roleSelect.value === "student") roleSelect.value = "office";
+  }
+  const role = roleSelect.value as ResidentRole;
+  const traits = selectedCreatorTraits();
+  document.querySelector("#resident-preview-name")!.textContent = name;
+  document.querySelector("#resident-preview-copy")!.textContent = `${age === "adult" ? "Adult" : "Child"} · ${residentRoleLabel(role)} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
+}
+
+function openResidentCreator() {
+  const home = currentHome();
+  if (!home) return;
+  if (home.residents.length >= 8) {
+    notice("This household already has the maximum of 8 named residents");
+    return;
+  }
+  const suggestions = ["Avery", "Jordan", "Maya", "Theo", "Rowan", "Sofia", "Noah", "June"];
+  const usedNames = new Set(home.residents.map(resident => resident.name.toLocaleLowerCase()));
+  const suggestion = suggestions.find(name => !usedNames.has(name.toLocaleLowerCase())) ?? `Resident ${home.residents.length + 1}`;
+  const form = document.querySelector<HTMLFormElement>("#resident-creator-form")!;
+  form.reset();
+  document.querySelector<HTMLInputElement>("#resident-name")!.value = suggestion;
+  document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input").forEach(input => {
+    input.checked = input.value === "outgoing" || input.value === "empathetic";
+  });
+  document.querySelector<HTMLElement>("#resident-creator")!.hidden = false;
+  updateResidentCreatorPreview();
+  document.querySelector<HTMLInputElement>("#resident-name")!.focus();
+}
+
+function closeResidentCreator() {
+  document.querySelector<HTMLElement>("#resident-creator")!.hidden = true;
+}
+
 function updateHomeBuildControls(home: Home | null) {
   const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
+  const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   move.disabled = !selected;
   rotate.disabled = !selected;
   sell.disabled = !selected;
+  addResident.disabled = !home || home.residents.length >= 8;
+  addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
   move.textContent = movingFurnitureId && selected ? `Cancel ${selected.kind} move` : "Move";
   move.classList.toggle("active", Boolean(movingFurnitureId && selected));
   rotate.textContent = selected ? `Rotate ${selected.kind} 45°` : "Rotate 45°";
@@ -4428,6 +4515,12 @@ renderer.domElement.addEventListener("pointerdown", event => {
 
 addEventListener("keydown", event => {
   keys.add(event.code);
+  if (event.code === "Escape" && !document.querySelector<HTMLElement>("#resident-creator")!.hidden) {
+    event.preventDefault();
+    closeResidentCreator();
+    notice("Resident creation cancelled");
+    return;
+  }
   if (mode === "home" && event.code === "Escape" && (movingFurnitureId || homeDraft)) {
     event.preventDefault();
     movingFurnitureId = null;
@@ -4786,12 +4879,42 @@ document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   renderWorld();
   notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
 });
-document.querySelector("#add-resident")!.addEventListener("click", () => {
+document.querySelector("#add-resident")!.addEventListener("click", openResidentCreator);
+document.querySelector("#resident-creator-close")!.addEventListener("click", closeResidentCreator);
+document.querySelector("#resident-creator-cancel")!.addEventListener("click", closeResidentCreator);
+document.querySelector("#resident-creator")!.addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeResidentCreator();
+});
+document.querySelector("#resident-name")!.addEventListener("input", updateResidentCreatorPreview);
+document.querySelector("#resident-age")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-role")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input").forEach(input => input.addEventListener("change", () => {
+  const traits = selectedCreatorTraits();
+  if (traits.length > 2) {
+    input.checked = false;
+    notice("Choose exactly two personality traits");
+  }
+  updateResidentCreatorPreview();
+}));
+document.querySelector("#resident-creator-form")!.addEventListener("submit", event => {
+  event.preventDefault();
   const home = currentHome();
   if (!home) return;
-  world.addResident(home.id);
+  const name = document.querySelector<HTMLInputElement>("#resident-name")!.value.trim();
+  const age = document.querySelector<HTMLSelectElement>("#resident-age")!.value as "adult" | "child";
+  const role = document.querySelector<HTMLSelectElement>("#resident-role")!.value as ResidentRole;
+  const traits = selectedCreatorTraits();
+  if (traits.length !== 2) {
+    notice("Choose exactly two personality traits");
+    return;
+  }
+  if (!world.addResident(home.id, { name, age, role, traits })) {
+    notice("Use a unique name with letters, numbers, spaces, apostrophes, periods, or hyphens");
+    return;
+  }
+  closeResidentCreator();
   renderWorld();
-  notice("Resident joined the household");
+  notice(`${name.trim()} joined the household`);
 });
 document.querySelector("#undo")!.addEventListener("click", () => { if (world.undo()) { renderWorld(); notice("Construction undone"); } });
 document.querySelector("#save")!.addEventListener("click", () => { world.save(); notice("City saved locally"); });

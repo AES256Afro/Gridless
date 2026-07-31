@@ -131,6 +131,8 @@ export type Resident = {
   homePosition?: Point2;
 };
 
+export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits">;
+
 export type ResidentRelationship = {
   residentIds: [string, string];
   score: number;
@@ -1693,6 +1695,10 @@ export class World {
     return RESIDENT_TRAIT_DETAILS[trait].label;
   }
 
+  residentTraitDescription(trait: ResidentTrait) {
+    return RESIDENT_TRAIT_DETAILS[trait].description;
+  }
+
   residentPersonalitySummary(resident: Resident) {
     return resident.traits
       .map(trait => RESIDENT_TRAIT_DETAILS[trait].description)
@@ -2370,25 +2376,43 @@ export class World {
     return true;
   }
 
-  addResident(homeId: string) {
+  addResident(homeId: string, profile?: ResidentProfile) {
     const home = this.homes.find(item => item.id === homeId);
-    if (!home) return false;
-    this.checkpoint();
+    if (!home || home.residents.length >= 8) return false;
     const names = ["Avery", "Jordan", "Maya", "Theo", "Rowan", "Sofia", "Noah", "June"];
     const used = new Set(home.residents.map(resident => resident.name));
-    const name = names.find(candidate => !used.has(candidate)) ?? `Resident ${home.residents.length + 1}`;
+    const fallbackName = names.find(candidate => !used.has(candidate)) ?? `Resident ${home.residents.length + 1}`;
+    const name = (profile?.name ?? fallbackName).trim().replace(/\s+/g, " ").slice(0, 24);
+    const normalizedName = name.toLocaleLowerCase();
+    if (
+      !name
+      || !/^[\p{L}\p{M}\p{N} .'-]+$/u.test(name)
+      || home.residents.some(resident => resident.name.toLocaleLowerCase() === normalizedName)
+    ) return false;
+    const authoredTraits = profile?.traits;
+    if (
+      authoredTraits
+      && (
+        authoredTraits.length !== 2
+        || new Set(authoredTraits).size !== 2
+        || authoredTraits.some(trait => !RESIDENT_TRAITS.includes(trait))
+      )
+    ) return false;
+    this.checkpoint();
     const roles: ResidentRole[] = ["office", "service", "home"];
+    const age = profile?.age ?? "adult";
+    const role = age === "child" ? "student" : profile?.role ?? roles[home.residents.length % roles.length];
     const resident: Resident = {
       id: crypto.randomUUID(),
       name,
-      age: "adult",
-      role: roles[home.residents.length % roles.length],
+      age,
+      role,
       energy: 82,
       social: 68,
       comfort: 74,
       health: 84,
       stress: 24,
-      traits: initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
+      traits: authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
       completedActions: 0
     };
     for (const existing of home.residents) {

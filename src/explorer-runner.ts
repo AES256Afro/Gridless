@@ -335,6 +335,69 @@ check(
   furniturePlacementWorld.snapshot().homes[0].designBudget === 60_000,
   "Home design budget was omitted from the world snapshot."
 );
+const residentCreatorWorld = new World();
+const residentCreatorHome = structuredClone(interiorHome);
+residentCreatorHome.id = "resident-creator-home";
+residentCreatorHome.name = "New household";
+residentCreatorWorld.homes = [residentCreatorHome];
+check(
+  residentCreatorWorld.addResident(residentCreatorHome.id, {
+    name: "Morgan Lee",
+    age: "adult",
+    role: "office",
+    traits: ["creative", "organized"]
+  }),
+  "Resident creator rejected a valid authored profile."
+);
+check(
+  residentCreatorHome.residents[0].name === "Morgan Lee"
+    && residentCreatorHome.residents[0].role === "office"
+    && residentCreatorHome.residents[0].traits.join(",") === "creative,organized"
+    && residentCreatorHome.name === "Morgan Lee's household",
+  "Resident creator did not preserve the authored profile or household name."
+);
+check(
+  !residentCreatorWorld.addResident(residentCreatorHome.id, {
+    name: "morgan lee",
+    age: "adult",
+    role: "home",
+    traits: ["active", "homebody"]
+  }),
+  "Resident creator allowed a duplicate case-insensitive name."
+);
+check(
+  !residentCreatorWorld.addResident(residentCreatorHome.id, {
+    name: "<script>",
+    age: "adult",
+    role: "home",
+    traits: ["active", "homebody"]
+  }),
+  "Resident creator accepted unsafe name markup."
+);
+check(
+  !residentCreatorWorld.addResident(residentCreatorHome.id, {
+    name: "Taylor",
+    age: "adult",
+    role: "home",
+    traits: ["active"]
+  }),
+  "Resident creator accepted a profile without exactly two traits."
+);
+check(
+  residentCreatorWorld.addResident(residentCreatorHome.id, {
+    name: "Riley",
+    age: "child",
+    role: "service",
+    traits: ["outgoing", "empathetic"]
+  })
+    && residentCreatorHome.residents[1].role === "student"
+    && residentCreatorHome.relationships.length === 1,
+  "Child profile did not normalize to student or create a household relationship."
+);
+check(
+  residentCreatorWorld.snapshot().homes[0].residents[0].traits.join(",") === "creative,organized",
+  "Authored resident profile was omitted from the world snapshot."
+);
 const directControlWorld = new World();
 const directControlHome = structuredClone(interiorHome);
 directControlHome.residents = [{

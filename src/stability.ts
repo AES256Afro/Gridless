@@ -417,10 +417,13 @@ function integrityFailures(world: World) {
     const roomIds = new Set(home.rooms.map(room => room.id));
     const furnitureIds = new Set(home.furniture.map(item => item.id));
     const residentIds = new Set(home.residents.map(resident => resident.id));
+    const residentNames = new Set(home.residents.map(resident => resident.name.toLocaleLowerCase()));
     const relationshipKeys = new Set<string>();
     if (roomIds.size !== home.rooms.length) failures.push(`Home ${home.id} has duplicate room IDs.`);
     if (furnitureIds.size !== home.furniture.length) failures.push(`Home ${home.id} has duplicate furniture IDs.`);
     if (residentIds.size !== home.residents.length) failures.push(`Home ${home.id} has duplicate resident IDs.`);
+    if (residentNames.size !== home.residents.length) failures.push(`Home ${home.id} has duplicate resident names.`);
+    if (home.residents.length > 8) failures.push(`Home ${home.id} exceeds the supported eight named residents.`);
     for (const room of home.rooms) {
       if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
     }
@@ -433,6 +436,9 @@ function integrityFailures(world: World) {
       }
     }
     for (const resident of home.residents) {
+      if (!resident.name || resident.name.length > 24 || !/^[\p{L}\p{M}\p{N} .'-]+$/u.test(resident.name)) {
+        failures.push(`Resident ${resident.id} has an invalid display name.`);
+      }
       if (
         resident.traits.length !== 2
         || new Set(resident.traits).size !== resident.traits.length
