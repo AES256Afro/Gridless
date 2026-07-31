@@ -130,6 +130,17 @@ The DNS response should be proxied by Cloudflare and the HTTPS request should re
 
 ## Updating Gridless
 
+While draft PR 1 remains unmerged and bigBox is tracking the milestone branch:
+
+```bash
+cd "$HOME/Projects/Gridless"
+git status -sb
+git pull --ff-only origin codex/parking-accessibility
+./scripts/deploy-bigbox.sh
+curl -fsS http://127.0.0.1:8088/healthz
+curl -I https://www.foragefournuts.com/
+```
+
 After PR 1 is merged and the checkout is on `main`:
 
 ```bash
