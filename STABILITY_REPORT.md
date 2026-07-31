@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `92ec5798`
+Deterministic signature: `a716e376`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with attendance and cross-system demand, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent personality, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
+The gate creates a fixed NYC reference city with 296 lots, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent personality, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -33,7 +33,7 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 333 KB | 348 KB |
 
-The largest observed snapshot was 354,421 bytes.
+The largest observed snapshot was 354,567 bytes.
 
 ## Load and recovery
 
@@ -60,7 +60,7 @@ The run found no:
 - duplicate or invalid transit lines, source-road references, colors, stop counts, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
 - invalid curb uses, schedules, delivery queues, completed-delivery counts, violations, or enforcement revenue
-- duplicate or invalid named events, schedules, capacities, occurrence counts, attendance, costs, or revenue
+- duplicate or invalid named events, schedules, capacities, occurrence counts, attendance, costs, revenue, source roads, closure roads, temporary transit lines, or temporary headways
 - duplicate accessibility entrances, missing entrance targets, invalid clear widths, or non-finite entrance positions
 - calendar or monthly-budget boundary errors
 - runaway incident history, save size, population, or treasury behavior
@@ -68,7 +68,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance and demand, editable transit operations, the saved entrance layer, home-interior checks, personality, conversation-intent, social-memory, and reconciliation validation, and relationship integrity checks included, the latest complete deterministic gate took about 64 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance, road closures, route delay, temporary transit operations, the saved entrance layer, home-interior checks, personality, conversation-intent, social-memory, and reconciliation validation, and relationship integrity checks included, the latest complete deterministic gate took about 50 seconds for both decades on the development machine.
 
 ## Boundary
 

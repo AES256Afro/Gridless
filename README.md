@@ -53,7 +53,7 @@ The current vertical slice proves:
 - Persistent curb bays, surface lots, and structured garages with capacity, occupancy, designated accessible spaces, undo, and browser-save support
 - Player-controlled hourly parking prices with time-aware local demand, deterministic turnover, persistent revenue, operating costs, projected monthly net results, and price-aware facility selection
 - Programmable curb space with flexible parking, commercial loading, rush-hour restrictions, and evening event control, plus timed schedules, delivery queues, enforcement, fines, and street-level guidance
-- Persistent named city events with recurring schedules, attendance, visible crowds, event-controlled curbs, added traffic pressure, transit demand, municipal revenue, and Builder-to-Explorer context
+- Persistent named city events with recurring schedules, attendance, visible crowds, event-controlled curbs, named road closures, route-specific commute delay, closure barriers, temporary service on the nearest transit line, municipal revenue, and Builder-to-Explorer context
 - Accessibility-aware sidewalk routing to available parking, including marked crossings, paired curb ramps, visible street-level guidance, and distance reporting
 - Persistent street-facing entrances for homes, businesses, parks, and transit stops with step-free access, clear width, tactile guidance, automatic-door state, and saved upgrades
 - City-funded accessibility upgrades plus complete-trip Explorer routing that cycles destination types and reports sidewalk, crossing, and final-entrance barriers

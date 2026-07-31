@@ -605,6 +605,26 @@ function integrityFailures(world: World) {
     ) {
       failures.push(`City event ${event.id} has invalid occurrence or attendance data.`);
     }
+    if (!event.roadId || !roadIds.has(event.roadId)) {
+      failures.push(`City event ${event.id} points to a missing source road.`);
+    }
+    if (
+      !event.closureRoadIds?.length
+      || event.closureRoadIds.length > 3
+      || event.closureRoadIds.some(roadId => !roadIds.has(roadId))
+    ) {
+      failures.push(`City event ${event.id} has invalid road closures.`);
+    }
+    if (!event.temporaryTransitLineId || !transitLineIds.has(event.temporaryTransitLineId)) {
+      failures.push(`City event ${event.id} points to a missing temporary transit line.`);
+    }
+    if (
+      !Number.isInteger(event.temporaryTransitHeadwayMinutes)
+      || (event.temporaryTransitHeadwayMinutes ?? 0) < 4
+      || (event.temporaryTransitHeadwayMinutes ?? 0) > 15
+    ) {
+      failures.push(`City event ${event.id} has an invalid temporary transit headway.`);
+    }
   }
   for (const facility of world.parking) {
     if (facility.capacity <= 0 || facility.occupied < 0 || facility.occupied > facility.capacity) {

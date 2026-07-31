@@ -295,6 +295,10 @@ export type CityEvent = {
   totalAttendance: number;
   revenue: number;
   lastProcessedOccurrence?: number;
+  roadId?: string;
+  closureRoadIds?: string[];
+  temporaryTransitLineId?: string;
+  temporaryTransitHeadwayMinutes?: number;
 };
 
 export const CITY_EVENT_DEFINITIONS: Record<CityEventKind, {
@@ -680,7 +684,11 @@ export class World {
       monthlyCost: definition.monthlyCost,
       occurrences: 0,
       totalAttendance: 0,
-      revenue: 0
+      revenue: 0,
+      roadId: road?.id,
+      closureRoadIds: this.cityEventClosureRoadIds(position, kind),
+      temporaryTransitLineId: this.nearestEventTransitLineId(position),
+      temporaryTransitHeadwayMinutes: kind === "sports" || kind === "parade" ? 4 : 6
     };
     this.cityEvents.push(event);
     return event;
@@ -733,6 +741,48 @@ export class World {
     }, 0), 0, .72);
   }
 
+  cityEventClosedRoads(elapsedMinute = this.clock.elapsedMinutes) {
+    const roadIds = new Set(
+      this.activeCityEvents(elapsedMinute).flatMap(event => event.closureRoadIds ?? [])
+    );
+    return this.roads.filter(road => roadIds.has(road.id));
+  }
+
+  cityEventRoadClosure(roadId: string, elapsedMinute = this.clock.elapsedMinutes) {
+    return this.activeCityEvents(elapsedMinute).find(
+      event => event.closureRoadIds?.includes(roadId)
+    );
+  }
+
+  cityEventRouteClosurePenalty(route: Point2[], elapsedMinute = this.clock.elapsedMinutes) {
+    if (route.length < 2) return 0;
+    return this.cityEventClosedRoads(elapsedMinute).reduce((total, road) => {
+      const intersects = route.some(point =>
+        distanceToPolyline(point, road.points) <= road.width / 2 + 2
+      );
+      return total + (intersects ? 12 : 0);
+    }, 0);
+  }
+
+  transitEffectiveHeadway(line: TransitLine, elapsedMinute = this.clock.elapsedMinutes) {
+    return this.activeCityEvents(elapsedMinute)
+      .filter(event => event.temporaryTransitLineId === line.id)
+      .reduce(
+        (headway, event) => Math.min(
+          headway,
+          Math.round(clamp(event.temporaryTransitHeadwayMinutes ?? headway, 4, 30))
+        ),
+        line.headwayMinutes
+      );
+  }
+
+  transitActiveFleetSize(line: TransitLine, elapsedMinute = this.clock.elapsedMinutes) {
+    return transitFleetSize({
+      ...line,
+      headwayMinutes: this.transitEffectiveHeadway(line, elapsedMinute)
+    });
+  }
+
   cityEventTransitDemand(position: Point2, elapsedMinute = this.clock.elapsedMinutes) {
     return this.activeCityEvents(elapsedMinute).reduce((total, event) => {
       const localDistance = distance(position, event.position);
@@ -753,6 +803,29 @@ export class World {
 
   cityEventMonthlyProjection(event: CityEvent) {
     return Math.round(this.cityEventExpectedAttendance(event) * event.cityFeePerAttendee);
+  }
+
+  private cityEventClosureRoadIds(position: Point2, kind: CityEventKind) {
+    const count = kind === "parade" || kind === "sports" ? 2 : 1;
+    const radius = CITY_EVENT_DEFINITIONS[kind].curbRadius * 1.35;
+    return this.roads
+      .map(road => ({
+        road,
+        distance: distanceToPolyline(position, road.points)
+      }))
+      .filter(candidate => candidate.distance <= radius)
+      .sort((first, second) => first.distance - second.distance)
+      .slice(0, count)
+      .map(candidate => candidate.road.id);
+  }
+
+  private nearestEventTransitLineId(position: Point2) {
+    return this.transitLines
+      .map(line => ({
+        line,
+        distance: Math.min(...line.stops.map(stop => distance(position, stop.position)))
+      }))
+      .sort((first, second) => first.distance - second.distance)[0]?.line.id;
   }
 
   private cityEventStartForTiming(defaultStartMinute: number, timing: CityEventTiming) {
@@ -914,7 +987,8 @@ export class World {
         + lot.businesses * .12
       );
     }, 0);
-    const frequencyFactor = clamp(1.34 - line.headwayMinutes / 30, .42, 1.2);
+    const effectiveHeadway = this.transitEffectiveHeadway(line, elapsedMinute);
+    const frequencyFactor = clamp(1.34 - effectiveHeadway / 30, .42, 1.2);
     const fareFactor = clamp(1.2 - line.fare / 9, .48, 1.18);
     const entrance = this.accessibilityEntrances.find(
       item => item.targetKind === "transit" && item.targetId === stop.id
@@ -936,7 +1010,7 @@ export class World {
   }
 
   transitLineCrowding(line: TransitLine, minute = this.clock.minute) {
-    const busesPerHour = 60 / Math.max(4, line.headwayMinutes);
+    const busesPerHour = 60 / Math.max(4, this.transitEffectiveHeadway(line));
     const averageOnboard = this.transitLineDemand(line, minute) * .42 / Math.max(.5, busesPerHour);
     return clamp(averageOnboard / Math.max(1, line.vehicleCapacity), 0, 1.5);
   }
@@ -949,12 +1023,13 @@ export class World {
   }
 
   transitAverageWait(line: TransitLine) {
-    const baseWait = line.headwayMinutes / 2;
+    const effectiveHeadway = this.transitEffectiveHeadway(line);
+    const baseWait = effectiveHeadway / 2;
     const waiting = line.stops.reduce((total, stop) => total + stop.waiting, 0);
-    const hourlyCapacity = line.vehicleCapacity * 60 / Math.max(4, line.headwayMinutes);
+    const hourlyCapacity = line.vehicleCapacity * 60 / Math.max(4, effectiveHeadway);
     return Math.min(
-      line.headwayMinutes * 2,
-      baseWait + waiting / Math.max(1, hourlyCapacity) * line.headwayMinutes
+      effectiveHeadway * 2,
+      baseWait + waiting / Math.max(1, hourlyCapacity) * effectiveHeadway
     );
   }
 
@@ -1336,7 +1411,8 @@ export class World {
     const travelMultiplier = 1 + this.congestionLevel() * 1.35;
     const active: ActiveCommute[] = [];
     for (const flow of this.commuteFlows) {
-      const duration = flow.travelMinutes * travelMultiplier;
+      const duration = flow.travelMinutes * travelMultiplier
+        + this.cityEventRouteClosurePenalty(flow.route);
       const outbound = progressInWindow(minute, flow.departMinute, duration);
       if (outbound !== null) {
         active.push({ flow, direction: "outbound", progress: outbound });
@@ -1361,7 +1437,10 @@ export class World {
   }
 
   estimatedCommuteMinutes(flow: CommuteFlow) {
-    return Math.round(flow.travelMinutes * this.trafficMultiplier());
+    return Math.round(
+      flow.travelMinutes * this.trafficMultiplier()
+      + this.cityEventRouteClosurePenalty(flow.route)
+    );
   }
 
   commuteForLot(lot: Lot) {
@@ -2224,6 +2303,11 @@ export class World {
         ? event.kind
         : "market";
       const definition = CITY_EVENT_DEFINITIONS[kind];
+      const road = this.roads
+        .map(item => ({ item, distance: distanceToPolyline(event.position, item.points) }))
+        .sort((first, second) => first.distance - second.distance)[0]?.item;
+      const closureRoadIds = (event.closureRoadIds ?? [])
+        .filter(roadId => this.roads.some(item => item.id === roadId));
       return {
         ...event,
         kind,
@@ -2235,6 +2319,21 @@ export class World {
         occurrences: Math.max(0, Math.round(event.occurrences ?? 0)),
         totalAttendance: Math.max(0, Math.round(event.totalAttendance ?? 0)),
         revenue: Math.max(0, event.revenue ?? 0),
+        roadId: event.roadId && this.roads.some(item => item.id === event.roadId)
+          ? event.roadId
+          : road?.id,
+        closureRoadIds: closureRoadIds.length
+          ? closureRoadIds.slice(0, 3)
+          : this.cityEventClosureRoadIds(event.position, kind),
+        temporaryTransitLineId: event.temporaryTransitLineId
+          && this.transitLines.some(line => line.id === event.temporaryTransitLineId)
+          ? event.temporaryTransitLineId
+          : this.nearestEventTransitLineId(event.position),
+        temporaryTransitHeadwayMinutes: Math.round(clamp(
+          event.temporaryTransitHeadwayMinutes ?? (kind === "sports" || kind === "parade" ? 4 : 6),
+          4,
+          15
+        )),
         lastProcessedOccurrence: event.lastProcessedOccurrence === undefined
           ? undefined
           : Math.max(0, Math.round(event.lastProcessedOccurrence))
@@ -3364,7 +3463,11 @@ function initialCityEvents(roads: Road[]): CityEvent[] {
     monthlyCost: definition.monthlyCost,
     occurrences: 0,
     totalAttendance: 0,
-    revenue: 0
+    revenue: 0,
+    roadId: road.id,
+    closureRoadIds: [road.id],
+    temporaryTransitLineId: `transit-line-${road.id}`,
+    temporaryTransitHeadwayMinutes: 6
   }];
 }
 

@@ -732,7 +732,7 @@ function renderTransitInfrastructure() {
       const midpoint = line.route[Math.floor(line.route.length / 2)];
       const projectedNet = world.transitMonthlyProjection(line) - world.transitMonthlyCost(line);
       const label = makeLabel(
-        `${selected ? "SELECTED · " : ""}${line.name} · every ${line.headwayMinutes}m · ${line.stops.length} stops · ${transitFleetSize(line)} buses · ${transitFarePolicyLabel(line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(line))} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
+        `${selected ? "SELECTED · " : ""}${line.name} · every ${world.transitEffectiveHeadway(line)}m${world.transitEffectiveHeadway(line) < line.headwayMinutes ? " event service" : ""} · ${line.stops.length} stops · ${world.transitActiveFleetSize(line)} buses · ${transitFarePolicyLabel(line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(line))} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
       );
       label.position.set(midpoint.x, 10, midpoint.z);
       label.scale.set(110, 9, 1);
@@ -862,8 +862,12 @@ function updateTransitVehicle(dt: number) {
   if (pose) placeTransitVehicle(transitVehicleGroup, pose);
 
   const backgroundFleet = world.transitLines.flatMap(transitLine => {
+    const effectiveLine = {
+      ...transitLine,
+      headwayMinutes: world.transitEffectiveHeadway(transitLine)
+    };
     const fleet = scheduledTransitFleet(
-      transitLine,
+      effectiveLine,
       world.clock.elapsedMinutes + simulationAccumulator,
       2.5
     );
@@ -1480,7 +1484,17 @@ function updateExplorerVehicle(dt: number) {
     x: current.x + forward.x * explorerVehicleSpeed * dt,
     z: current.z + forward.z * explorerVehicleSpeed * dt
   };
-  const movement = resolveExplorerMovement(current, candidate, explorerCollisionContext(1.35));
+  const currentRoad = nearestRoadLocation(explorerRoadPaths, current);
+  const candidateRoad = nearestRoadLocation(explorerRoadPaths, candidate);
+  const enteringClosedRoad = Boolean(
+    candidateRoad
+    && candidateRoad.distance <= candidateRoad.width / 2 + 1.2
+    && world.cityEventRoadClosure(candidateRoad.roadId)
+    && currentRoad?.roadId !== candidateRoad.roadId
+  );
+  const movement = enteringClosedRoad
+    ? { position: current, blocked: true }
+    : resolveExplorerMovement(current, candidate, explorerCollisionContext(1.35));
   explorerBlocked = movement.blocked;
   if (movement.blocked && Math.hypot(
     movement.position.x - candidate.x,
@@ -1488,6 +1502,7 @@ function updateExplorerVehicle(dt: number) {
   ) > .08) {
     explorerVehicleSpeed = 0;
   }
+  if (enteringClosedRoad) explorerVehicleSpeed = 0;
   explorerVehicleGroup.position.set(movement.position.x, .16, movement.position.z);
   explorerVehicleGroup.rotation.y = explorerVehicleHeading;
 
@@ -2294,6 +2309,9 @@ function renderCommutes() {
     }
     const centerPoint = pointAlongRoute(points, active.progress);
     const roadLocation = nearestRoadLocation(explorerRoadPaths, centerPoint);
+    const closure = roadLocation && roadLocation.distance <= roadLocation.width / 2 + 1.2
+      ? world.cityEventRoadClosure(roadLocation.roadId)
+      : undefined;
     const laneOffset = roadLocation
       ? Math.max(1.8, Math.min(3.3, roadLocation.width * .22))
       : 2.1;
@@ -2324,7 +2342,7 @@ function renderCommutes() {
       for (const x of [-.42, .42]) {
         const brakeLight = new THREE.Mesh(
           new THREE.BoxGeometry(.18, .13, .06),
-          new THREE.MeshBasicMaterial({ color: vehiclePose?.stopped ? 0xff3b2f : 0x69251f })
+          new THREE.MeshBasicMaterial({ color: vehiclePose?.stopped || closure ? 0xff3b2f : 0x69251f })
         );
         brakeLight.position.set(x, .58, 1.14);
         traveler.add(brakeLight);
@@ -2340,6 +2358,7 @@ function renderCommutes() {
     traveler.position.set(point.x, .18, point.z);
     traveler.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
     traveler.userData.stoppedForSignal = vehiclePose?.stopped ?? false;
+    traveler.userData.stoppedForClosure = Boolean(closure);
     traveler.scale.setScalar(active.flow.mode === "car" ? 1 : 1.15);
     commuteGroup.add(traveler);
   });
@@ -2372,6 +2391,47 @@ function renderCityEvents() {
     );
     venue.position.y = active ? .6 : .22;
     group.add(venue);
+    if (active) {
+      for (const roadId of event.closureRoadIds ?? []) {
+        const road = world.roads.find(item => item.id === roadId);
+        if (!road) continue;
+        const closureSurface = ribbon(
+          road.points,
+          Math.max(2.2, road.width * .2),
+          new THREE.MeshBasicMaterial({
+            color: 0xe4673f,
+            transparent: true,
+            opacity: .82,
+            depthWrite: false
+          })
+        );
+        closureSurface.position.y = .24;
+        cityEventGroup.add(closureSurface);
+        const nearest = nearestRoadLocation(
+          explorerRoadPaths.filter(path => path.roadId === roadId),
+          event.position
+        );
+        if (!nearest) continue;
+        const barrier = new THREE.Group();
+        barrier.position.set(nearest.point.x, .38, nearest.point.z);
+        barrier.rotation.y = Math.atan2(nearest.tangent.x, nearest.tangent.z);
+        const rail = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(4, road.width * .72), .48, .32),
+          new THREE.MeshStandardMaterial({ color: 0xf0e5ce, roughness: .75 })
+        );
+        rail.position.y = .9;
+        barrier.add(rail);
+        for (const side of [-1, 1]) {
+          const post = new THREE.Mesh(
+            new THREE.BoxGeometry(.28, 1.6, .34),
+            new THREE.MeshStandardMaterial({ color: 0xe4673f, roughness: .8 })
+          );
+          post.position.set(side * Math.max(1.6, road.width * .3), .55, 0);
+          barrier.add(post);
+        }
+        cityEventGroup.add(barrier);
+      }
+    }
     const attendance = world.cityEventExpectedAttendance(event);
     if (active) {
       const pedestrianDemand = attendance * CITY_EVENT_DEFINITIONS[event.kind].pedestrianShare;
@@ -2391,9 +2451,11 @@ function renderCityEvents() {
         group.add(person);
       }
     }
-    const label = makeLabel(
-      `${event.name} · ${active ? `${attendance.toLocaleString()} attending` : world.cityEventStatus(event)}`
-    );
+    const temporaryLine = world.transitLines.find(line => line.id === event.temporaryTransitLineId);
+    const operationCopy = active
+      ? `${event.closureRoadIds?.length ?? 0} road ${(event.closureRoadIds?.length ?? 0) === 1 ? "closure" : "closures"}${temporaryLine ? ` · ${temporaryLine.name} every ${world.transitEffectiveHeadway(temporaryLine)}m` : ""}`
+      : world.cityEventStatus(event);
+    const label = makeLabel(`${event.name} · ${active ? `${attendance.toLocaleString()} attending · ${operationCopy}` : operationCopy}`);
     label.position.y = active ? 9.2 : 5.6;
     label.scale.set(96, 11, 1);
     group.add(label);
@@ -3532,8 +3594,12 @@ function updateExplorerContext() {
       ? ` Signal ${signal.color} in ${Math.max(1, Math.round(signal.distance))}m.`
       : "";
     const nearbyEvent = closestActiveCityEvent(vehiclePosition, 180);
+    const closure = road && onRoad ? world.cityEventRoadClosure(road.roadId) : undefined;
     const eventCopy = nearbyEvent
       ? ` ${nearbyEvent.event.name} is active ${Math.max(1, Math.round(nearbyEvent.distance))}m away with ${world.cityEventExpectedAttendance(nearbyEvent.event).toLocaleString()} attendees and event traffic controls.`
+      : "";
+    const closureCopy = closure
+      ? ` ${road?.roadName ?? "This road"} is closed for ${closure.name}; use another street.`
       : "";
     const parkingOffer = closestParkingFacility(vehiclePosition, 34);
     const curbOffer = closestCurbFacility(vehiclePosition, 34);
@@ -3546,7 +3612,7 @@ function updateExplorerContext() {
     document.querySelector("#panel-kicker")!.textContent = "CITY EXPLORER";
     document.querySelector("#panel-title")!.textContent = `Driving ${road?.roadName ?? "the city"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${eventCopy}${curbCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
+      `${Math.round(Math.abs(explorerVehicleSpeed) * 3.6)} km/h. ${onRoad ? "The vehicle is on the road network." : "Off-road resistance is slowing the vehicle."}${signalCopy}${closureCopy}${eventCopy}${curbCopy}${parkingCopy} Buildings, facilities, and shorelines remain solid.`;
     return;
   }
   if (accessibleRouteSummary) {
@@ -3588,7 +3654,7 @@ function updateExplorerContext() {
     document.querySelector("#panel-kicker")!.textContent = "CITY TRANSIT";
     document.querySelector("#panel-title")!.textContent = nearbyStop.stop.name;
     document.querySelector("#panel-copy")!.textContent =
-      `${nearbyStop.line.name} · every ${nearbyStop.line.headwayMinutes}m · about ${world.transitAverageWait(nearbyStop.line).toFixed(1)}m average wait · ${nearbyStop.stop.waiting} waiting · ${transitFarePolicyLabel(nearbyStop.line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(nearbyStop.line))}. ${access}.${eventCopy} Press T to board.`;
+      `${nearbyStop.line.name} · every ${world.transitEffectiveHeadway(nearbyStop.line)}m${world.transitEffectiveHeadway(nearbyStop.line) < nearbyStop.line.headwayMinutes ? " temporary event service" : ""} · about ${world.transitAverageWait(nearbyStop.line).toFixed(1)}m average wait · ${nearbyStop.stop.waiting} waiting · ${transitFarePolicyLabel(nearbyStop.line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(nearbyStop.line))}. ${access}.${eventCopy} Press T to board.`;
     return;
   }
   const nearbyEvent = closestActiveCityEvent({ x: camera.position.x, z: camera.position.z }, 115);
@@ -3598,10 +3664,11 @@ function updateExplorerContext() {
     const affectedCurbs = world.parking.filter(
       facility => facility.kind === "curb" && world.cityEventCurbOverride(facility)
     ).length;
+    const temporaryLine = world.transitLines.find(line => line.id === event.temporaryTransitLineId);
     document.querySelector("#panel-kicker")!.textContent = "CITY EVENT";
     document.querySelector("#panel-title")!.textContent = event.name;
     document.querySelector("#panel-copy")!.textContent =
-      `${definition.label} with ${world.cityEventExpectedAttendance(event).toLocaleString()} attendees. ${world.cityEventStatus(event)} · ${affectedCurbs} nearby curbs under event control · ${Math.round(world.cityEventTrafficPressure() * 100)}% city event traffic pressure. Transit queues and pedestrian activity respond to the same event.`;
+      `${definition.label} with ${world.cityEventExpectedAttendance(event).toLocaleString()} attendees. ${world.cityEventStatus(event)} · ${event.closureRoadIds?.length ?? 0} closed roads · ${affectedCurbs} nearby curbs under event control · ${Math.round(world.cityEventTrafficPressure() * 100)}% city event traffic pressure.${temporaryLine ? ` ${temporaryLine.name} is running every ${world.transitEffectiveHeadway(temporaryLine)} minutes for the event.` : ""}`;
     return;
   }
   const nearbyEntrance = closestAccessibilityEntrance(
@@ -3868,11 +3935,13 @@ function updateCityToolPanel(lot?: Lot) {
     const affectedCurbs = world.parking.filter(
       facility => facility.kind === "curb" && world.cityEventCurbOverride(facility)
     ).length;
+    const closedRoads = world.cityEventClosedRoads().length;
+    const temporaryServices = active.filter(event => event.temporaryTransitLineId).length;
     setPanel(
       "CITY EVENTS",
       `${definition.label} · ${cityEventTimingLabel(currentCityEventTiming())}`,
-      `${world.cityEvents.length} recurring monthly events · ${active.length} active now · ${projectedAttendance.toLocaleString()} projected attendees · ${affectedCurbs} event-controlled curbs · ${Math.round(world.cityEventTrafficPressure() * 100)}% event traffic pressure · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click near a street to create a named event that coordinates curb access, traffic, transit demand, and pedestrian crowds.`,
-      "Event type|Demand pattern;Timing|First occurrence;Click city|Place recurring event;Explorer|Walk or drive to it;⌘ Z|Undo"
+      `${world.cityEvents.length} recurring monthly events · ${active.length} active now · ${closedRoads} closed roads · ${temporaryServices} temporary transit services · ${projectedAttendance.toLocaleString()} projected attendees · ${affectedCurbs} event-controlled curbs · ${Math.round(world.cityEventTrafficPressure() * 100)}% event traffic pressure · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click near a street to create a named event with a visible road closure, traffic delay, curb controls, and added service on the nearest transit line.`,
+      "Event type|Demand pattern;Timing|First occurrence;Click street|Place event;Roads|Temporary closures;Transit|Temporary service;⌘ Z|Undo"
     );
   } else if (cityTool === "transit") {
     const line = selectedTransitLine();
@@ -3887,7 +3956,7 @@ function updateCityToolPanel(lot?: Lot) {
     setPanel(
       "TRANSIT NETWORK",
       line.name,
-      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · every ${line.headwayMinutes} minutes with ${transitFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
+      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · every ${world.transitEffectiveHeadway(line)} minutes${world.transitEffectiveHeadway(line) < line.headwayMinutes ? ` during temporary event service, normally ${line.headwayMinutes}` : ""} with ${world.transitActiveFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
       "Line selector|Choose route;Click road|Create or select;Stops|Change coverage;Frequency|Fleet and waits;Fare|Demand and revenue;Remove|Delete selected line"
     );
   } else if (cityTool === "access") {
