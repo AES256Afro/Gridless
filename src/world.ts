@@ -100,6 +100,8 @@ export type SocialMemory = {
 };
 
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "socialize" | "tend-plants" | "idle";
+export type ResidentSkill = "communication" | "creativity" | "wellness" | "practical";
+export type ResidentSkills = Record<ResidentSkill, number>;
 
 export type ResidentAction = {
   kind: ResidentActionKind;
@@ -129,6 +131,9 @@ export type Resident = {
   lastActionAt?: number;
   completedActions?: number;
   homePosition?: Point2;
+  skills?: ResidentSkills;
+  careerLevel?: number;
+  careerXp?: number;
 };
 
 export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits">;
@@ -1854,6 +1859,48 @@ export class World {
       .join(" and ");
   }
 
+  residentSkills(resident: Resident): ResidentSkills {
+    return normalizeResidentSkills(resident.skills);
+  }
+
+  residentSkillLabel(skill: ResidentSkill) {
+    return {
+      communication: "Communication",
+      creativity: "Creativity",
+      wellness: "Wellness",
+      practical: "Practical"
+    }[skill];
+  }
+
+  residentSkillLevel(resident: Resident, skill: ResidentSkill) {
+    return Math.min(10, Math.floor(this.residentSkills(resident)[skill] / 10));
+  }
+
+  residentCareerLevel(resident: Resident) {
+    return Math.round(clamp(resident.careerLevel ?? 1, 1, 10));
+  }
+
+  residentCareerTitle(resident: Resident) {
+    const level = this.residentCareerLevel(resident);
+    if (resident.role === "home") return "Household coordinator";
+    if (resident.role === "student") return `Student · Level ${level}`;
+    const titles = resident.role === "office"
+      ? ["Assistant", "Associate", "Coordinator", "Specialist", "Senior specialist", "Lead", "Manager", "Senior manager", "Director", "Executive"]
+      : ["Trainee", "Crew member", "Qualified worker", "Specialist", "Senior worker", "Lead", "Supervisor", "Manager", "Area manager", "Operations chief"];
+    return titles[level - 1];
+  }
+
+  residentCareerProgress(resident: Resident) {
+    if (resident.role === "home" || this.residentCareerLevel(resident) >= 10) return 1;
+    return clamp((resident.careerXp ?? 0) / (this.residentCareerLevel(resident) * 40), 0, 1);
+  }
+
+  residentTopSkill(resident: Resident) {
+    const skills = this.residentSkills(resident);
+    return (Object.entries(skills) as Array<[ResidentSkill, number]>)
+      .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0]))[0];
+  }
+
   residentLearnedPreferences(home: Home, resident: Resident) {
     const scores: Record<ConversationIntent, number> = {
       chat: 0,
@@ -2663,7 +2710,10 @@ export class World {
       health: 84,
       stress: 24,
       traits: authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
-      completedActions: 0
+      completedActions: 0,
+      skills: normalizeResidentSkills(undefined),
+      careerLevel: 1,
+      careerXp: 0
     };
     for (const existing of home.residents) {
       home.relationships.push({
@@ -2724,7 +2774,10 @@ export class World {
                 : undefined
             }
           : undefined,
-        completedActions: resident.completedActions ?? 0
+        completedActions: resident.completedActions ?? 0,
+        skills: normalizeResidentSkills(resident.skills),
+        careerLevel: Math.round(clamp(resident.careerLevel ?? 1, 1, 10)),
+        careerXp: Math.max(0, Math.round(resident.careerXp ?? 0))
       }));
       return {
         ...home,
@@ -3061,8 +3114,35 @@ export class World {
           : createAnchorBusiness(lot.id, lot.zone, lot.businesses)
         : undefined;
     }
+    this.advanceResidentCareers();
     this.lastDailyActivity = activity;
     this.rebuildCommutes();
+  }
+
+  private advanceResidentCareers() {
+    for (const home of this.homes) {
+      for (const resident of home.residents) {
+        if (resident.role === "home") continue;
+        resident.skills = normalizeResidentSkills(resident.skills);
+        const primarySkills: ResidentSkill[] = resident.role === "office"
+          ? ["communication", "creativity"]
+          : resident.role === "service"
+            ? ["practical", "communication"]
+            : ["creativity", "communication"];
+        for (const skill of primarySkills) {
+          resident.skills[skill] = clamp(resident.skills[skill] + 1, 0, 100);
+        }
+        let level = this.residentCareerLevel(resident);
+        const skillAverage = primarySkills.reduce((total, skill) => total + resident.skills![skill], 0) / primarySkills.length;
+        let xp = Math.max(0, resident.careerXp ?? 0) + 4 + Math.floor(skillAverage / 25);
+        while (level < 10 && xp >= level * 40) {
+          xp -= level * 40;
+          level += 1;
+        }
+        resident.careerLevel = level;
+        resident.careerXp = level >= 10 ? 0 : xp;
+      }
+    }
   }
 
   private residentCommuteBurden(resident: Resident) {
@@ -3460,6 +3540,10 @@ export class World {
     } else {
       resident.stress = clamp(resident.stress - 2, 0, 100);
     }
+    resident.skills = normalizeResidentSkills(resident.skills);
+    for (const [skill, gain] of Object.entries(residentActionSkillGains(action)) as Array<[ResidentSkill, number]>) {
+      resident.skills[skill] = clamp(resident.skills[skill] + gain, 0, 100);
+    }
     resident.lastActionKind = action.kind;
     resident.lastActionAt = action.endsAt;
     resident.completedActions = (resident.completedActions ?? 0) + 1;
@@ -3629,6 +3713,29 @@ function normalizeResidentTraits(traits: ResidentTrait[] | undefined, seed: stri
     normalized.push(RESIDENT_TRAITS.find(trait => !normalized.includes(trait)) ?? "empathetic");
   }
   return normalized;
+}
+
+function normalizeResidentSkills(skills: Partial<ResidentSkills> | undefined): ResidentSkills {
+  return {
+    communication: clamp(Math.round(skills?.communication ?? 0), 0, 100),
+    creativity: clamp(Math.round(skills?.creativity ?? 0), 0, 100),
+    wellness: clamp(Math.round(skills?.wellness ?? 0), 0, 100),
+    practical: clamp(Math.round(skills?.practical ?? 0), 0, 100)
+  };
+}
+
+function residentActionSkillGains(action: ResidentAction): Partial<ResidentSkills> {
+  if (action.kind === "sleep") return { wellness: 2 };
+  if (action.kind === "eat") return { practical: 2, wellness: 1 };
+  if (action.kind === "relax") return { wellness: 2, creativity: 1 };
+  if (action.kind === "tend-plants") return { practical: 3, wellness: 1 };
+  if (action.kind === "socialize") {
+    if (action.conversationIntent === "joke") return { communication: 2, creativity: 2 };
+    if (action.conversationIntent === "support" || action.conversationIntent === "apologize") return { communication: 3, wellness: 1 };
+    if (action.conversationIntent === "confront") return { communication: 1 };
+    return { communication: 2 };
+  }
+  return {};
 }
 
 function residentCompatibility(firstResident: Resident, secondResident: Resident) {
