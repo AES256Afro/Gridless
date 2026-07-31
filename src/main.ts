@@ -3746,6 +3746,7 @@ function updateHouseholdSummary(home: Home) {
                 ${resident.traits.map(trait => `<span>${world.residentTraitLabel(trait)}</span>`).join("")}
                 <small>${world.residentPersonalitySummary(resident)}</small>
               </div>
+              <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
               <div class="resident-action-row">
                 <span>${action ? `${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m remaining` : world.residentStatus(resident)}</span>
                 <i><b style="width:${action ? actionProgress : 100}%"></b></i>
