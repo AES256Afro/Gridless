@@ -440,12 +440,26 @@ export type UtilityFailure = {
   recoveryApplied?: boolean;
 };
 
+export type HomeFloorFinish = "oak" | "tile" | "concrete" | "carpet";
+export type HomeWallFinish = "warm-white" | "sage" | "clay" | "slate";
+
+export type HomeRoom = {
+  id: string;
+  kind: string;
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  floorFinish?: HomeFloorFinish;
+  wallFinish?: HomeWallFinish;
+};
+
 export type Home = {
   id: string;
   lotId: string;
   name: string;
   floors: number;
-  rooms: Array<{ id: string; kind: string; x: number; z: number; width: number; depth: number }>;
+  rooms: HomeRoom[];
   furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant"; x: number; z: number; rotation: number }>;
   designBudget: number;
   designSpent: number;
@@ -459,6 +473,11 @@ export const HOME_BUILD_COSTS = {
   table: 650,
   bed: 1_200,
   plant: 120
+} as const;
+
+export const HOME_FINISH_COSTS = {
+  floor: { oak: 55, tile: 65, concrete: 32, carpet: 38 },
+  wall: { "warm-white": 5, sage: 8, clay: 10, slate: 12 }
 } as const;
 
 export const HOME_FURNITURE_SIZE: Record<Home["furniture"][number]["kind"], { width: number; depth: number }> = {
@@ -2405,7 +2424,7 @@ export class World {
       lotId: lot.id,
       name: "New household",
       floors: 1,
-      rooms: [{ id: crypto.randomUUID(), kind: "Living space", x: 0, z: 0, width: 7, depth: 6 }],
+      rooms: [{ id: crypto.randomUUID(), kind: "Living space", x: 0, z: 0, width: 7, depth: 6, floorFinish: "oak", wallFinish: "warm-white" }],
       furniture: [
         { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0 },
         { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0 }
@@ -2426,8 +2445,61 @@ export class World {
     const cost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
     if (this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
-    home.rooms.push({ id: crypto.randomUUID(), ...clone(room) });
+    home.rooms.push({ id: crypto.randomUUID(), floorFinish: "oak", wallFinish: "warm-white", ...clone(room) });
     home.designSpent += cost;
+    return true;
+  }
+
+  setRoomFloorFinish(homeId: string, roomId: string, finish: HomeFloorFinish) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    if (!home || !room || (room.floorFinish ?? "oak") === finish) return false;
+    const cost = Math.round(room.width * room.depth * HOME_FINISH_COSTS.floor[finish]);
+    if (this.homeRemainingBudget(home) < cost) return false;
+    this.checkpoint();
+    room.floorFinish = finish;
+    home.designSpent += cost;
+    return true;
+  }
+
+  setRoomWallFinish(homeId: string, roomId: string, finish: HomeWallFinish) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    if (!home || !room || (room.wallFinish ?? "warm-white") === finish) return false;
+    const wallArea = (room.width + room.depth) * 2 * 2.8;
+    const cost = Math.round(wallArea * HOME_FINISH_COSTS.wall[finish]);
+    if (this.homeRemainingBudget(home) < cost) return false;
+    this.checkpoint();
+    room.wallFinish = finish;
+    home.designSpent += cost;
+    return true;
+  }
+
+  removeRoom(homeId: string, roomId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    if (!home || !room || home.rooms.length <= 1) return false;
+    const remainingRooms = home.rooms.filter(item => item.id !== roomId);
+    const removedFurniture = home.furniture.filter(item => {
+      const insideRemoved = Math.abs(item.x - room.x) <= room.width / 2 && Math.abs(item.z - room.z) <= room.depth / 2;
+      const insideRemaining = remainingRooms.some(candidate =>
+        Math.abs(item.x - candidate.x) <= candidate.width / 2
+        && Math.abs(item.z - candidate.z) <= candidate.depth / 2
+      );
+      return insideRemoved && !insideRemaining;
+    });
+    const removedFurnitureIds = new Set(removedFurniture.map(item => item.id));
+    const refund = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter * .25)
+      + removedFurniture.reduce((total, item) => total + Math.round(HOME_BUILD_COSTS[item.kind] * .5), 0);
+    this.checkpoint();
+    home.rooms = remainingRooms;
+    home.furniture = home.furniture.filter(item => !removedFurnitureIds.has(item.id));
+    home.designSpent = Math.max(0, home.designSpent - refund);
+    for (const resident of home.residents) {
+      if (resident.currentAction?.targetFurnitureId && removedFurnitureIds.has(resident.currentAction.targetFurnitureId)) {
+        resident.currentAction = undefined;
+      }
+    }
     return true;
   }
 
@@ -2608,6 +2680,11 @@ export class World {
       }));
       return {
         ...home,
+        rooms: (home.rooms ?? []).map(room => ({
+          ...room,
+          floorFinish: room.floorFinish ?? "oak",
+          wallFinish: room.wallFinish ?? "warm-white"
+        })),
         furniture: home.furniture ?? [],
         designBudget: Math.max(0, Math.round(home.designBudget ?? 60_000)),
         designSpent: Math.max(0, Math.round(

@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   CITY_EVENT_DEFINITIONS,
   HOME_BUILD_COSTS,
+  HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
@@ -15,6 +16,8 @@ import {
   type CurbSchedule,
   type CurbUse,
   type Home,
+  type HomeFloorFinish,
+  type HomeWallFinish,
   type Lot,
   type ParkingFacility,
   type ParkingKind,
@@ -300,6 +303,22 @@ app.innerHTML = `
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
+    <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
+      <strong id="room-editor-title">Room selected</strong>
+      <label>Floor<select id="room-floor-finish">
+        <option value="oak">Oak · $55/m²</option>
+        <option value="tile">Tile · $65/m²</option>
+        <option value="concrete">Concrete · $32/m²</option>
+        <option value="carpet">Carpet · $38/m²</option>
+      </select></label>
+      <label>Walls<select id="room-wall-finish">
+        <option value="warm-white">Warm white · $5/m²</option>
+        <option value="sage">Sage · $8/m²</option>
+        <option value="clay">Clay · $10/m²</option>
+        <option value="slate">Slate · $12/m²</option>
+      </select></label>
+      <button id="delete-room">Delete room</button>
+    </div>
     <div class="resident-creator" id="resident-creator" role="dialog" aria-modal="true" aria-labelledby="resident-creator-title" hidden>
       <form id="resident-creator-form">
         <header>
@@ -465,6 +484,7 @@ let cityView: CityView = "normal";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
+let selectedRoomId: string | null = null;
 let movingFurnitureId: string | null = null;
 let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
@@ -526,6 +546,18 @@ const zoneBuildingColors: Record<Zone, number> = {
   mixed: 0xb0a2ac,
   industrial: 0x928b79,
   civic: 0xb88c72
+};
+const homeFloorColors: Record<HomeFloorFinish, number> = {
+  oak: 0xe2d6bd,
+  tile: 0xc9d4d2,
+  concrete: 0xa9aeab,
+  carpet: 0xb6aa9d
+};
+const homeWallColors: Record<HomeWallFinish, number> = {
+  "warm-white": 0xf2eee3,
+  sage: 0xa8b8a0,
+  clay: 0xc39578,
+  slate: 0x778184
 };
 const windowTexture = createWindowTexture();
 
@@ -3245,6 +3277,9 @@ function renderHome() {
   if (selectedFurnitureId && !home.furniture.some(item => item.id === selectedFurnitureId)) {
     selectedFurnitureId = null;
   }
+  if (selectedRoomId && !home.rooms.some(room => room.id === selectedRoomId)) {
+    selectedRoomId = null;
+  }
   lastHomeActionSignature = home.residents.map(resident =>
     `${resident.id}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
   ).join("|");
@@ -3267,13 +3302,23 @@ function renderHome() {
     ? interiorExteriorDoorway(home, worldToLotLocal(entrance.position, lot))
     : undefined;
   for (const room of home.rooms) {
+    const floorFinish = room.floorFinish ?? "oak";
+    const wallFinish = room.wallFinish ?? "warm-white";
+    const selected = mode === "home" && room.id === selectedRoomId;
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(room.width, room.depth),
-      new THREE.MeshStandardMaterial({ color: 0xe2d6bd, roughness: .88, side: THREE.DoubleSide })
+      new THREE.MeshStandardMaterial({
+        color: selected ? new THREE.Color(homeFloorColors[floorFinish]).lerp(new THREE.Color(0xf0d980), .28) : homeFloorColors[floorFinish],
+        emissive: selected ? 0x7b6b2b : 0x000000,
+        emissiveIntensity: selected ? .16 : 0,
+        roughness: floorFinish === "tile" ? .55 : floorFinish === "concrete" ? .94 : .82,
+        side: THREE.DoubleSide
+      })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(room.x, .2, room.z);
     floor.receiveShadow = true;
+    floor.userData.roomId = room.id;
     homeGroup.add(floor);
     if (explorerInterior) {
       const ceiling = new THREE.Mesh(
@@ -3288,7 +3333,7 @@ function renderHome() {
       light.position.set(room.x, 2.55, room.z);
       homeGroup.add(light);
     }
-    addHomeRoomWalls(home, room, exteriorDoorway);
+    addHomeRoomWalls(home, room, exteriorDoorway, homeWallColors[wallFinish]);
   }
 
   for (const item of home.furniture) homeGroup.add(createFurniture(item));
@@ -3338,6 +3383,7 @@ function renderHome() {
   });
   if (mode === "home") {
     updateHomeBuildControls(home);
+    updateRoomEditor(home);
     updateHouseholdSummary(home);
   }
 }
@@ -3368,7 +3414,8 @@ function makeHomeLabel(text: string) {
 function addHomeRoomWalls(
   home: Home,
   room: Home["rooms"][number],
-  exteriorDoorway?: ReturnType<typeof interiorExteriorDoorway>
+  exteriorDoorway: ReturnType<typeof interiorExteriorDoorway>,
+  wallColor: number
 ) {
   const doorways = interiorDoorways(home).filter(doorway => doorway.roomIds.includes(room.id));
   addSegmentedHomeWall(
@@ -3382,7 +3429,8 @@ function addHomeRoomWalls(
       && exteriorDoorway.orientation === "z"
       && Math.abs(exteriorDoorway.boundary - (room.z - room.depth / 2)) < .2
       ? exteriorDoorway
-      : undefined)
+      : undefined),
+    wallColor
   );
   addSegmentedHomeWall(
     room.x - room.width / 2,
@@ -3395,7 +3443,8 @@ function addHomeRoomWalls(
       && exteriorDoorway.orientation === "z"
       && Math.abs(exteriorDoorway.boundary - (room.z + room.depth / 2)) < .2
       ? exteriorDoorway
-      : undefined)
+      : undefined),
+    wallColor
   );
   addSegmentedHomeWall(
     room.z - room.depth / 2,
@@ -3408,7 +3457,8 @@ function addHomeRoomWalls(
       && exteriorDoorway.orientation === "x"
       && Math.abs(exteriorDoorway.boundary - (room.x - room.width / 2)) < .2
       ? exteriorDoorway
-      : undefined)
+      : undefined),
+    wallColor
   );
   addSegmentedHomeWall(
     room.z - room.depth / 2,
@@ -3421,7 +3471,8 @@ function addHomeRoomWalls(
       && exteriorDoorway.orientation === "x"
       && Math.abs(exteriorDoorway.boundary - (room.x + room.width / 2)) < .2
       ? exteriorDoorway
-      : undefined)
+      : undefined),
+    wallColor
   );
 }
 
@@ -3435,7 +3486,8 @@ function addSegmentedHomeWall(
     boundary: number;
     center: number;
     width: number;
-  }
+  },
+  wallColor = 0xf2eee3
 ) {
   if (!doorway) {
     const center = (start + end) / 2;
@@ -3445,7 +3497,8 @@ function addSegmentedHomeWall(
       rotation ? center : fixed,
       end - start,
       .18,
-      rotation
+      rotation,
+      wallColor
     );
     return;
   }
@@ -3455,15 +3508,15 @@ function addSegmentedHomeWall(
   const secondLength = end - openingEnd;
   if (firstLength > .05) {
     const center = start + firstLength / 2;
-    addWall(homeGroup, rotation ? fixed : center, rotation ? center : fixed, firstLength, .18, rotation);
+    addWall(homeGroup, rotation ? fixed : center, rotation ? center : fixed, firstLength, .18, rotation, wallColor);
   }
   if (secondLength > .05) {
     const center = openingEnd + secondLength / 2;
-    addWall(homeGroup, rotation ? fixed : center, rotation ? center : fixed, secondLength, .18, rotation);
+    addWall(homeGroup, rotation ? fixed : center, rotation ? center : fixed, secondLength, .18, rotation, wallColor);
   }
   const header = new THREE.Mesh(
     new THREE.BoxGeometry(doorway.width, .7, .18),
-    new THREE.MeshStandardMaterial({ color: 0xf2eee3, roughness: .82 })
+    new THREE.MeshStandardMaterial({ color: wallColor, roughness: .82 })
   );
   header.position.set(
     rotation ? fixed : doorway.center,
@@ -3475,10 +3528,10 @@ function addSegmentedHomeWall(
   homeGroup.add(header);
 }
 
-function addWall(group: THREE.Group, x: number, z: number, length: number, thickness: number, rotation: number) {
+function addWall(group: THREE.Group, x: number, z: number, length: number, thickness: number, rotation: number, color = 0xf2eee3) {
   const wall = new THREE.Mesh(
     new THREE.BoxGeometry(length, 2.8, thickness),
-    new THREE.MeshStandardMaterial({ color: 0xf2eee3, roughness: .82 })
+    new THREE.MeshStandardMaterial({ color, roughness: .82 })
   );
   wall.position.set(x, 1.6, z);
   wall.rotation.y = rotation;
@@ -3609,6 +3662,19 @@ function updateHomeBuildControls(home: Home | null) {
   document.querySelector("#home-budget")!.textContent = home
     ? `${formatHomeCurrency(world.homeRemainingBudget(home))} left · ${formatHomeCurrency(home.designBudget)} budget`
     : "Design budget unavailable";
+}
+
+function updateRoomEditor(home: Home | null) {
+  const editor = document.querySelector<HTMLElement>("#room-editor")!;
+  const room = home?.rooms.find(item => item.id === selectedRoomId) ?? null;
+  editor.classList.toggle("visible", Boolean(mode === "home" && room));
+  if (!home || !room) return;
+  document.querySelector("#room-editor-title")!.textContent = `${room.kind} · ${room.width.toFixed(1)} × ${room.depth.toFixed(1)}m`;
+  document.querySelector<HTMLSelectElement>("#room-floor-finish")!.value = room.floorFinish ?? "oak";
+  document.querySelector<HTMLSelectElement>("#room-wall-finish")!.value = room.wallFinish ?? "warm-white";
+  const deleteButton = document.querySelector<HTMLButtonElement>("#delete-room")!;
+  deleteButton.disabled = home.rooms.length <= 1;
+  deleteButton.textContent = home.rooms.length <= 1 ? "Keep one room" : "Delete room · 25% refund";
 }
 
 function updateHouseholdSummary(home: Home) {
@@ -3795,6 +3861,7 @@ function setMode(next: Mode) {
   mode = next;
   if (next !== "home") {
     selectedFurnitureId = null;
+    selectedRoomId = null;
     movingFurnitureId = null;
     homePreviewPoint = null;
   }
@@ -4452,9 +4519,21 @@ renderer.domElement.addEventListener("pointerdown", event => {
       .find(item => item.object.userData.furnitureId);
     if (homeTool === "select" && !movingFurnitureId && home && furnitureHit) {
       selectedFurnitureId = furnitureHit.object.userData.furnitureId as string;
+      selectedRoomId = null;
       renderHome();
       const selected = home.furniture.find(item => item.id === selectedFurnitureId);
       if (selected) notice(`${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} selected`);
+      return;
+    }
+    const roomHit = raycaster
+      .intersectObjects(homeGroup.children, true)
+      .find(item => item.object.userData.roomId);
+    if (homeTool === "select" && !movingFurnitureId && home && roomHit) {
+      selectedRoomId = roomHit.object.userData.roomId as string;
+      selectedFurnitureId = null;
+      renderHome();
+      const room = home.rooms.find(item => item.id === selectedRoomId);
+      if (room) notice(`${room.kind} selected. Choose its floor and wall finishes.`);
       return;
     }
     const foundationHit = raycaster.intersectObjects(homeGroup.children, true).find(item => item.object.userData.homeSurface);
@@ -4490,6 +4569,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     }
     if (homeTool === "select") {
       selectedFurnitureId = null;
+      selectedRoomId = null;
       renderHome();
       notice("Selection cleared");
       return;
@@ -5099,6 +5179,7 @@ document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(button 
   homeDraft = null;
   movingFurnitureId = null;
   if (homeTool !== "select") selectedFurnitureId = null;
+  if (homeTool !== "select") selectedRoomId = null;
   renderDraft();
   renderHome();
   document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item === button));
@@ -5132,6 +5213,52 @@ document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   movingFurnitureId = null;
   renderWorld();
   notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
+});
+document.querySelector("#room-floor-finish")!.addEventListener("change", event => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  const finish = (event.currentTarget as HTMLSelectElement).value as HomeFloorFinish;
+  if (!home || !room) return;
+  const cost = Math.round(room.width * room.depth * HOME_FINISH_COSTS.floor[finish]);
+  if (!world.setRoomFloorFinish(home.id, room.id, finish)) {
+    renderHome();
+    notice(world.homeRemainingBudget(home) < cost
+      ? `${formatHomeCurrency(cost)} needed for that floor. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+      : "That floor finish is already applied");
+    return;
+  }
+  renderWorld();
+  notice(`${room.kind} floor updated for ${formatHomeCurrency(cost)}`);
+});
+document.querySelector("#room-wall-finish")!.addEventListener("change", event => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  const finish = (event.currentTarget as HTMLSelectElement).value as HomeWallFinish;
+  if (!home || !room) return;
+  const cost = Math.round((room.width + room.depth) * 2 * 2.8 * HOME_FINISH_COSTS.wall[finish]);
+  if (!world.setRoomWallFinish(home.id, room.id, finish)) {
+    renderHome();
+    notice(world.homeRemainingBudget(home) < cost
+      ? `${formatHomeCurrency(cost)} needed for those walls. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+      : "That wall finish is already applied");
+    return;
+  }
+  renderWorld();
+  notice(`${room.kind} walls updated for ${formatHomeCurrency(cost)}`);
+});
+document.querySelector("#delete-room")!.addEventListener("click", () => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  if (!home || !room) return;
+  if (!world.removeRoom(home.id, room.id)) {
+    notice("A home must keep at least one room");
+    return;
+  }
+  selectedRoomId = null;
+  selectedFurnitureId = null;
+  movingFurnitureId = null;
+  renderWorld();
+  notice(`${room.kind} removed. Exclusive furnishings were sold automatically.`);
 });
 document.querySelector("#add-resident")!.addEventListener("click", openResidentCreator);
 document.querySelector("#resident-creator-close")!.addEventListener("click", closeResidentCreator);

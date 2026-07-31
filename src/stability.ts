@@ -100,6 +100,8 @@ const VALID_CONVERSATION_INTENTS = new Set([
   "confront",
   "apologize"
 ]);
+const VALID_HOME_FLOOR_FINISHES = new Set(["oak", "tile", "concrete", "carpet"]);
+const VALID_HOME_WALL_FINISHES = new Set(["warm-white", "sage", "clay", "slate"]);
 
 export function createStabilityScenario() {
   const world = new World();
@@ -445,6 +447,8 @@ function integrityFailures(world: World) {
     if (home.residents.length > 8) failures.push(`Home ${home.id} exceeds the supported eight named residents.`);
     for (const room of home.rooms) {
       if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
+      if (!VALID_HOME_FLOOR_FINISHES.has(room.floorFinish ?? "oak")) failures.push(`Room ${room.id} has an invalid floor finish.`);
+      if (!VALID_HOME_WALL_FINISHES.has(room.wallFinish ?? "warm-white")) failures.push(`Room ${room.id} has an invalid wall finish.`);
     }
     for (const item of home.furniture) {
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {

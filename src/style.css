@@ -486,6 +486,30 @@ kbd {
   white-space: nowrap;
 }
 
+.room-editor {
+  display: none;
+  position: absolute;
+  bottom: 82px;
+  left: 50%;
+  z-index: 5;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(240,217,128,.28);
+  border-radius: 11px;
+  background: rgba(20,29,24,.94);
+  box-shadow: 0 14px 38px rgba(0,0,0,.28);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+}
+.room-editor.visible { display: flex; }
+.room-editor strong { max-width: 180px; color: #f0d980; font-size: 11px; white-space: nowrap; }
+.room-editor label { display: flex; align-items: center; gap: 5px; color: #91a197; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.room-editor select { min-width: 128px; padding: 7px 26px 7px 8px; }
+.room-editor button { padding: 8px 10px; white-space: nowrap; }
+.room-editor button:disabled { cursor: not-allowed; opacity: .4; }
+
 .resident-creator {
   position: fixed;
   z-index: 40;
@@ -1082,6 +1106,10 @@ kbd {
 @media (max-width: 1500px) {
   .city-tool-options { overflow-x: auto; justify-content: flex-start; }
   .city-editing .panel { bottom: 126px; }
+}
+
+@media (max-width: 900px) {
+  .room-editor { right: 16px; bottom: 76px; left: 16px; overflow-x: auto; transform: none; }
 }
 
 @media (max-width: 1100px) {

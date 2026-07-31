@@ -65,6 +65,7 @@ The current vertical slice proves:
 - City-funded accessibility upgrades plus complete-trip Explorer routing that cycles destination types and reports sidewalk, crossing, and final-entrance barriers
 - Enterable Home Simulator interiors reached from their actual City Explorer street entrances with `F`, using the same step-free and clear-width access gate as city wayfinding
 - First-person room traversal with exterior and connecting door openings, wall containment, furniture collision, warm interior lighting, and room-aware location readouts
+- Selectable Home Simulator rooms with persistent oak, tile, concrete, or carpet floors; warm white, sage, clay, or slate walls; area-based finish costs; protected final-room deletion; automatic furnishing cleanup; and partial refunds
 - Live household activity and utility-disruption context inside the same persistent furnished home
 - Direct household control from resident cards or the interior `C` control, with persistent in-home positions and observer switching
 - Proximity-based `E` interactions for sleeping in beds, relaxing on sofas, eating at tables, and tending plants through the same need-changing action system used by autonomous residents
