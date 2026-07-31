@@ -115,9 +115,9 @@ app.innerHTML = `
       <div id="incident-list"></div>
     </div>
     <nav class="mode-switcher">
-      <button data-mode="city" class="active"><span>01</span> City Builder</button>
-      <button data-mode="explore"><span>02</span> City Explorer</button>
-      <button data-mode="home"><span>03</span> Home Simulator</button>
+      <button data-mode="city" class="active" title="Plan roads, zoning, services, mobility, and city policy"><span>01</span> City Builder</button>
+      <button data-mode="explore" title="Walk, drive, ride transit, and experience the city at street level"><span>02</span> City Explorer</button>
+      <button data-mode="home" title="Build rooms, furnish a home, and guide a household"><span>03</span> Home Simulator</button>
     </nav>
     <div class="stats">
       <div class="stat"><span>Population</span><strong id="population">0</strong></div>
@@ -127,6 +127,10 @@ app.innerHTML = `
       <div class="stat"><span>Mobility</span><strong id="mobility">Quiet</strong></div>
       <div class="stat"><span>Wellbeing</span><strong id="wellbeing">0%</strong></div>
     </div>
+    <section class="starter-journey" id="starter-journey" aria-label="Starter journey">
+      <header><div><span>STARTER JOURNEY</span><strong id="starter-progress">0 of 4 complete</strong></div><button id="starter-dismiss" type="button" aria-label="Hide starter journey">×</button></header>
+      <div id="starter-steps"></div>
+    </section>
     <div class="panel">
       <div class="eyebrow" id="panel-kicker">CITY BUILDER</div>
       <h2 id="panel-title">Draw a curved road</h2>
@@ -562,6 +566,7 @@ let lastMonthlyBalance = 0;
 let lastHomeActionSignature = "";
 let lastAutosaveRevision = world.changeRevision();
 let autosaveTimer = 0;
+let starterJourneyDismissed = false;
 let explorerRoadPaths: ExplorerRoadPath[] = [];
 let streetIntersections: StreetIntersection[] = [];
 let explorerRoadKey = "";
@@ -1822,10 +1827,50 @@ function syncSoundscape() {
   return profile;
 }
 
+function renderStarterJourney() {
+  const panel = document.querySelector<HTMLElement>("#starter-journey");
+  if (!panel) return;
+  panel.classList.toggle("dismissed", starterJourneyDismissed);
+  const steps = [
+    {
+      id: "zone",
+      label: "Shape a neighborhood",
+      detail: "Zone at least one parcel",
+      complete: world.lots.some(lot => lot.zone !== "unassigned")
+    },
+    {
+      id: "service",
+      label: "Support city life",
+      detail: "Place a municipal service",
+      complete: world.services.length > 0
+    },
+    {
+      id: "explore",
+      label: "Walk your streets",
+      detail: "Enter City Explorer",
+      complete: localStorage.getItem("gridless-starter-explored") === "1"
+    },
+    {
+      id: "home",
+      label: "Make a home personal",
+      detail: "Add a room, object, or resident",
+      complete: world.homes.some(home => home.rooms.length > 1 || home.furniture.length > 0 || home.residents.length > 0)
+    }
+  ];
+  const complete = steps.filter(step => step.complete).length;
+  document.querySelector("#starter-progress")!.textContent = complete === steps.length ? "Journey complete" : `${complete} of ${steps.length} complete`;
+  document.querySelector("#starter-steps")!.innerHTML = steps.map((step, index) => `
+    <button data-starter-step="${step.id}" class="${step.complete ? "complete" : ""}" ${step.complete ? "disabled" : ""}>
+      <i>${step.complete ? "✓" : index + 1}</i><span><strong>${step.label}</strong><small>${step.complete ? "Complete" : step.detail}</small></span>
+    </button>
+  `).join("");
+}
+
 function renderWorld() {
   syncSoundscape();
   updateHistoryControls();
   scheduleAutosave();
+  renderStarterJourney();
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
     explorerVehicleGroup.position.set(world.playerVehicle.position.x, .16, world.playerVehicle.position.z);
@@ -4172,6 +4217,7 @@ function setMode(next: Mode) {
     world.setControlledResident();
   }
   mode = next;
+  if (next === "explore") localStorage.setItem("gridless-starter-explored", "1");
   syncSoundscape();
   if (next !== "home") {
     selectedFurnitureId = null;
@@ -4209,6 +4255,7 @@ function setMode(next: Mode) {
   document.querySelector(".hud")!.classList.toggle("exploring", next === "explore");
   document.querySelector(".hud")!.classList.toggle("home-editing", next === "home");
   document.querySelector(".hud")!.classList.toggle("city-editing", next === "city");
+  renderStarterJourney();
   orbit.enabled = next !== "explore";
   renderAccessibilityEntrances();
   draft = [];
@@ -5346,6 +5393,30 @@ addEventListener("mousemove", event => {
 });
 
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(button => button.addEventListener("click", () => setMode(button.dataset.mode as Mode)));
+document.querySelector("#starter-dismiss")!.addEventListener("click", () => {
+  starterJourneyDismissed = true;
+  renderStarterJourney();
+  notice("Starter journey hidden. The field guide remains available from Help.");
+});
+document.querySelector("#starter-steps")!.addEventListener("click", event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-starter-step]");
+  if (!button || button.disabled) return;
+  const step = button.dataset.starterStep;
+  if (step === "zone") {
+    setMode("city");
+    setCityToolGroup("zone", true);
+    notice("Choose a zone, then click a parcel");
+  } else if (step === "service") {
+    setMode("city");
+    setCityToolGroup("services");
+    document.querySelector<HTMLButtonElement>('[data-city-tool="service"]')!.click();
+    notice("Choose an essential service, then place it near homes");
+  } else if (step === "explore") {
+    setMode("explore");
+  } else if (step === "home") {
+    setMode("home");
+  }
+});
 document.querySelector("#sound-toggle")!.addEventListener("click", async () => {
   if (soundscape.enabled) {
     soundscape.disable();
