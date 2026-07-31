@@ -146,7 +146,7 @@ Goal: turn the simulation into a place players want to inhabit.
 
 - Walking, driving, transit riding, interiors for selected building classes
 - Traffic signals, parking, sidewalks, crossings, and accessibility
-- Weather, seasons, day/night, lighting, soundscapes, and ambience
+- Deterministic weather, seasons, day/night, lighting, and scale-aware rain and snow are live; soundscapes and richer localized ambience remain ahead
 - Named districts, roads, landmarks, businesses, and civic events
 - Photo mode and guided city tours
 
@@ -156,6 +156,7 @@ Current vertical slice:
 
 - Every existing or player-drawn road spline generates a layered curb, continuous sidewalk, roadway, true-intersection junction surface, and dashed center marking. Road layers use distinct elevations and intersection caps instead of overlapping a disc at every curve point.
 - The City Builder planning view uses a clean visual level of detail without dense crosswalk, signal, facade-window, or building-shadow aliasing. City Explorer restores those human-scale details at street level.
+- Every city date produces deterministic clear, cloudy, rainy, or snowy weather with seasonal temperatures, wind, visibility, sky, fog, surface, water, and landscape changes. Builder uses a sparse regional precipitation field, Explorer restores street-scale flakes or rain streaks, and Home Simulator keeps the build surface unobstructed while preserving the shared conditions readout.
 - City Builder can switch the shared world into traffic, utilities, wellbeing, and development evidence views. Road pressure follows representative commute routes, road class, live events, and closures; parcel views expose service reliability, human outcomes, and construction progress without creating a separate simulation.
 - City Explorer finds a clear sidewalk near the selected lot or active street activity instead of dropping the player on a roadway or inside a building.
 - Walking now uses acceleration and deceleration, realistic walk and sprint speeds, head movement, sprint field of view, and a grounded jump.

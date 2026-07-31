@@ -65,6 +65,7 @@ canvas { display: block; }
 .simulation-controls > div { min-width: 92px; padding: 3px 8px; }
 .simulation-controls span { display: block; color: #8fa096; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .simulation-controls strong { display: block; margin-top: 1px; font-size: 14px; }
+.simulation-controls small { display: block; margin-top: 2px; color: #b8c9bd; font-size: 9px; font-weight: 650; white-space: nowrap; }
 .simulation-controls button {
   min-width: 32px;
   padding: 9px 7px;

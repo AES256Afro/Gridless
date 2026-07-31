@@ -51,6 +51,27 @@ import {
   type Road
 } from "./world";
 
+const weatherWorld = new World();
+const matchingWeatherWorld = new World();
+check(
+  JSON.stringify(weatherWorld.weather()) === JSON.stringify(matchingWeatherWorld.weather()),
+  "Weather was not deterministic for the same city date."
+);
+for (let month = 1; month <= 12; month++) {
+  weatherWorld.clock.month = month;
+  const weather = weatherWorld.weather();
+  check(
+    weather.temperatureC >= -20
+      && weather.temperatureC <= 40
+      && weather.windKph >= 0
+      && weather.precipitation >= 0
+      && weather.precipitation <= 1
+      && weather.visibility > 0
+      && weather.visibility <= 1,
+    `Weather left its supported range in month ${month}.`
+  );
+}
+
 const road: Road = {
   id: "test-road",
   name: "Test Avenue",
