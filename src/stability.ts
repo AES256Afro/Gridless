@@ -436,6 +436,9 @@ function integrityFailures(world: World) {
   }
   for (const home of world.homes) {
     if (!lotIds.has(home.lotId)) failures.push(`Home ${home.id} points to a missing lot.`);
+    if (home.name.length < 2 || home.name.length > 40 || !/^[\p{L}\p{N} .'-]+$/u.test(home.name)) {
+      failures.push(`Home ${home.id} has invalid saved identity.`);
+    }
     if (!home.rooms.length) failures.push(`Home ${home.id} has no interior rooms.`);
     const functionality = world.homeFunctionality(home);
     if (

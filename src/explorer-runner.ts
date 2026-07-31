@@ -279,6 +279,20 @@ check(identityWorld.undo() && identityWorld.cityName === "Second Name", "Undo di
 check(identityWorld.redo() && identityWorld.cityName === "Harbor Commons", "Redo did not restore the recovered city identity.");
 check(identityWorld.applyTemplate("blank") && identityWorld.cityName === "Untitled Region", "A blank template did not reset city identity.");
 
+const householdIdentityWorld = new World();
+const householdIdentityHome = householdIdentityWorld.ensureHome(householdIdentityWorld.lots[0]);
+check(!householdIdentityWorld.setHomeName(householdIdentityHome.id, "<home>"), "Home identity accepted unsafe markup characters.");
+check(householdIdentityWorld.setHomeName(householdIdentityHome.id, "The Rivera Home"), "A valid home identity was rejected.");
+const householdIdentitySnapshot = householdIdentityWorld.serialize();
+check(householdIdentityWorld.setHomeName(householdIdentityHome.id, "Temporary Name"), "Home identity could not be changed twice.");
+check(
+  householdIdentityWorld.restore(householdIdentitySnapshot)
+    && householdIdentityWorld.homes[0].name === "The Rivera Home",
+  "Recovery lost the saved home identity."
+);
+check(householdIdentityWorld.undo() && householdIdentityWorld.homes[0].name === "Temporary Name", "Undo did not restore home identity.");
+check(householdIdentityWorld.redo() && householdIdentityWorld.homes[0].name === "The Rivera Home", "Redo did not restore home identity.");
+
 const recoveryWorld = new World();
 const recoveryRevision = recoveryWorld.changeRevision();
 recoveryWorld.addRoad([{ x: 900, z: 940 }, { x: 950, z: 940 }], 9, "street");

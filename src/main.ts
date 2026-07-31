@@ -352,6 +352,8 @@ app.innerHTML = `
       <button id="sell-furniture" disabled>Sell</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
+      <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
+      <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
@@ -3940,6 +3942,7 @@ function updateHomeBuildControls(home: Home | null) {
   const style = document.querySelector<HTMLSelectElement>("#furniture-style")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
+  const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   move.disabled = !selected;
   rotate.disabled = !selected;
   style.disabled = !selected;
@@ -3947,6 +3950,9 @@ function updateHomeBuildControls(home: Home | null) {
   sell.disabled = !selected;
   addResident.disabled = !home || home.residents.length >= 8;
   addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
+  homeNameInput.disabled = !home;
+  document.querySelector<HTMLButtonElement>("#rename-home")!.disabled = !home;
+  if (home && document.activeElement !== homeNameInput) homeNameInput.value = home.name;
   move.textContent = movingFurnitureId && selected ? `Cancel ${selected.kind} move` : "Move";
   move.classList.toggle("active", Boolean(movingFurnitureId && selected));
   rotate.textContent = selected ? `Rotate ${selected.kind} 45°` : "Rotate 45°";
@@ -5587,6 +5593,27 @@ document.querySelector("#city-name-input")!.addEventListener("keydown", event =>
   event.preventDefault();
   event.stopPropagation();
   applyCityName();
+});
+function applyHomeName() {
+  const home = currentHome();
+  const input = document.querySelector<HTMLInputElement>("#home-name-input")!;
+  if (!home) return;
+  const previous = home.name;
+  if (!world.setHomeName(home.id, input.value)) {
+    input.value = previous;
+    notice("Use 2 to 40 letters, numbers, spaces, apostrophes, periods, or hyphens");
+    return;
+  }
+  renderWorld();
+  if (mode === "home") document.querySelector("#panel-title")!.textContent = home.name;
+  notice(previous === home.name ? `${home.name} already has that name` : `Home renamed ${home.name}`);
+}
+document.querySelector("#rename-home")!.addEventListener("click", applyHomeName);
+document.querySelector("#home-name-input")!.addEventListener("keydown", event => {
+  if ((event as KeyboardEvent).code !== "Enter") return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyHomeName();
 });
 document.querySelector("#sound-toggle")!.addEventListener("click", async () => {
   if (soundscape.enabled) {
