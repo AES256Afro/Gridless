@@ -457,6 +457,7 @@ kbd {
 
 .actionbar button { padding: 8px 11px; background: rgba(255,255,255,.08); }
 .actionbar button:hover { color: white; background: rgba(255,255,255,.14); }
+.actionbar button:disabled { cursor: not-allowed; opacity: .38; }
 .actionbar select {
   max-width: 142px;
   padding: 8px 9px;
