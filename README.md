@@ -50,6 +50,7 @@ The current vertical slice proves:
 - Live traffic, utilities, wellbeing, and development planning overlays derived from the same roads, commuter routes, service networks, households, and construction state used by the simulation
 - Persistent 256-meter spatial chunks with exact road and lot membership, population/job aggregates, focus-driven agent, active, and aggregate tiers, live regional-detail diagnostics, save migration, and a large-region renderer cutoff
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout
+- Explorer photo mode with clean scene composition, automatic world-label suppression, live location/time/weather metadata, adjustable 28° to 75° field of view, and a completely hideable capture HUD
 - Detected street intersections with zebra crossings, curb-ramp pads, and deterministic two-direction traffic signals
 - Right-hand AI traffic lanes with red-light stopping, green-light movement, visible brake lights, and signal-ahead guidance while driving
 - A drivable street-level car with acceleration, braking, reverse, steering, handbrake, road-aware traction, collision, chase camera, and safe sidewalk exit

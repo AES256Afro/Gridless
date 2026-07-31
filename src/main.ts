@@ -353,6 +353,12 @@ app.innerHTML = `
     <div class="interaction-prompt" id="interaction-prompt" aria-live="polite">
       <kbd>C</kbd><span>Choose a resident to control</span>
     </div>
+    <div class="photo-mode-panel" id="photo-mode-panel">
+      <span>PHOTO MODE</span>
+      <strong id="photo-location">City streets</strong>
+      <small id="photo-conditions">Clear · 08:00</small>
+      <div><kbd>[</kbd><kbd>]</kbd> Lens <b id="photo-lens">55mm</b> · <kbd>H</kbd> Hide UI · <kbd>O</kbd> Exit</div>
+    </div>
     <div class="crosshair"></div>
   </div>`;
 
@@ -525,6 +531,9 @@ let accessibleRouteSummary: {
 let accessibilityKindIndex = -1;
 let transitRide: TransitRide | null = null;
 let activeTransitVehicle: TransitRide | null = null;
+let photoMode = false;
+let photoHudVisible = true;
+let photoFov = 55;
 
 const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x303533, roughness: .94 });
 const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b4aa, roughness: .98 });
@@ -1058,7 +1067,7 @@ function updateTransitVehicle(dt: number) {
     1.65,
     pose.point.z + pose.tangent.z * 7
   );
-  const nextFov = THREE.MathUtils.damp(camera.fov, 59, 5, dt);
+  const nextFov = THREE.MathUtils.damp(camera.fov, photoMode ? photoFov : 59, 5, dt);
   if (Math.abs(nextFov - camera.fov) > .001) {
     camera.fov = nextFov;
     camera.updateProjectionMatrix();
@@ -1117,7 +1126,7 @@ function completeTransitAlight(stop: NonNullable<ReturnType<typeof advanceTransi
   camera.position.set(spawn.x, 1.82, spawn.z);
   yaw = Math.atan2(-pose.tangent.x, -pose.tangent.z);
   pitch = -.05;
-  camera.fov = 55;
+  camera.fov = photoMode ? photoFov : 55;
   camera.updateProjectionMatrix();
   requestExplorerPointerLock();
   setPanel(
@@ -1515,7 +1524,7 @@ function toggleExplorerVehicle() {
       "CITY EXPLORER",
       "Walk the living city",
       "Follow continuous sidewalks, cross the roadway, enter parks, and move around the same buildings created in City Builder.",
-      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;Esc|Return"
+      "WASD|Walk;Mouse|Look;Shift|Sprint;Space|Jump;F|Enter home;T|Ride transit;E|Drive;R|Accessible route;O|Photo mode;Esc|Return"
     );
     updateExplorerContext();
     notice("Vehicle parked. Returned to the sidewalk");
@@ -1685,7 +1694,7 @@ function updateExplorerVehicle(dt: number) {
     1.05,
     movement.position.z + forward.z * 4
   );
-  const targetFov = 57 + Math.min(7, Math.abs(explorerVehicleSpeed) * .22);
+  const targetFov = photoMode ? photoFov : 57 + Math.min(7, Math.abs(explorerVehicleSpeed) * .22);
   const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 5, dt);
   if (Math.abs(nextFov - camera.fov) > .001) {
     camera.fov = nextFov;
@@ -2363,6 +2372,7 @@ function updateClockDisplay() {
   document.querySelector("#sim-date")!.textContent = `Y${year} · ${monthNames[month - 1]} ${day}`;
   document.querySelector("#sim-time")!.textContent = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
   document.querySelector("#sim-weather")!.textContent = `${weather.label} · ${weather.temperatureC}°C · ${weather.windKph} km/h`;
+  updatePhotoModePanel();
   const daylight = Math.max(0, Math.sin((hours + minutes / 60 - 6) / 12 * Math.PI));
   const weatherLight = weather.kind === "rain" ? .55 : weather.kind === "cloudy" ? .72 : weather.kind === "snow" ? .82 : 1;
   sun.intensity = (.38 + daylight * 2.82) * weatherLight;
@@ -2798,6 +2808,8 @@ function makeLabel(text: string) {
   const material = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(75, 14, 1);
+  sprite.userData.worldLabel = true;
+  sprite.visible = !photoMode;
   return sprite;
 }
 
@@ -3408,6 +3420,8 @@ function makeHomeLabel(text: string) {
     depthTest: false
   }));
   sprite.scale.set(5.6, 1.05, 1);
+  sprite.userData.worldLabel = true;
+  sprite.visible = !photoMode;
   return sprite;
 }
 
@@ -3858,7 +3872,43 @@ function notice(text: string) {
   document.querySelector("#notice")!.textContent = text;
 }
 
+function updatePhotoModePanel() {
+  if (!photoMode) return;
+  const weather = world.weather();
+  const hours = Math.floor(world.clock.minute / 60);
+  const minutes = Math.floor(world.clock.minute % 60);
+  document.querySelector("#photo-location")!.textContent = document.querySelector("#explorer-location")!.textContent ?? "City streets";
+  document.querySelector("#photo-conditions")!.textContent = `${weather.label} · ${weather.temperatureC}°C · ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  document.querySelector("#photo-lens")!.textContent = `${Math.round(43.3 / (2 * Math.tan(THREE.MathUtils.degToRad(photoFov) / 2)))}mm`;
+}
+
+function setPhotoMode(enabled: boolean) {
+  photoMode = enabled && mode === "explore";
+  photoHudVisible = true;
+  app.classList.toggle("photo-mode", photoMode);
+  app.classList.remove("photo-clean");
+  scene.traverse(object => {
+    if (object.userData.worldLabel) object.visible = !photoMode;
+  });
+  if (photoMode) {
+    photoFov = THREE.MathUtils.clamp(camera.fov, 35, 70);
+    updatePhotoModePanel();
+  } else if (mode === "explore") {
+    camera.fov = explorerDriving ? 57 : transitRide ? 59 : 55;
+    camera.updateProjectionMatrix();
+  }
+}
+
+function adjustPhotoLens(delta: number) {
+  if (!photoMode) return;
+  photoFov = THREE.MathUtils.clamp(photoFov + delta, 28, 75);
+  camera.fov = photoFov;
+  camera.updateProjectionMatrix();
+  updatePhotoModePanel();
+}
+
 function setMode(next: Mode) {
+  if (next !== "explore" && photoMode) setPhotoMode(false);
   if (mode === "explore" && next !== "explore" && explorerDriving) {
     world.rememberPlayerVehicle({
       x: explorerVehicleGroup.position.x,
@@ -4840,6 +4890,22 @@ addEventListener("keydown", event => {
     notice("Resident creation cancelled");
     return;
   }
+  if (mode === "explore" && event.code === "KeyO" && !event.repeat) {
+    event.preventDefault();
+    setPhotoMode(!photoMode);
+    return;
+  }
+  if (mode === "explore" && photoMode && event.code === "KeyH" && !event.repeat) {
+    event.preventDefault();
+    photoHudVisible = !photoHudVisible;
+    app.classList.toggle("photo-clean", !photoHudVisible);
+    return;
+  }
+  if (mode === "explore" && photoMode && (event.code === "BracketLeft" || event.code === "BracketRight") && !event.repeat) {
+    event.preventDefault();
+    adjustPhotoLens(event.code === "BracketLeft" ? -4 : 4);
+    return;
+  }
   if (mode === "home" && event.code === "Escape" && (movingFurnitureId || homeDraft)) {
     event.preventDefault();
     movingFurnitureId = null;
@@ -4955,6 +5021,11 @@ addEventListener("keydown", event => {
   if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ") {
     event.preventDefault();
     if (world.undo()) { renderWorld(); notice("Construction undone"); }
+  }
+  if (event.code === "Escape" && mode === "explore" && photoMode) {
+    event.preventDefault();
+    setPhotoMode(false);
+    return;
   }
   if (event.code === "Escape" && mode === "explore") setMode("city");
 });
@@ -5469,7 +5540,7 @@ function animate() {
         ? Math.sin(explorerStepPhase * .5) * (sprinting ? .009 : .004)
         : 0;
       camera.position.y = (interior ? 2.02 : 1.82) + explorerVerticalOffset + bob;
-      const targetFov = sprinting && movementSpeed > 5 ? 60 : 55;
+      const targetFov = photoMode ? photoFov : sprinting && movementSpeed > 5 ? 60 : 55;
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 7, dt);
       if (Math.abs(nextFov - camera.fov) > .001) {
         camera.fov = nextFov;

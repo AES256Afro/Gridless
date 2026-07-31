@@ -151,7 +151,7 @@ Goal: turn the simulation into a place players want to inhabit.
 - Traffic signals, parking, sidewalks, crossings, and accessibility
 - Deterministic weather, seasons, day/night, lighting, and scale-aware rain and snow are live; soundscapes and richer localized ambience remain ahead
 - Named districts, roads, landmarks, businesses, and civic events
-- Photo mode and guided city tours
+- Photo mode is live with location and weather metadata, adjustable lens, world-label cleanup, and a one-key clean capture view; guided city tours remain ahead
 
 Exit gate: players can navigate across town without developer tools and can recognize districts from street-level character alone.
 
@@ -165,6 +165,7 @@ Current vertical slice:
 - Walking now uses acceleration and deceleration, realistic walk and sprint speeds, head movement, sprint field of view, and a grounded jump.
 - Collision checks keep the player inside land boundaries, stop movement through oriented building footprints and municipal facilities, and preserve wall sliding where one movement axis remains clear.
 - The street-level HUD reports the nearest named road, current sidewalk, roadway, frontage, park, or block surface, and standing, walking, sprinting, airborne, or blocked state.
+- Pressing `O` enters Explorer photo mode from walking, driving, transit, or an interior. The mode suppresses planning and world labels, retains a compact place/time/weather card, adjusts the lens from 28° to 75° with bracket keys, and lets `H` remove the last overlay for a clean capture without interrupting the living simulation.
 - Pointer-lock failure is handled without a runtime error, and clicking the city view retries mouse capture.
 - Road crossings are generated from actual spline intersections, with zebra markings, curb-ramp pads, and signal poles on both street axes.
 - Traffic signals follow a deterministic two-direction cycle with green, yellow, and all-red clearance phases.

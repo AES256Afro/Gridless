@@ -1032,6 +1032,39 @@ kbd {
   font: 800 10px "DM Sans", sans-serif;
   text-align: center;
 }
+
+.photo-mode-panel {
+  display: none;
+  position: absolute;
+  top: 28px;
+  left: 28px;
+  min-width: 230px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 10px;
+  color: #edf2ee;
+  background: rgba(12,18,15,.68);
+  box-shadow: 0 12px 34px rgba(0,0,0,.2);
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+}
+.photo-mode .photo-mode-panel { display: block; }
+.photo-clean .photo-mode-panel { display: none; }
+.photo-mode-panel > span { display: block; color: #f0d980; font-size: 8px; font-weight: 850; letter-spacing: .14em; }
+.photo-mode-panel > strong { display: block; margin-top: 3px; font-size: 15px; }
+.photo-mode-panel > small { display: block; margin-top: 2px; color: #b7c4bb; font-size: 9px; }
+.photo-mode-panel > div { margin-top: 8px; color: #a9b6ad; font-size: 8px; }
+.photo-mode-panel kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.18); border-radius: 4px; color: #eef3ef; background: rgba(255,255,255,.06); }
+.photo-mode .hud > .brand,
+.photo-mode .hud > .simulation-controls,
+.photo-mode .hud > .incident-panel,
+.photo-mode .hud > .mode-switcher,
+.photo-mode .hud > .stats,
+.photo-mode .hud > .panel,
+.photo-mode .hud > .actionbar,
+.photo-mode .hud > .explorer-status,
+.photo-mode .hud > .interaction-prompt,
+.photo-mode .hud > .crosshair { opacity: 0; pointer-events: none; }
 .interaction-prompt span {
   color: #e1e8e2;
   font-size: 11px;
