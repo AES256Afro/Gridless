@@ -2636,6 +2636,16 @@ export class World {
     return true;
   }
 
+  setHomeName(homeId: string, value: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const name = value.trim().replace(/\s+/g, " ");
+    if (!home || name.length < 2 || name.length > 40 || !/^[\p{L}\p{N} .'-]+$/u.test(name)) return false;
+    if (name === home.name) return true;
+    this.checkpoint();
+    home.name = name;
+    return true;
+  }
+
   changeRevision() {
     return this.revision;
   }

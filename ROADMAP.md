@@ -61,6 +61,8 @@ The global activity center retains the latest 30 notices for the current play se
 
 Each world now has a player-editable city name in the Builder foundation controls. The name appears in the persistent HUD and browser title, accepts a bounded safe character set, resets with a new region template, and participates in snapshots, recovery, Undo, and Redo.
 
+Home Simulator exposes the same authored identity for each property or household. Names use the bounded safe character set, remain attached to the exact city lot, enter the activity feed, and participate in snapshots, recovery, Undo, and Redo.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
