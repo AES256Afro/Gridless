@@ -428,6 +428,31 @@ export type Home = {
   relationships: ResidentRelationship[];
 };
 
+export type SpatialChunk = {
+  id: string;
+  gridX: number;
+  gridZ: number;
+  size: number;
+  center: Point2;
+  lotIds: string[];
+  roadIds: string[];
+  households: number;
+  businesses: number;
+  population: number;
+  jobs: number;
+};
+
+export type SpatialDetailTier = "agent" | "active" | "aggregate";
+
+export type SpatialLodSummary = {
+  agentChunks: number;
+  activeChunks: number;
+  aggregateChunks: number;
+  agentPopulation: number;
+  activePopulation: number;
+  aggregatePopulation: number;
+};
+
 export type WorldSnapshot = {
   version: 1;
   templateId?: WorldTemplate["id"];
@@ -447,6 +472,8 @@ export type WorldSnapshot = {
   transitLines?: TransitLine[];
   cityEvents?: CityEvent[];
   accessibilityEntrances?: AccessibilityEntrance[];
+  spatialChunkSize?: number;
+  spatialChunks?: SpatialChunk[];
 };
 
 export type CityEconomy = {
@@ -515,6 +542,8 @@ export class World {
   transitLines: TransitLine[] = [];
   cityEvents: CityEvent[] = [];
   accessibilityEntrances: AccessibilityEntrance[] = [];
+  spatialChunkSize = 256;
+  spatialChunks: SpatialChunk[] = [];
   lastDailyActivity = { households: 0, businesses: 0 };
   controlledResidentId?: string;
   private history: WorldSnapshot[] = [];
@@ -530,6 +559,7 @@ export class World {
   }
 
   snapshot(): WorldSnapshot {
+    this.refreshSpatialChunks();
     return clone({
       version: 1,
       templateId: this.templateId,
@@ -548,8 +578,106 @@ export class World {
       playerVehicle: this.playerVehicle,
       transitLines: this.transitLines,
       cityEvents: this.cityEvents,
-      accessibilityEntrances: this.accessibilityEntrances
+      accessibilityEntrances: this.accessibilityEntrances,
+      spatialChunkSize: this.spatialChunkSize,
+      spatialChunks: this.spatialChunks
     });
+  }
+
+  refreshSpatialChunks() {
+    const chunkSize = this.spatialChunkSize;
+    const chunks = new Map<string, SpatialChunk>();
+    const ensureChunk = (gridX: number, gridZ: number) => {
+      const id = `chunk-${gridX}-${gridZ}`;
+      let chunk = chunks.get(id);
+      if (!chunk) {
+        chunk = {
+          id,
+          gridX,
+          gridZ,
+          size: chunkSize,
+          center: { x: (gridX + .5) * chunkSize, z: (gridZ + .5) * chunkSize },
+          lotIds: [],
+          roadIds: [],
+          households: 0,
+          businesses: 0,
+          population: 0,
+          jobs: 0
+        };
+        chunks.set(id, chunk);
+      }
+      return chunk;
+    };
+    const chunkAt = (point: Point2) => ensureChunk(
+      Math.floor(point.x / chunkSize),
+      Math.floor(point.z / chunkSize)
+    );
+    for (const lot of this.lots) {
+      const chunk = chunkAt(lot.center);
+      chunk.lotIds.push(lot.id);
+      chunk.households += lot.households;
+      chunk.businesses += lot.businesses;
+      chunk.population += this.lotPopulation(lot);
+      chunk.jobs += this.lotJobs(lot);
+    }
+    for (const road of this.roads) {
+      const roadChunkIds = new Set<string>();
+      for (let index = 0; index < road.points.length - 1; index++) {
+        const start = road.points[index];
+        const end = road.points[index + 1];
+        const length = distance(start, end);
+        const steps = Math.max(1, Math.ceil(length / (chunkSize / 2)));
+        for (let step = 0; step <= steps; step++) {
+          const progress = step / steps;
+          roadChunkIds.add(chunkAt({
+            x: start.x + (end.x - start.x) * progress,
+            z: start.z + (end.z - start.z) * progress
+          }).id);
+        }
+      }
+      for (const chunkId of roadChunkIds) chunks.get(chunkId)?.roadIds.push(road.id);
+    }
+    this.spatialChunks = [...chunks.values()]
+      .map(chunk => ({
+        ...chunk,
+        lotIds: chunk.lotIds.sort(),
+        roadIds: [...new Set(chunk.roadIds)].sort()
+      }))
+      .sort((first, second) => first.gridZ - second.gridZ || first.gridX - second.gridX);
+    return this.spatialChunks;
+  }
+
+  spatialDetailTier(chunk: SpatialChunk, focus: Point2): SpatialDetailTier {
+    const distanceFromFocus = distance(chunk.center, focus);
+    if (distanceFromFocus <= chunk.size * 1.35) return "agent";
+    if (distanceFromFocus <= chunk.size * 3.4) return "active";
+    return "aggregate";
+  }
+
+  spatialLodSummary(focus: Point2): SpatialLodSummary {
+    this.refreshSpatialChunks();
+    const summary: SpatialLodSummary = {
+      agentChunks: 0,
+      activeChunks: 0,
+      aggregateChunks: 0,
+      agentPopulation: 0,
+      activePopulation: 0,
+      aggregatePopulation: 0
+    };
+    for (const chunk of this.spatialChunks) {
+      const tier = this.spatialDetailTier(chunk, focus);
+      if (tier === "agent") {
+        summary.agentChunks++;
+        summary.agentPopulation += chunk.population;
+      } else if (tier === "active") {
+        summary.activeChunks++;
+        summary.activePopulation += chunk.population;
+      } else {
+        summary.aggregateChunks++;
+        summary.aggregatePopulation += chunk.population;
+      }
+    }
+    return summary;
   }
 
   private checkpoint() {
@@ -2204,6 +2332,7 @@ export class World {
 
   private apply(snapshot: WorldSnapshot) {
     this.templateId = snapshot.templateId ?? "nyc";
+    this.spatialChunkSize = Math.round(clamp(snapshot.spatialChunkSize ?? 256, 128, 1024));
     this.roads = clone(snapshot.roads);
     this.areas = clone(snapshot.areas ?? NYC_TEMPLATE.areas);
     this.lots = clone(snapshot.lots).map(lot => {
@@ -2355,6 +2484,7 @@ export class World {
     this.lastDailyActivity = { households: 0, businesses: 0 };
     this.rebuildCommutes();
     this.rebuildAccessibilityEntrances();
+    this.refreshSpatialChunks();
   }
 
   private rebuildLots() {
@@ -2414,6 +2544,7 @@ export class World {
     }
     this.lots = lots;
     this.rebuildCommutes();
+    this.refreshSpatialChunks();
   }
 
   private rebuildCommutes() {

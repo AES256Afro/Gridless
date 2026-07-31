@@ -239,6 +239,16 @@ Goal: support very large cities without sacrificing responsive play.
 
 Exit gate: a one-million-person region maintains target frame and simulation rates on the minimum supported machine.
 
+Current foundation:
+
+- The world is deterministically partitioned into persistent 256-meter spatial chunks. Every lot belongs to exactly one chunk, road segments register with every chunk they cross, and chunk aggregates retain households, businesses, population, and jobs.
+- Each chunk resolves to agent, active, or aggregate detail from the current Builder focus, Explorer position, or Home lot. The live HUD reports active-detail residents and aggregate chunk counts.
+- Small reference cities retain all current geometry. Regions larger than 16 chunks render detailed parcels only in agent and active tiers, establishing a safe cutoff for future impostors and streamed chunk loading.
+- Chunk size and metadata persist in snapshots. Older saves rebuild valid metadata from their existing roads and lots, while the stability gate verifies unique membership, references, and population reconciliation.
+- `npm run test:explorer` verifies the eight-chunk NYC reference, exact lot membership, aggregate population equality, focus-to-distance tier changes, and snapshot persistence.
+
+Next scale systems are chunk impostors, instanced building batches, hierarchical inter-chunk pathfinding, deterministic background workers, and real million-population performance budgets.
+
 ## Milestone 4: Players jump in
 
 Goal: make invitations frictionless while protecting the host’s city.
