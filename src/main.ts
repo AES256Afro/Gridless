@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   CITY_EVENT_DEFINITIONS,
+  HOME_BUILD_COSTS,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
@@ -270,12 +271,16 @@ app.innerHTML = `
       <button data-home-tool="select" class="active">Inspect</button>
       <button data-home-tool="room">Draw room</button>
       <div class="tool-divider"></div>
-      <button data-home-tool="sofa">Sofa</button>
-      <button data-home-tool="table">Table</button>
-      <button data-home-tool="bed">Bed</button>
-      <button data-home-tool="plant">Plant</button>
+      <button data-home-tool="sofa">Sofa · $1.4k</button>
+      <button data-home-tool="table">Table · $650</button>
+      <button data-home-tool="bed">Bed · $1.2k</button>
+      <button data-home-tool="plant">Plant · $120</button>
+      <div class="tool-divider"></div>
+      <button id="rotate-furniture" disabled>Rotate 45°</button>
+      <button id="sell-furniture" disabled>Sell</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
+      <div class="home-budget" id="home-budget">Design budget unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
     <div class="explorer-status" aria-label="Explorer movement status">
@@ -376,6 +381,7 @@ let cityTool: CityTool = "road";
 let cityToolGroup: CityToolGroup = "build";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
+let selectedFurnitureId: string | null = null;
 let yaw = Math.PI;
 let pitch = 0;
 let simulationSpeed = 12;
@@ -3021,7 +3027,13 @@ function renderHome() {
   const lot = mode === "home" ? selectedLot : explorerInterior?.lot ?? null;
   const home = mode === "home" ? currentHome() : explorerInterior?.home ?? null;
   homeGroup.visible = Boolean(lot && home);
-  if (!lot || !home) return;
+  if (!lot || !home) {
+    if (mode === "home") updateHomeBuildControls(null);
+    return;
+  }
+  if (selectedFurnitureId && !home.furniture.some(item => item.id === selectedFurnitureId)) {
+    selectedFurnitureId = null;
+  }
   lastHomeActionSignature = home.residents.map(resident =>
     `${resident.id}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
   ).join("|");
@@ -3113,7 +3125,10 @@ function renderHome() {
     person.position.set(position.x, .2, position.z);
     homeGroup.add(person);
   });
-  if (mode === "home") updateHouseholdSummary(home);
+  if (mode === "home") {
+    updateHomeBuildControls(home);
+    updateHouseholdSummary(home);
+  }
 }
 
 function makeHomeLabel(text: string) {
@@ -3262,6 +3277,7 @@ function addWall(group: THREE.Group, x: number, z: number, length: number, thick
 
 function createFurniture(item: Home["furniture"][number]) {
   const group = new THREE.Group();
+  group.userData.furnitureId = item.id;
   group.position.set(item.x, .25, item.z);
   group.rotation.y = item.rotation;
   if (item.kind === "sofa" || item.kind === "bed") {
@@ -3288,7 +3304,37 @@ function createFurniture(item: Home["furniture"][number]) {
     leaves.position.y = .75;
     group.add(pot, leaves);
   }
+  group.traverse(child => { child.userData.furnitureId = item.id; });
+  if (mode === "home" && selectedFurnitureId === item.id) {
+    const selection = new THREE.Mesh(
+      new THREE.RingGeometry(item.kind === "plant" ? .62 : 1.2, item.kind === "plant" ? .76 : 1.36, 32),
+      new THREE.MeshBasicMaterial({ color: 0xf0d980, transparent: true, opacity: .92, side: THREE.DoubleSide })
+    );
+    selection.rotation.x = -Math.PI / 2;
+    selection.position.y = .025;
+    selection.userData.furnitureId = item.id;
+    group.add(selection);
+  }
   return group;
+}
+
+function formatHomeCurrency(value: number) {
+  return `$${Math.round(value).toLocaleString("en-US")}`;
+}
+
+function updateHomeBuildControls(home: Home | null) {
+  const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
+  const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
+  const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
+  rotate.disabled = !selected;
+  sell.disabled = !selected;
+  rotate.textContent = selected ? `Rotate ${selected.kind} 45°` : "Rotate 45°";
+  sell.textContent = selected
+    ? `Sell ${selected.kind} · ${formatHomeCurrency(HOME_BUILD_COSTS[selected.kind] * .5)}`
+    : "Sell";
+  document.querySelector("#home-budget")!.textContent = home
+    ? `${formatHomeCurrency(world.homeRemainingBudget(home))} left · ${formatHomeCurrency(home.designBudget)} budget`
+    : "Design budget unavailable";
 }
 
 function updateHouseholdSummary(home: Home) {
@@ -3317,7 +3363,7 @@ function updateHouseholdSummary(home: Home) {
       ? ` Right now, ${activeHouseholdActions.join(" and ")}.`
       : "";
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -4053,6 +4099,17 @@ renderer.domElement.addEventListener("pointerdown", event => {
   pointer.set(event.clientX / innerWidth * 2 - 1, -(event.clientY / innerHeight) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
   if (mode === "home") {
+    const home = currentHome();
+    const furnitureHit = raycaster
+      .intersectObjects(homeGroup.children, true)
+      .find(item => item.object.userData.furnitureId);
+    if (homeTool === "select" && home && furnitureHit) {
+      selectedFurnitureId = furnitureHit.object.userData.furnitureId as string;
+      renderHome();
+      const selected = home.furniture.find(item => item.id === selectedFurnitureId);
+      if (selected) notice(`${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} selected`);
+      return;
+    }
     const foundationHit = raycaster.intersectObjects(homeGroup.children, true).find(item => item.object.userData.homeSurface);
     const placementHit = foundationHit ?? raycaster.intersectObject(ground)[0];
     if (!selectedLot || !placementHit) return;
@@ -4070,8 +4127,13 @@ renderer.domElement.addEventListener("pointerdown", event => {
       }
       return;
     }
-    const home = currentHome();
     if (!home) return;
+    if (homeTool === "select") {
+      selectedFurnitureId = null;
+      renderHome();
+      notice("Selection cleared");
+      return;
+    }
     if (homeTool === "room") {
       if (!homeDraft) {
         homeDraft = point;
@@ -4085,18 +4147,22 @@ renderer.domElement.addEventListener("pointerdown", event => {
           width: Math.abs(point.x - homeDraft.x),
           depth: Math.abs(point.z - homeDraft.z)
         };
-        if (world.addRoom(home.id, room)) notice(`${room.kind} built`);
-        else notice("Rooms must be at least 2m × 2m");
+        const roomCost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
+        if (world.addRoom(home.id, room)) notice(`${room.kind} built for ${formatHomeCurrency(roomCost)}`);
+        else if (room.width < 2 || room.depth < 2) notice("Rooms must be at least 2m × 2m");
+        else notice(`This room needs ${formatHomeCurrency(roomCost)}. The design budget has ${formatHomeCurrency(world.homeRemainingBudget(home))} left`);
         homeDraft = null;
         renderDraft();
         renderWorld();
       }
-    } else if (homeTool !== "select") {
+    } else {
       if (world.addFurniture(home.id, homeTool, point.x, point.z)) {
         renderWorld();
         notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed`);
       } else {
-        notice("Furniture must stay inside a room");
+        notice(world.homeRemainingBudget(home) < HOME_BUILD_COSTS[homeTool]
+          ? `${formatHomeCurrency(HOME_BUILD_COSTS[homeTool])} needed. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+          : "Furniture must stay inside a room");
       }
     }
     return;
@@ -4606,10 +4672,27 @@ document.querySelector("#staffing-policy")!.addEventListener("change", event => 
 document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(button => button.addEventListener("click", () => {
   homeTool = button.dataset.homeTool as HomeTool;
   homeDraft = null;
+  if (homeTool !== "select") selectedFurnitureId = null;
   renderDraft();
+  renderHome();
   document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item === button));
   notice(homeTool === "room" ? "Click two corners to draw a room" : homeTool === "select" ? "Inspect mode" : `Click inside the home to place a ${homeTool}`);
 }));
+document.querySelector("#rotate-furniture")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home || !selectedFurnitureId || !world.rotateFurniture(home.id, selectedFurnitureId)) return;
+  renderWorld();
+  notice("Furniture rotated 45°");
+});
+document.querySelector("#sell-furniture")!.addEventListener("click", () => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  if (!home || !item || !world.removeFurniture(home.id, item.id)) return;
+  const refund = HOME_BUILD_COSTS[item.kind] * .5;
+  selectedFurnitureId = null;
+  renderWorld();
+  notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
+});
 document.querySelector("#add-resident")!.addEventListener("click", () => {
   const home = currentHome();
   if (!home) return;

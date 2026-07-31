@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `eee30198`
+Deterministic signature: `c9f76510`
 
 Command:
 
@@ -33,7 +33,7 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 336 KB | 356 KB |
 
-The largest observed snapshot was 362,949 bytes.
+The largest observed snapshot was 362,989 bytes.
 
 ## Load and recovery
 
@@ -54,7 +54,7 @@ The run found no:
 - negative household or business counts
 - cohort or sector sum mismatches
 - resident needs outside 0 to 100
-- missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, or furniture placed outside every room
+- missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, invalid design budgets, overspending, invalid furniture rotation, or furniture placed outside every room
 - invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
 - broken home, incident, failure, service, utility, or commute references
 - duplicate or invalid transit lines, source-road references, colors, stop counts, stops, routes, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
@@ -69,7 +69,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With spatial chunk reconstruction and aggregate reconciliation, deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance, road closures, route delay, temporary transit operations, the saved entrance layer, home-interior checks, personality, conversation-intent, social-memory, and reconciliation validation, and relationship integrity checks included, the latest complete deterministic gate took about 61 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With spatial chunk reconstruction and aggregate reconciliation, deterministic hourly parking turnover, curb scheduling, delivery and enforcement activity, named event attendance, road closures, route delay, temporary transit operations, the saved entrance layer, home-interior and design-budget checks, personality, conversation-intent, social-memory, and reconciliation validation, and relationship integrity checks included, the latest complete deterministic gate took about 59 seconds for both decades on the development machine.
 
 ## Boundary
 

@@ -424,9 +424,19 @@ export type Home = {
   floors: number;
   rooms: Array<{ id: string; kind: string; x: number; z: number; width: number; depth: number }>;
   furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant"; x: number; z: number; rotation: number }>;
+  designBudget: number;
+  designSpent: number;
   residents: Resident[];
   relationships: ResidentRelationship[];
 };
+
+export const HOME_BUILD_COSTS = {
+  roomPerSquareMeter: 220,
+  sofa: 1_400,
+  table: 650,
+  bed: 1_200,
+  plant: 120
+} as const;
 
 export type SpatialChunk = {
   id: string;
@@ -2257,6 +2267,8 @@ export class World {
         { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0 },
         { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0 }
       ],
+      designBudget: 60_000,
+      designSpent: HOME_BUILD_COSTS.sofa + HOME_BUILD_COSTS.plant,
       residents: [],
       relationships: []
     };
@@ -2268,8 +2280,11 @@ export class World {
   addRoom(homeId: string, room: Omit<Home["rooms"][number], "id">) {
     const home = this.homes.find(item => item.id === homeId);
     if (!home || room.width < 2 || room.depth < 2) return false;
+    const cost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
+    if (this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
     home.rooms.push({ id: crypto.randomUUID(), ...clone(room) });
+    home.designSpent += cost;
     return true;
   }
 
@@ -2285,9 +2300,40 @@ export class World {
       Math.abs(x - item.x) <= item.width / 2 - size.width / 2 - .1
       && Math.abs(z - item.z) <= item.depth / 2 - size.depth / 2 - .1
     );
-    if (!home || !room) return false;
+    const cost = HOME_BUILD_COSTS[kind];
+    if (!home || !room || this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
     home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0 });
+    home.designSpent += cost;
+    return true;
+  }
+
+  homeRemainingBudget(home: Home) {
+    return Math.max(0, home.designBudget - home.designSpent);
+  }
+
+  rotateFurniture(homeId: string, furnitureId: string, quarterTurns = 1) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (!home || !furniture) return false;
+    this.checkpoint();
+    furniture.rotation = positiveModulo(
+      furniture.rotation + quarterTurns * Math.PI / 4,
+      Math.PI * 2
+    );
+    return true;
+  }
+
+  removeFurniture(homeId: string, furnitureId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const index = home?.furniture.findIndex(item => item.id === furnitureId) ?? -1;
+    if (!home || index < 0) return false;
+    this.checkpoint();
+    const [removed] = home.furniture.splice(index, 1);
+    home.designSpent = Math.max(0, home.designSpent - Math.round(HOME_BUILD_COSTS[removed.kind] * .5));
+    for (const resident of home.residents) {
+      if (resident.currentAction?.targetFurnitureId === furnitureId) resident.currentAction = undefined;
+    }
     return true;
   }
 
@@ -2376,6 +2422,11 @@ export class World {
       return {
         ...home,
         furniture: home.furniture ?? [],
+        designBudget: Math.max(0, Math.round(home.designBudget ?? 60_000)),
+        designSpent: Math.max(0, Math.round(
+          home.designSpent
+          ?? (home.furniture ?? []).reduce((total, item) => total + HOME_BUILD_COSTS[item.kind], 0)
+        )),
         residents,
         relationships: normalizeRelationships(residents, home.relationships ?? [])
       };

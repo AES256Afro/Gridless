@@ -466,7 +466,15 @@ kbd {
 .home-tools button { padding: 9px 12px; white-space: nowrap; }
 .home-tools button:hover { color: white; background: rgba(255,255,255,.08); }
 .home-tools button.active { color: #172019; background: #f0d980; }
+.home-tools button:disabled { cursor: not-allowed; opacity: .38; }
 .tool-divider { width: 1px; height: 23px; margin: 0 3px; background: rgba(255,255,255,.13); }
+.home-budget {
+  padding: 0 8px;
+  color: #f0d980;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .household-summary {
   overflow: hidden;
   max-width: 190px;
@@ -995,8 +1003,9 @@ kbd {
   .home-editing .actionbar { top: 186px; }
   .city-editing .actionbar { top: 186px; }
   .city-editing .city-tools { top: 238px; }
+  .home-tools { justify-content: flex-start; overflow-x: auto; }
   .home-tools button { padding: 8px 9px; }
-  .household-summary { max-width: 140px; }
+  .household-summary { display: none; }
   .city-tools > div:first-child { display: none; }
   .city-editing .panel { bottom: 132px; }
 }
@@ -1027,7 +1036,7 @@ kbd {
     max-width: none;
     transform: none;
   }
-  .home-tools .household-summary { display: none; }
+  .home-tools .household-summary, .home-tools .home-budget { display: none; }
   .city-build-tools {
     right: 16px;
     bottom: 76px;
