@@ -233,6 +233,8 @@ app.innerHTML = `
         </div>
         <div class="city-tool-settings" data-city-tool-settings="transit">
           <select id="transit-line" aria-label="Selected transit line"></select>
+          <input id="transit-name" aria-label="Transit line name" maxlength="32" placeholder="Line name">
+          <button id="transit-rename" type="button">Rename</button>
           <select id="transit-frequency" aria-label="Transit service frequency">
             <option value="18">Basic service · 18m</option>
             <option value="10" selected>Frequent service · 10m</option>
@@ -786,8 +788,19 @@ function renderTransitInfrastructure() {
       platform.rotation.x = -Math.PI / 2;
       platform.position.y = .05;
       marker.add(pole, sign, platform);
+      const transfers = world.transitTransfersAtStop(line, stop);
+      if (transfers.length) {
+        const transferRing = new THREE.Mesh(
+          new THREE.RingGeometry(1.15, 1.36, 28),
+          new THREE.MeshBasicMaterial({ color: 0xf0d980, transparent: true, opacity: .9, side: THREE.DoubleSide })
+        );
+        transferRing.rotation.x = -Math.PI / 2;
+        transferRing.position.y = .07;
+        marker.add(transferRing);
+      }
       if (mode === "city" && cityTool === "transit" && selected) {
-        const label = makeLabel(`${stop.name} · ${stop.waiting} waiting`);
+        const transferCopy = transfers.length ? ` · transfer ${transfers.map(transfer => transfer.lineName).join(" + ")}` : "";
+        const label = makeLabel(`${stop.name} · ${stop.waiting} waiting${transferCopy}`);
         label.position.y = 5.1;
         label.scale.set(32, 5.5, 1);
         marker.add(label);
@@ -798,8 +811,9 @@ function renderTransitInfrastructure() {
     if (mode === "city" && cityTool === "transit") {
       const midpoint = line.route[Math.floor(line.route.length / 2)];
       const projectedNet = world.transitMonthlyProjection(line) - world.transitMonthlyCost(line);
+      const transfers = world.transitTransfersForLine(line);
       const label = makeLabel(
-        `${selected ? "SELECTED · " : ""}${line.name} · every ${world.transitEffectiveHeadway(line)}m${world.transitEffectiveHeadway(line) < line.headwayMinutes ? " event service" : ""} · ${line.stops.length} stops · ${world.transitActiveFleetSize(line)} buses · ${transitFarePolicyLabel(line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(line))} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
+        `${selected ? "SELECTED · " : ""}${line.name} · every ${world.transitEffectiveHeadway(line)}m${world.transitEffectiveHeadway(line) < line.headwayMinutes ? " event service" : ""} · ${line.stops.length} stops · ${transfers.length} transfers · ${world.transitActiveFleetSize(line)} buses · ${transitFarePolicyLabel(line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(line))} · ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}`
       );
       label.position.set(midpoint.x, 10, midpoint.z);
       label.scale.set(110, 9, 1);
@@ -2739,16 +2753,18 @@ function selectedTransitLine() {
 
 function syncTransitControls() {
   const lineSelect = document.querySelector<HTMLSelectElement>("#transit-line")!;
-  lineSelect.innerHTML = world.transitLines
-    .map(line => `<option value="${line.id}">${line.name}</option>`)
-    .join("");
+  lineSelect.replaceChildren(...world.transitLines.map(line => new Option(line.name, line.id)));
   const line = selectedTransitLine();
   lineSelect.disabled = !line;
   if (!line) {
+    (document.querySelector("#transit-name") as HTMLInputElement).value = "";
+    (document.querySelector("#transit-rename") as HTMLButtonElement).disabled = true;
     (document.querySelector("#transit-remove") as HTMLButtonElement).disabled = true;
     return;
   }
   lineSelect.value = line.id;
+  (document.querySelector("#transit-name") as HTMLInputElement).value = line.name;
+  (document.querySelector("#transit-rename") as HTMLButtonElement).disabled = false;
   (document.querySelector("#transit-frequency") as HTMLSelectElement).value = String(line.headwayMinutes);
   (document.querySelector("#transit-fare") as HTMLSelectElement).value = String(line.fare);
   (document.querySelector("#transit-stops") as HTMLSelectElement).value = String(line.stops.length);
@@ -3891,10 +3907,14 @@ function updateExplorerContext() {
     const eventCopy = stopEvent
       ? ` ${stopEvent.event.name} is adding event demand at this stop.`
       : "";
+    const transfers = world.transitTransfersAtStop(nearbyStop.line, nearbyStop.stop);
+    const transferCopy = transfers.length
+      ? ` Transfer here to ${transfers.map(transfer => transfer.lineName).join(" or ")}.`
+      : "";
     document.querySelector("#panel-kicker")!.textContent = "CITY TRANSIT";
     document.querySelector("#panel-title")!.textContent = nearbyStop.stop.name;
     document.querySelector("#panel-copy")!.textContent =
-      `${nearbyStop.line.name} · every ${world.transitEffectiveHeadway(nearbyStop.line)}m${world.transitEffectiveHeadway(nearbyStop.line) < nearbyStop.line.headwayMinutes ? " temporary event service" : ""} · about ${world.transitAverageWait(nearbyStop.line).toFixed(1)}m average wait · ${nearbyStop.stop.waiting} waiting · ${transitFarePolicyLabel(nearbyStop.line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(nearbyStop.line))}. ${access}.${eventCopy} Press T to board.`;
+      `${nearbyStop.line.name} · every ${world.transitEffectiveHeadway(nearbyStop.line)}m${world.transitEffectiveHeadway(nearbyStop.line) < nearbyStop.line.headwayMinutes ? " temporary event service" : ""} · about ${world.transitAverageWait(nearbyStop.line).toFixed(1)}m average wait · ${nearbyStop.stop.waiting} waiting · ${transitFarePolicyLabel(nearbyStop.line.fare)} · ${transitCrowdingLabel(world.transitLineCrowding(nearbyStop.line))}. ${access}.${transferCopy}${eventCopy} Press T to board.`;
     return;
   }
   const nearbyEvent = closestActiveCityEvent({ x: camera.position.x, z: camera.position.z }, 115);
@@ -4193,11 +4213,15 @@ function updateCityToolPanel(lot?: Lot) {
     const crowding = world.transitLineCrowding(line);
     const waiting = line.stops.reduce((total, stop) => total + stop.waiting, 0);
     const projectedNet = world.transitMonthlyProjection(line) - world.transitMonthlyCost(line);
+    const transfers = world.transitTransfersForLine(line);
+    const transferCopy = transfers.length
+      ? `${transfers.length} network ${transfers.length === 1 ? "transfer" : "transfers"} to ${transfers.map(transfer => transfer.lineName).join(" + ")}`
+      : "no connected transfer yet";
     setPanel(
       "TRANSIT NETWORK",
       line.name,
-      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · every ${world.transitEffectiveHeadway(line)} minutes${world.transitEffectiveHeadway(line) < line.headwayMinutes ? ` during temporary event service, normally ${line.headwayMinutes}` : ""} with ${world.transitActiveFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
-      "Line selector|Choose route;Click road|Create or select;Stops|Change coverage;Frequency|Fleet and waits;Fare|Demand and revenue;Remove|Delete selected line"
+      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · ${transferCopy} · every ${world.transitEffectiveHeadway(line)} minutes${world.transitEffectiveHeadway(line) < line.headwayMinutes ? ` during temporary event service, normally ${line.headwayMinutes}` : ""} with ${world.transitActiveFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
+      "Line selector|Choose route;Name|Create identity;Click road|Create or select;Gold ring|Transfer stop;Stops|Change coverage;Frequency|Fleet and waits;Fare|Demand and revenue;Remove|Delete selected line"
     );
   } else if (cityTool === "access") {
     const usable = world.accessibilityEntrances.filter(entrance => world.entranceIsUsable(entrance)).length;
@@ -4816,6 +4840,27 @@ document.querySelector("#transit-line")!.addEventListener("change", event => {
   renderTransitInfrastructure();
   if (cityTool === "transit") updateCityToolPanel();
   if (line) notice(`${line.name} selected`);
+});
+function applyTransitLineName() {
+  const line = selectedTransitLine();
+  const input = document.querySelector<HTMLInputElement>("#transit-name")!;
+  if (!line) return;
+  const previousName = line.name;
+  if (!world.setTransitLineName(line.id, input.value)) {
+    input.value = previousName;
+    notice("Use a unique line name up to 32 letters, numbers, spaces, or simple punctuation");
+    return;
+  }
+  renderWorld();
+  updateCityToolPanel();
+  notice(`${previousName} renamed ${line.name}`);
+}
+document.querySelector("#transit-rename")!.addEventListener("click", applyTransitLineName);
+document.querySelector("#transit-name")!.addEventListener("keydown", event => {
+  if ((event as KeyboardEvent).code !== "Enter") return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyTransitLineName();
 });
 document.querySelector("#transit-stops")!.addEventListener("change", event => {
   const line = selectedTransitLine();

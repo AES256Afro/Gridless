@@ -1000,6 +1000,7 @@ check(
     && transitLine.vehicleCapacity === 48,
   "Transit line did not receive its default operating plan."
 );
+const transitDemandBeforeTransfer = mobilityWorld.transitLineDemand(transitLine, 8 * 60, -1);
 const secondaryTransitRoad = mobilityWorld.roads.find(
   road => road.id !== transitLine.roadId && road.points.length > 1
 );
@@ -1016,6 +1017,32 @@ check(
       && secondaryTransitLine.color !== transitLine.color
   ),
   "Additional transit line did not receive its own road route, stops, identity, and color."
+);
+const transitTransfers = mobilityWorld.transitTransfersForLine(transitLine);
+check(
+  Boolean(
+    secondaryTransitLine
+      && transitTransfers.some(transfer => transfer.lineId === secondaryTransitLine.id && transfer.distance <= 55)
+      && mobilityWorld.transitLineDemand(transitLine, 8 * 60, -1) > transitDemandBeforeTransfer
+  ),
+  "Intersecting transit routes did not create a transfer or increase connected demand."
+);
+check(
+  Boolean(
+    secondaryTransitLine
+      && mobilityWorld.setTransitLineName(secondaryTransitLine.id, "Crosstown Connector")
+      && secondaryTransitLine.name === "Crosstown Connector"
+      && mobilityWorld.transitTransfersForLine(transitLine)[0]?.lineName === "Crosstown Connector"
+  ),
+  "Transit line renaming did not update transfer identity."
+);
+check(
+  Boolean(
+    secondaryTransitLine
+      && !mobilityWorld.setTransitLineName(secondaryTransitLine.id, transitLine.name)
+      && !mobilityWorld.setTransitLineName(secondaryTransitLine.id, "<script>")
+  ),
+  "Transit line naming allowed a duplicate or unsafe name."
 );
 check(
   secondaryTransitRoad
@@ -1177,6 +1204,7 @@ const secondaryTransitSnapshot = mobilityWorld.snapshot().transitLines?.find(
 );
 check(
   secondaryTransitSnapshot?.roadId === secondaryTransitRoad?.id
+    && secondaryTransitSnapshot?.name === "Crosstown Connector"
     && secondaryTransitSnapshot?.stops.length === 10
     && secondaryTransitSnapshot?.headwayMinutes === 18
     && secondaryTransitSnapshot?.fare === 0,

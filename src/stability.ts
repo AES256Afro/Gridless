@@ -363,6 +363,7 @@ function integrityFailures(world: World) {
   const serviceIds = new Set(world.services.map(service => service.id));
   const utilityIds = new Set(world.utilities.map(utility => utility.id));
   const transitLineIds = new Set(world.transitLines.map(line => line.id));
+  const transitLineNames = new Set(world.transitLines.map(line => line.name.toLocaleLowerCase()));
   const transitStopIds = new Set(world.transitLines.flatMap(line => line.stops.map(stop => stop.id)));
   const cityEventIds = new Set(world.cityEvents.map(event => event.id));
   const accessibilityEntranceIds = new Set(world.accessibilityEntrances.map(entrance => entrance.id));
@@ -370,6 +371,7 @@ function integrityFailures(world: World) {
   if (serviceIds.size !== world.services.length) failures.push("Duplicate service IDs were found.");
   if (utilityIds.size !== world.utilities.length) failures.push("Duplicate utility IDs were found.");
   if (transitLineIds.size !== world.transitLines.length) failures.push("Duplicate transit line IDs were found.");
+  if (transitLineNames.size !== world.transitLines.length) failures.push("Duplicate transit line names were found.");
   if (transitStopIds.size !== world.transitLines.flatMap(line => line.stops).length) {
     failures.push("Duplicate transit stop IDs were found.");
   }
@@ -583,6 +585,9 @@ function integrityFailures(world: World) {
     if (commute.route.length < 2 || commute.distance < 0 || commute.travelMinutes <= 0) failures.push(`Commute ${commute.id} has invalid routing data.`);
   }
   for (const line of world.transitLines) {
+    if (!line.name || line.name.length > 32 || !/^[\p{L}\p{M}\p{N} &'().-]+$/u.test(line.name)) {
+      failures.push(`Transit line ${line.id} has an invalid display name.`);
+    }
     if (
       line.route.length < 2
       || line.stops.length < 4
@@ -612,6 +617,12 @@ function integrityFailures(world: World) {
         || !Number.isInteger(stop.boardings)
       ) {
         failures.push(`Transit stop ${stop.id} has invalid queue or boarding data.`);
+      }
+    }
+    for (const transfer of world.transitTransfersForLine(line)) {
+      const otherLine = world.transitLines.find(item => item.id === transfer.lineId);
+      if (!otherLine || transfer.distance > 55 || !otherLine.stops.some(stop => stop.id === transfer.otherStopId)) {
+        failures.push(`Transit line ${line.id} has an invalid transfer connection.`);
       }
     }
   }
