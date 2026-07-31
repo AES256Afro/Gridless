@@ -896,6 +896,18 @@ check(
   eventWorld.curbEffectiveUse(eventCurb) === "event" && !eventWorld.parkingPermitted(eventCurb),
   "Active city event did not place its nearby curb under event control."
 );
+const closedEventRoad = eventWorld.roads.find(road => cityEvent.closureRoadIds?.includes(road.id));
+check(
+  Boolean(closedEventRoad && eventWorld.roadTrafficPressure(closedEventRoad) === 1),
+  "Traffic planning pressure did not mark an active road closure as severe."
+);
+check(
+  eventWorld.roads.every(road => {
+    const pressure = eventWorld.roadTrafficPressure(road);
+    return Number.isFinite(pressure) && pressure >= 0 && pressure <= 1;
+  }),
+  "Traffic planning pressure left its normalized zero-to-one range."
+);
 const transitDemandWithEvent = eventWorld.transitStopDemand(
   eventLine,
   eventStop,

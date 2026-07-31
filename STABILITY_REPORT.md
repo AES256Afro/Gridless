@@ -57,6 +57,7 @@ The run found no:
 - missing, undersized, duplicate, or unreachable home rooms, duplicate furnishings, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
 - invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
 - broken home, incident, failure, service, utility, or commute references
+- non-finite or out-of-range road traffic pressure used by City Builder planning views
 - duplicate or invalid transit lines, names, source-road references, colors, stop counts, stops, routes, transfers, service frequencies, vehicle capacities, fares, queues, boardings, ridership, or revenue
 - invalid parking prices, revenue, capacity, occupancy, or accessible-space counts
 - invalid curb uses, schedules, delivery queues, completed-delivery counts, violations, or enforcement revenue

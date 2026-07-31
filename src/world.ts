@@ -1637,6 +1637,25 @@ export class World {
     );
   }
 
+  roadTrafficPressure(road: Road) {
+    if (this.cityEventRoadClosure(road.id)) return 1;
+    const routedTravelers = this.commuteFlows.reduce((total, flow) => {
+      const usesRoad = flow.route.some(point => distanceToPolyline(point, road.points) <= road.width / 2 + 5);
+      return usesRoad ? total + flow.travelers : total;
+    }, 0);
+    const classCapacity = road.class === "arterial" ? 620 : road.class === "avenue" ? 440 : 280;
+    const eventPressure = this.activeCityEvents().some(event => event.roadId === road.id)
+      ? this.cityEventTrafficPressure() * .45
+      : 0;
+    return clamp(
+      routedTravelers / classCapacity
+      + this.congestionLevel() * .32
+      + eventPressure,
+      0,
+      1
+    );
+  }
+
   trafficMultiplier() {
     return 1 + this.congestionLevel() * 1.35;
   }

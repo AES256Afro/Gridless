@@ -80,7 +80,8 @@ import {
 type Mode = "city" | "explore" | "home";
 type HomeTool = "select" | "room" | "sofa" | "table" | "bed" | "plant";
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
-type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events";
+type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events" | "views";
+type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
@@ -159,6 +160,7 @@ app.innerHTML = `
         <button data-city-tool-group="services" role="tab">Services</button>
         <button data-city-tool-group="mobility" role="tab">Mobility</button>
         <button data-city-tool-group="events" role="tab">Events</button>
+        <button data-city-tool-group="views" role="tab">Views</button>
       </div>
       <div class="city-tool-options active" data-city-group-panel="build">
         <button data-city-tool="road" class="active">Draw road</button>
@@ -270,6 +272,14 @@ app.innerHTML = `
           <option value="tonight" selected>Next event time</option>
           <option value="tomorrow">Tomorrow</option>
         </select>
+      </div>
+      <div class="city-tool-options city-view-options" data-city-group-panel="views">
+        <button data-city-view="normal" class="active">City</button>
+        <button data-city-view="traffic">Traffic</button>
+        <button data-city-view="utilities">Utilities</button>
+        <button data-city-view="wellbeing">Wellbeing</button>
+        <button data-city-view="development">Development</button>
+        <div class="city-view-legend" id="city-view-legend"><i></i><span>Natural city colors</span></div>
       </div>
     </div>
     <div class="home-tools" aria-label="Home building tools">
@@ -411,6 +421,7 @@ let selectedLot: Lot | null = null;
 let selectedTransitLineId: string | null = world.transitLines[0]?.id ?? null;
 let cityTool: CityTool = "road";
 let cityToolGroup: CityToolGroup = "build";
+let cityView: CityView = "normal";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
@@ -1611,6 +1622,42 @@ function updateExplorerVehicle(dt: number) {
   updateExplorerMovementStatus(Math.abs(explorerVehicleSpeed));
 }
 
+function planningHeatColor(healthyScore: number) {
+  const score = THREE.MathUtils.clamp(healthyScore, 0, 1);
+  if (score <= .5) return new THREE.Color(0xd95f52).lerp(new THREE.Color(0xe8c96a), score * 2).getHex();
+  return new THREE.Color(0xe8c96a).lerp(new THREE.Color(0x68b77c), (score - .5) * 2).getHex();
+}
+
+function lotPlanningValue(
+  lot: Lot,
+  view: CityView,
+  totalPopulation: number,
+  effectiveStaffing: number,
+  roadTraffic: Map<string, number>
+) {
+  if (view === "traffic") {
+    return roadTraffic.get(lot.roadId) ?? 0;
+  }
+  if (view === "utilities") return world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing) / 100;
+  if (view === "wellbeing") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
+  if (view === "development") return lot.zone === "unassigned" ? 0 : world.constructionProgress(lot);
+  return 1;
+}
+
+function lotPlanningColor(view: CityView, value: number) {
+  if (view === "traffic") return 0x66716a;
+  if (view === "development") {
+    if (value >= 1) return 0x70b4d0;
+    return new THREE.Color(0x66716a).lerp(new THREE.Color(0xd7a956), Math.max(.18, value)).getHex();
+  }
+  return planningHeatColor(value);
+}
+
+function trafficPlanningMaterial(pressure: number) {
+  const color = planningHeatColor(1 - pressure);
+  return new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .08, roughness: .9 });
+}
+
 function renderWorld() {
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
@@ -1625,6 +1672,12 @@ function renderWorld() {
   renderTerrain();
   worldGroup.clear();
   const renderFocus = worldRenderFocus();
+  const activeCityView: CityView = mode === "city" ? cityView : "normal";
+  const totalPopulation = Math.max(1, world.cityEconomy().population);
+  const effectiveStaffing = world.effectiveStaffing();
+  const roadTraffic = new Map(activeCityView === "traffic"
+    ? world.roads.map(road => [road.id, world.roadTrafficPressure(road)] as const)
+    : []);
   const spatialChunks = world.refreshSpatialChunks();
   const detailedLotIds = spatialChunks.length > 16
     ? new Set(spatialChunks
@@ -1640,7 +1693,10 @@ function renderWorld() {
     worldGroup.add(sidewalk);
   }
   for (const road of world.roads) {
-    const roadway = ribbon(road.points, road.width, roadMaterial);
+    const activeRoadMaterial = activeCityView === "traffic"
+      ? trafficPlanningMaterial(roadTraffic.get(road.id) ?? 0)
+      : roadMaterial;
+    const roadway = ribbon(road.points, road.width, activeRoadMaterial);
     roadway.position.y = road.class === "arterial" ? .166 : road.class === "avenue" ? .163 : .16;
     worldGroup.add(roadway);
     worldGroup.add(roadCenterLine(road));
@@ -1661,9 +1717,15 @@ function renderWorld() {
     sidewalkJunction.rotation.x = -Math.PI / 2;
     sidewalkJunction.position.set(intersection.point.x, .23, intersection.point.z);
     worldGroup.add(sidewalkJunction);
+    const junctionPressure = activeCityView === "traffic"
+      ? Math.max(
+          roadTraffic.get(intersection.roadAId) ?? 0,
+          roadTraffic.get(intersection.roadBId) ?? 0
+        )
+      : 0;
     const roadwayJunction = new THREE.Mesh(
       new THREE.CircleGeometry(width * .56, 32),
-      roadMaterial
+      activeCityView === "traffic" ? trafficPlanningMaterial(junctionPressure) : roadMaterial
     );
     roadwayJunction.rotation.x = -Math.PI / 2;
     roadwayJunction.position.set(intersection.point.x, .31, intersection.point.z);
@@ -1707,9 +1769,14 @@ function renderWorld() {
   }
   for (const lot of world.lots) {
     if (detailedLotIds && !detailedLotIds.has(lot.id)) continue;
+    const planningValue = lotPlanningValue(lot, activeCityView, totalPopulation, effectiveStaffing, roadTraffic);
+    const planningColor = lotPlanningColor(activeCityView, planningValue);
+    const planningMaterial = activeCityView === "normal"
+      ? zoneLotMaterials[lot.zone]
+      : new THREE.MeshBasicMaterial({ color: planningColor, transparent: true, opacity: .76, side: THREE.DoubleSide });
     const lotMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(lot.width, lot.depth),
-      lot.id === selectedLot?.id ? lotSelectedMaterial : zoneLotMaterials[lot.zone]
+      lot.id === selectedLot?.id ? lotSelectedMaterial : planningMaterial
     );
     lotMesh.rotation.set(-Math.PI / 2, 0, lot.rotation);
     lotMesh.position.set(lot.center.x, .105, lot.center.z);
@@ -1737,9 +1804,11 @@ function renderWorld() {
     const shell = new THREE.Mesh(
       new THREE.BoxGeometry(lot.width * .62, height, lot.depth * .58),
       new THREE.MeshStandardMaterial({
-        color: progress < 1 ? 0xc5a25f : zoneBuildingColors[lot.zone],
-        emissive: progress < 1 || occupiedShare <= 0 || powerOutage ? 0x000000 : 0x2e2415,
-        emissiveIntensity: progress < 1 || powerOutage ? 0 : darkness * occupiedShare * .12,
+        color: activeCityView === "normal" ? progress < 1 ? 0xc5a25f : zoneBuildingColors[lot.zone] : planningColor,
+        emissive: activeCityView === "normal"
+          ? progress < 1 || occupiedShare <= 0 || powerOutage ? 0x000000 : 0x2e2415
+          : planningColor,
+        emissiveIntensity: activeCityView === "normal" ? progress < 1 || powerOutage ? 0 : darkness * occupiedShare * .12 : .08,
         roughness: .8
       })
     );
@@ -1767,7 +1836,9 @@ function renderWorld() {
   updateClockDisplay();
   renderHome();
   renderIncidents();
-  if (mode === "city" && (
+  if (mode === "city" && cityToolGroup === "views") {
+    updateCityViewPanel();
+  } else if (mode === "city" && (
     cityTool === "inspect"
     || cityTool === "transit"
     || cityTool === "curb"
@@ -4238,6 +4309,66 @@ function updateCityToolPanel(lot?: Lot) {
   }
 }
 
+function updateCityViewPanel() {
+  const totalPopulation = Math.max(1, world.cityEconomy().population);
+  const effectiveStaffing = world.effectiveStaffing();
+  const legend = document.querySelector("#city-view-legend")!;
+  legend.className = `city-view-legend ${cityView}`;
+  const legendCopy = legend.querySelector("span")!;
+  if (cityView === "traffic") {
+    const roads = world.roads
+      .map(road => ({ road, pressure: world.roadTrafficPressure(road) }))
+      .sort((first, second) => second.pressure - first.pressure);
+    const busiest = roads[0];
+    legendCopy.textContent = "Clear · busy";
+    setPanel(
+      "TRAFFIC VIEW",
+      busiest ? `${busiest.road.name ?? "Unnamed road"} is busiest` : "No roads yet",
+      `${Math.round(world.congestionLevel() * 100)}% citywide congestion. Roads shade from green through amber to red using routed commuter groups, road class, live events, and closures. The busiest corridor is at ${Math.round((busiest?.pressure ?? 0) * 100)}% pressure.`,
+      "Green|Moving well;Amber|Building pressure;Red|Severe or closed;Explorer|Experience the trip"
+    );
+  } else if (cityView === "utilities") {
+    const reliabilities = world.lots.map(lot => world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing));
+    const averageReliability = reliabilities.length ? Math.round(reliabilities.reduce((total, value) => total + value, 0) / reliabilities.length) : 0;
+    const critical = reliabilities.filter(value => value < 50).length;
+    legendCopy.textContent = "Unserved · reliable";
+    setPanel(
+      "UTILITY VIEW",
+      `${averageReliability}% average reliability`,
+      `${critical} parcels are below 50% utility reliability. Red parcels lack dependable power, water, sewage, or waste service; green parcels have the network, source capacity, staffing, and condition they need.`,
+      "Red|Missing or failed;Amber|Limited reliability;Green|Reliable;Services|Build capacity"
+    );
+  } else if (cityView === "wellbeing") {
+    const scores = world.lots.map(lot => world.lotWellbeing(lot, totalPopulation, effectiveStaffing));
+    const strained = scores.filter(value => value < 64).length;
+    legendCopy.textContent = "Critical · thriving";
+    setPanel(
+      "WELLBEING VIEW",
+      `${world.cityWellbeing()}% city wellbeing`,
+      `${strained} parcels are strained or critical. This view combines utilities, local services, commute burden, and named household needs so a city-scale problem remains connected to the people experiencing it.`,
+      "Red|Critical;Amber|Strained;Green|Stable or thriving;Inspect|See the cause"
+    );
+  } else if (cityView === "development") {
+    const active = world.lots.filter(lot => world.constructionProgress(lot) < 1).length;
+    const complete = world.lots.filter(lot => lot.zone !== "unassigned" && world.constructionProgress(lot) >= 1).length;
+    legendCopy.textContent = "Planned · building · complete";
+    setPanel(
+      "DEVELOPMENT VIEW",
+      `${active} active construction projects`,
+      `${complete} zoned parcels are complete. Gray is undeveloped, amber is under construction, and blue is complete, making growth gaps and stalled districts readable at a glance.`,
+      "Gray|Undeveloped;Amber|Under construction;Blue|Complete;Inspect|Review constraints"
+    );
+  } else {
+    legendCopy.textContent = "Natural city colors";
+    setPanel(
+      "CITY VIEW",
+      "Natural city materials",
+      "The default view preserves zoning colors, architecture, streets, parks, and water. Switch views when you need evidence, then return here to read the city as a place.",
+      "Traffic|Road pressure;Utilities|Service reliability;Wellbeing|Human outcomes;Development|Construction"
+    );
+  }
+}
+
 renderer.domElement.addEventListener("pointerdown", event => {
   if (mode === "explore") {
     requestExplorerPointerLock();
@@ -4733,6 +4864,15 @@ function setCityToolGroup(group: CityToolGroup, selectDefault = false) {
 
 document.querySelectorAll<HTMLButtonElement>("[data-city-tool-group]").forEach(button => button.addEventListener("click", () => {
   setCityToolGroup(button.dataset.cityToolGroup as CityToolGroup, true);
+  if (button.dataset.cityToolGroup === "views") updateCityViewPanel();
+}));
+
+document.querySelectorAll<HTMLButtonElement>("[data-city-view]").forEach(button => button.addEventListener("click", () => {
+  cityView = button.dataset.cityView as CityView;
+  document.querySelectorAll<HTMLButtonElement>("[data-city-view]").forEach(item => item.classList.toggle("active", item === button));
+  renderWorld();
+  updateCityViewPanel();
+  notice(`${button.textContent?.trim() ?? "City"} planning view active`);
 }));
 
 document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button => button.addEventListener("click", () => {
