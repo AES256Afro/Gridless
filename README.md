@@ -36,6 +36,7 @@ The current vertical slice proves:
 - Persistent household cohorts, business-sector mixes, named neighborhood anchor businesses, and parcel-level growth explanations
 - Time-aware household routines, business operating hours, municipal shifts, responder availability, and occupied-building night lighting
 - Deterministic daily NYC weather with seasonal temperature, wind, rain, snow, visibility, wet surfaces, landscape color, and scale-aware precipitation across Builder and Explorer
+- Opt-in procedural soundscapes generated in the browser, with quiet regional ambience in City Builder, traffic-responsive streets in City Explorer, sheltered room tone in Home Simulator, and weather plus day/night transitions across all three
 - Persistent street-graph commutes with named resident workplaces, representative walking and driving groups, visible 3D travelers, congestion, and traffic-sensitive staffing and emergency response
 - Persistent resident energy, social, comfort, health, and stress needs shaped by schedules, home design, utilities, neighborhood services, incidents, and commute burden
 - Persistent two-trait resident personalities with visible social style, compatibility, trait-weighted activity choices, and save migration for existing households

@@ -19,6 +19,7 @@ import {
   worldToLotLocal
 } from "./interiors";
 import { detectStreetIntersections, trafficSignalState } from "./streets";
+import { soundscapeProfile } from "./soundscape";
 import {
   assessAccessibleTrip,
   buildAccessibleRoute,
@@ -71,6 +72,30 @@ for (let month = 1; month <= 12; month++) {
     `Weather left its supported range in month ${month}.`
   );
 }
+const clearWeather = matchingWeatherWorld.weather();
+const builderSound = soundscapeProfile("city", clearWeather, 12, .65);
+const streetSound = soundscapeProfile("explore", clearWeather, 12, .65);
+const homeSound = soundscapeProfile("home", clearWeather, 12, .65);
+const rainyStreetSound = soundscapeProfile(
+  "explore",
+  { ...clearWeather, kind: "rain", label: "Rain", precipitation: .8 },
+  12,
+  .65
+);
+const nightStreetSound = soundscapeProfile("explore", clearWeather, 2, .65);
+check(
+  builderSound.label === "Regional"
+    && streetSound.label === "Street"
+    && homeSound.label === "Interior"
+    && streetSound.urban > builderSound.urban
+    && homeSound.room > 0,
+  "Soundscape profiles did not distinguish Builder, Explorer, and Home scales."
+);
+check(
+  rainyStreetSound.rain > streetSound.rain
+    && nightStreetSound.urban < streetSound.urban,
+  "Soundscape profiles did not respond to weather and time of day."
+);
 
 const road: Road = {
   id: "test-road",

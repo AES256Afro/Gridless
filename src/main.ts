@@ -1,6 +1,7 @@
 import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
 import {
   CITY_EVENT_DEFINITIONS,
   HOME_BUILD_COSTS,
@@ -139,6 +140,7 @@ app.innerHTML = `
     </div>
     <div class="actionbar">
       <button id="undo">Undo</button><button id="save">Save city</button><button id="load">Load city</button>
+      <button id="sound-toggle" type="button" aria-pressed="false">Sound off</button>
       <select id="staffing-policy" aria-label="Service staffing">
         <option value="0.65">Lean staff · 65%</option>
         <option value="0.85" selected>Standard staff · 85%</option>
@@ -506,6 +508,7 @@ scene.add(
   transitFleetGroup
 );
 const world = new World();
+const soundscape = new ProceduralSoundscape();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const keys = new Set<string>();
@@ -1215,6 +1218,7 @@ function setInteriorSceneVisibility(inside: boolean) {
   transitVehicleGroup.visible = !inside && Boolean(transitRide);
   transitFleetGroup.visible = !inside;
   homeGroup.visible = inside || mode === "home";
+  syncSoundscape();
 }
 
 function toggleHomeInterior() {
@@ -1768,7 +1772,27 @@ function trafficPlanningMaterial(pressure: number) {
   return new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .08, roughness: .9 });
 }
 
+function syncSoundscape() {
+  const trafficPressure = world.roads.length
+    ? world.roads.reduce((total, road) => total + world.roadTrafficPressure(road), 0) / world.roads.length
+    : 0;
+  const profile = soundscapeProfile(
+    explorerInteriorHomeId ? "home" : mode,
+    world.weather(),
+    world.clock.minute / 60,
+    trafficPressure
+  );
+  soundscape.update(profile);
+  const button = document.querySelector<HTMLButtonElement>("#sound-toggle");
+  if (button) {
+    button.textContent = soundscape.enabled ? `Sound on · ${profile.label}` : "Sound off";
+    button.setAttribute("aria-pressed", String(soundscape.enabled));
+  }
+  return profile;
+}
+
 function renderWorld() {
+  syncSoundscape();
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
     explorerVehicleGroup.position.set(world.playerVehicle.position.x, .16, world.playerVehicle.position.z);
@@ -4022,6 +4046,7 @@ function setMode(next: Mode) {
     world.setControlledResident();
   }
   mode = next;
+  syncSoundscape();
   if (next !== "home") {
     selectedFurnitureId = null;
     selectedRoomId = null;
@@ -5157,6 +5182,17 @@ addEventListener("mousemove", event => {
 });
 
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(button => button.addEventListener("click", () => setMode(button.dataset.mode as Mode)));
+document.querySelector("#sound-toggle")!.addEventListener("click", async () => {
+  if (soundscape.enabled) {
+    soundscape.disable();
+    syncSoundscape();
+    notice("Ambient sound off");
+    return;
+  }
+  await soundscape.enable();
+  const profile = syncSoundscape();
+  notice(`${profile.label} soundscape on`);
+});
 document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(button => button.addEventListener("click", () => {
   simulationSpeed = Number(button.dataset.speed);
   document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(item => item.classList.toggle("active", item === button));
