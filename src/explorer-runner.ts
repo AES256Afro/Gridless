@@ -292,6 +292,15 @@ check(
 );
 check(householdIdentityWorld.undo() && householdIdentityWorld.homes[0].name === "Temporary Name", "Undo did not restore home identity.");
 check(householdIdentityWorld.redo() && householdIdentityWorld.homes[0].name === "The Rivera Home", "Redo did not restore home identity.");
+const unsafeIdentitySnapshot = JSON.parse(householdIdentityWorld.serialize());
+unsafeIdentitySnapshot.cityName = "<unsafe city>";
+unsafeIdentitySnapshot.homes[0].name = "<unsafe home>";
+check(householdIdentityWorld.restore(JSON.stringify(unsafeIdentitySnapshot)), "Legacy identity migration snapshot could not load.");
+check(
+  householdIdentityWorld.cityName === "New Gridless City"
+    && householdIdentityWorld.homes[0].name === "New household",
+  "Loaded identity migration retained unsafe city or home text."
+);
 
 const recoveryWorld = new World();
 const recoveryRevision = recoveryWorld.changeRevision();
