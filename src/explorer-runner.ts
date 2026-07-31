@@ -192,6 +192,8 @@ const interiorHome: Home = {
     { id: "interior-table", kind: "table", x: 0, z: 0, rotation: 0 },
     { id: "interior-bed", kind: "bed", x: 6, z: 1, rotation: Math.PI / 2 }
   ],
+  designBudget: 60_000,
+  designSpent: 2_000,
   residents: [],
   relationships: []
 };
@@ -238,13 +240,73 @@ check(
 );
 const furniturePlacementWorld = new World();
 furniturePlacementWorld.homes = [structuredClone(interiorHome)];
+const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
   "Home Simulator rejected furniture placed inside a room."
 );
+const placedPlant = furniturePlacementWorld.homes[0].furniture.find(item =>
+  item.kind === "plant" && item.x === -2 && item.z === 1
+);
+check(Boolean(placedPlant), "Home Simulator did not persist newly placed furniture.");
+check(
+  furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0])
+    === designBudgetBeforePlacement - 120,
+  "Furniture placement did not debit the home design budget."
+);
+check(
+  furniturePlacementWorld.rotateFurniture(interiorHome.id, placedPlant!.id)
+    && placedPlant!.rotation === Math.PI / 4,
+  "Selected furniture did not rotate by 45 degrees."
+);
+check(
+  furniturePlacementWorld.removeFurniture(interiorHome.id, placedPlant!.id)
+    && !furniturePlacementWorld.homes[0].furniture.some(item => item.id === placedPlant!.id),
+  "Selling selected furniture did not remove it from the home."
+);
+check(
+  furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0])
+    === designBudgetBeforePlacement - 60,
+  "Selling furniture did not return the expected 50 percent refund."
+);
 check(
   !furniturePlacementWorld.addFurniture(interiorHome.id, "plant", 20, 20),
   "Home Simulator allowed furniture outside every room."
+);
+const designBudgetBeforeRoom = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
+check(
+  furniturePlacementWorld.addRoom(interiorHome.id, {
+    kind: "Studio",
+    x: 0,
+    z: 8,
+    width: 3,
+    depth: 4
+  }),
+  "Home Simulator rejected an affordable valid room."
+);
+check(
+  furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0])
+    === designBudgetBeforeRoom - 2_640,
+  "Room construction did not debit its area-based cost."
+);
+furniturePlacementWorld.homes[0].designSpent = furniturePlacementWorld.homes[0].designBudget - 100;
+check(
+  !furniturePlacementWorld.addFurniture(interiorHome.id, "bed", 0, 0),
+  "Home Simulator allowed an over-budget furniture purchase."
+);
+check(
+  !furniturePlacementWorld.addRoom(interiorHome.id, {
+    kind: "Unaffordable room",
+    x: 0,
+    z: 14,
+    width: 3,
+    depth: 4
+  }),
+  "Home Simulator allowed over-budget room construction."
+);
+check(
+  furniturePlacementWorld.snapshot().homes[0].designBudget === 60_000,
+  "Home design budget was omitted from the world snapshot."
 );
 const directControlWorld = new World();
 const directControlHome = structuredClone(interiorHome);

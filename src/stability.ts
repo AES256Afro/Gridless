@@ -144,6 +144,8 @@ export function createStabilityScenario() {
       { id: "stability-bed", kind: "bed", x: -1.5, z: 2, rotation: 0 },
       { id: "stability-plant", kind: "plant", x: 2.5, z: 2, rotation: 0 }
     ],
+    designBudget: 60_000,
+    designSpent: 3_370,
     residents: [{
       id: "stability-resident",
       name: "Avery",
@@ -407,6 +409,10 @@ function integrityFailures(world: World) {
   for (const home of world.homes) {
     if (!lotIds.has(home.lotId)) failures.push(`Home ${home.id} points to a missing lot.`);
     if (!home.rooms.length) failures.push(`Home ${home.id} has no interior rooms.`);
+    if (!Number.isInteger(home.designBudget) || home.designBudget <= 0) failures.push(`Home ${home.id} has an invalid design budget.`);
+    if (!Number.isInteger(home.designSpent) || home.designSpent < 0 || home.designSpent > home.designBudget) {
+      failures.push(`Home ${home.id} has invalid design spending.`);
+    }
     if (!interiorEntryPoint(home)) failures.push(`Home ${home.id} has no clear interior entry position.`);
     const roomIds = new Set(home.rooms.map(room => room.id));
     const furnitureIds = new Set(home.furniture.map(item => item.id));
@@ -419,6 +425,9 @@ function integrityFailures(world: World) {
       if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
     }
     for (const item of home.furniture) {
+      if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
+        failures.push(`Furniture ${item.id} has an invalid rotation.`);
+      }
       const containingRoom = home.rooms.find(room =>
         Math.abs(item.x - room.x) <= room.width / 2
         && Math.abs(item.z - room.z) <= room.depth / 2
