@@ -414,7 +414,7 @@ app.innerHTML = `
           <article><b>02</b><h3>City Explorer</h3><p>Walk, drive, ride transit, follow accessible routes, and enter homes from their real street entrances.</p><dl><dt>W A S D</dt><dd>Move or drive</dd><dt>Shift / Space</dt><dd>Sprint / jump</dd><dt>E / T / F</dt><dd>Vehicle / transit / home</dd><dt>R / O</dt><dd>Route / photo mode</dd></dl></article>
           <article><b>03</b><h3>Home Simulator</h3><p>Draw rooms, choose their purpose and finishes, furnish around real collisions, and guide a household.</p><dl><dt>Select</dt><dd>Edit a room or object</dd><dt>Click</dt><dd>Place or move</dd><dt>R</dt><dd>Rotate selected furniture</dd><dt>C / E</dt><dd>Choose resident / interact</dd></dl></article>
         </div>
-        <footer><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⇧ ⌘/Ctrl Z</kbd> Redo</span><span><kbd>?</kbd> This guide</span><span><kbd>Esc</kbd> Close or step back</span><small>Manual saves are yours. Autosave recovery protects the latest world state separately.</small></footer>
+        <footer><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⇧ ⌘/Ctrl Z</kbd> Redo</span><span><kbd>?</kbd> This guide</span><span><kbd>Esc</kbd> Close or step back</span><small>Help, Settings, and Resident Creator pause time and restore your exact prior speed. Manual saves are yours. Autosave recovery protects the latest world state separately.</small></footer>
       </section>
     </div>
     <div class="preferences-panel" id="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" hidden>
@@ -583,6 +583,7 @@ let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
 let pitch = 0;
 let simulationSpeed = 12;
+let modalResumeSpeed: number | null = null;
 let simulationAccumulator = 0;
 let lastMonthlyBalance = 0;
 let lastHomeActionSignature = "";
@@ -1871,6 +1872,27 @@ function applyUiPreferences() {
   document.querySelector<HTMLInputElement>("#preference-reduced-motion")!.checked = uiPreferences.reducedMotion;
   document.querySelector<HTMLInputElement>("#preference-high-contrast")!.checked = uiPreferences.highContrast;
   document.querySelector<HTMLInputElement>("#preference-starter")!.checked = uiPreferences.showStarterJourney;
+}
+
+function syncSimulationSpeedControls() {
+  document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(button => {
+    button.classList.toggle("active", Number(button.dataset.speed) === simulationSpeed);
+  });
+}
+
+function pauseForModal() {
+  if (modalResumeSpeed === null) modalResumeSpeed = simulationSpeed;
+  simulationSpeed = 0;
+  syncSimulationSpeedControls();
+}
+
+function resumeAfterModal() {
+  const modalOpen = ["#controls-guide", "#preferences-panel", "#resident-creator"]
+    .some(selector => !document.querySelector<HTMLElement>(selector)!.hidden);
+  if (modalOpen || modalResumeSpeed === null) return;
+  simulationSpeed = modalResumeSpeed;
+  modalResumeSpeed = null;
+  syncSimulationSpeedControls();
 }
 
 function saveUiPreferences() {
@@ -3927,12 +3949,14 @@ function openResidentCreator() {
     input.checked = input.value === "outgoing" || input.value === "empathetic";
   });
   document.querySelector<HTMLElement>("#resident-creator")!.hidden = false;
+  pauseForModal();
   updateResidentCreatorPreview();
   document.querySelector<HTMLInputElement>("#resident-name")!.focus();
 }
 
 function closeResidentCreator() {
   document.querySelector<HTMLElement>("#resident-creator")!.hidden = true;
+  resumeAfterModal();
 }
 
 function updateHomeBuildControls(home: Home | null) {
@@ -5286,18 +5310,23 @@ addEventListener("keydown", event => {
   if (event.code === "Slash" && event.shiftKey && !event.repeat) {
     event.preventDefault();
     controlsGuide.hidden = !controlsGuide.hidden;
-    if (!controlsGuide.hidden) document.querySelector<HTMLButtonElement>("#help-close")!.focus();
+    if (!controlsGuide.hidden) {
+      pauseForModal();
+      document.querySelector<HTMLButtonElement>("#help-close")!.focus();
+    } else resumeAfterModal();
     return;
   }
   if (event.code === "Escape" && !controlsGuide.hidden) {
     event.preventDefault();
     controlsGuide.hidden = true;
+    resumeAfterModal();
     document.querySelector<HTMLButtonElement>("#help-open")!.focus();
     return;
   }
   if (event.code === "Escape" && !preferencesPanel.hidden) {
     event.preventDefault();
     preferencesPanel.hidden = true;
+    resumeAfterModal();
     document.querySelector<HTMLButtonElement>("#settings-open")!.focus();
     return;
   }
@@ -5466,28 +5495,34 @@ addEventListener("keyup", event => keys.delete(event.code));
 addEventListener("blur", () => keys.clear());
 document.querySelector("#help-open")!.addEventListener("click", () => {
   document.querySelector<HTMLElement>("#controls-guide")!.hidden = false;
+  pauseForModal();
   document.querySelector<HTMLButtonElement>("#help-close")!.focus();
 });
 document.querySelector("#help-close")!.addEventListener("click", () => {
   document.querySelector<HTMLElement>("#controls-guide")!.hidden = true;
+  resumeAfterModal();
   document.querySelector<HTMLButtonElement>("#help-open")!.focus();
 });
 document.querySelector("#controls-guide")!.addEventListener("click", event => {
   if (event.target !== event.currentTarget) return;
   document.querySelector<HTMLElement>("#controls-guide")!.hidden = true;
+  resumeAfterModal();
 });
 document.querySelector("#settings-open")!.addEventListener("click", () => {
   applyUiPreferences();
   document.querySelector<HTMLElement>("#preferences-panel")!.hidden = false;
+  pauseForModal();
   document.querySelector<HTMLButtonElement>("#settings-close")!.focus();
 });
 document.querySelector("#settings-close")!.addEventListener("click", () => {
   document.querySelector<HTMLElement>("#preferences-panel")!.hidden = true;
+  resumeAfterModal();
   document.querySelector<HTMLButtonElement>("#settings-open")!.focus();
 });
 document.querySelector("#preferences-panel")!.addEventListener("click", event => {
   if (event.target !== event.currentTarget) return;
   document.querySelector<HTMLElement>("#preferences-panel")!.hidden = true;
+  resumeAfterModal();
 });
 document.querySelector<HTMLInputElement>("#preference-reduced-motion")!.addEventListener("change", event => {
   uiPreferences.reducedMotion = (event.currentTarget as HTMLInputElement).checked;
@@ -5628,7 +5663,7 @@ document.querySelector("#sound-toggle")!.addEventListener("click", async () => {
 });
 document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(button => button.addEventListener("click", () => {
   simulationSpeed = Number(button.dataset.speed);
-  document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(item => item.classList.toggle("active", item === button));
+  syncSimulationSpeedControls();
   notice(simulationSpeed === 0 ? "Simulation paused" : simulationSpeed >= 360 ? "Maximum simulation speed" : simulationSpeed >= 72 ? "Fast simulation speed" : "Simulation running");
 }));
 

@@ -55,6 +55,7 @@ The current vertical slice proves:
 - A session activity center that keeps the latest 30 city, travel, household, save, recovery, and warning messages with simulation timestamps, unread state, safe player-name rendering, and clear controls
 - A player-editable city name reflected in the HUD and browser title, with validation, templates, saves, recovery, and exact Undo and Redo support
 - Player-editable home and household names in Home Simulator with safe validation, saved identity, activity feedback, and exact Undo and Redo support
+- Pause-safe Help, Settings, and Resident Creator modals that restore the exact prior simulation speed on every close path, including `Esc` and backdrop dismissal
 - Live traffic, utilities, wellbeing, and development planning overlays derived from the same roads, commuter routes, service networks, households, and construction state used by the simulation
 - Persistent 256-meter spatial chunks with exact road and lot membership, population/job aggregates, focus-driven agent, active, and aggregate tiers, live regional-detail diagnostics, save migration, and a large-region renderer cutoff
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout

@@ -63,6 +63,8 @@ Each world now has a player-editable city name in the Builder foundation control
 
 Home Simulator exposes the same authored identity for each property or household. Names use the bounded safe character set, remain attached to the exact city lot, enter the activity feed, and participate in snapshots, recovery, Undo, and Redo.
 
+Help, Settings, and Resident Creator are pause-safe modal tasks. Opening the first modal remembers the exact simulation speed, every close path checks whether another modal remains, and the prior pause, normal, fast, or maximum speed returns only after the final modal closes.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
