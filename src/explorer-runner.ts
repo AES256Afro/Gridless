@@ -436,6 +436,18 @@ check(
   catalogWorld.homeRemainingBudget(catalogHome) === 60_000 - 4_370,
   "Expanded catalog purchases did not debit the exact design budget."
 );
+const catalogDesk = catalogHome.furniture.find(item => item.kind === "desk")!;
+const budgetBeforeStyle = catalogWorld.homeRemainingBudget(catalogHome);
+check(
+  catalogWorld.setFurnitureStyle(catalogHome.id, catalogDesk.id, "colorful")
+    && catalogDesk.style === "colorful"
+    && catalogWorld.homeRemainingBudget(catalogHome) === budgetBeforeStyle,
+  "Furniture style customization did not persist as a cost-free cosmetic change."
+);
+check(
+  !catalogWorld.setFurnitureStyle(catalogHome.id, catalogDesk.id, "colorful"),
+  "Reapplying the selected furniture style created a redundant world change."
+);
 check(
   furnitureInteraction("desk").action === "study"
     && furnitureInteraction("bookcase").action === "study"
@@ -444,7 +456,6 @@ check(
   "Expanded catalog objects did not expose their expected resident interactions."
 );
 check(catalogWorld.setControlledResident("catalog-resident"), "Catalog resident could not enter direct control.");
-const catalogDesk = catalogHome.furniture.find(item => item.kind === "desk")!;
 check(
   catalogWorld.commandResidentFurnitureAction(catalogHome.id, "catalog-resident", catalogDesk.id).ok
     && catalogHome.residents[0].currentAction?.kind === "study",
@@ -471,8 +482,9 @@ check(
   "Showering did not complete or build wellness skill."
 );
 check(
-  catalogWorld.snapshot().homes[0].furniture.some(item => item.kind === "fridge"),
-  "Expanded catalog furniture was omitted from the world snapshot."
+  catalogWorld.snapshot().homes[0].furniture.some(item => item.kind === "fridge")
+    && catalogWorld.snapshot().homes[0].furniture.find(item => item.id === catalogDesk.id)?.style === "colorful",
+  "Expanded catalog furniture or its selected style was omitted from the world snapshot."
 );
 const residentCreatorWorld = new World();
 const residentCreatorHome = structuredClone(interiorHome);

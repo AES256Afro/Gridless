@@ -448,6 +448,7 @@ export type UtilityFailure = {
 
 export type HomeFloorFinish = "oak" | "tile" | "concrete" | "carpet";
 export type HomeWallFinish = "warm-white" | "sage" | "clay" | "slate";
+export type HomeFurnitureStyle = "natural" | "light" | "dark" | "colorful";
 
 export type HomeRoom = {
   id: string;
@@ -466,7 +467,7 @@ export type Home = {
   name: string;
   floors: number;
   rooms: HomeRoom[];
-  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number }>;
+  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle }>;
   designBudget: number;
   designSpent: number;
   householdFunds?: number;
@@ -2550,8 +2551,8 @@ export class World {
       floors: 1,
       rooms: [{ id: crypto.randomUUID(), kind: "Living space", x: 0, z: 0, width: 7, depth: 6, floorFinish: "oak", wallFinish: "warm-white" }],
       furniture: [
-        { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0 },
-        { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0 }
+        { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0, style: "natural" },
+        { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0, style: "natural" }
       ],
       designBudget: 60_000,
       designSpent: HOME_BUILD_COSTS.sofa + HOME_BUILD_COSTS.plant,
@@ -2635,8 +2636,17 @@ export class World {
     const cost = HOME_BUILD_COSTS[kind];
     if (!home || !this.canPlaceFurniture(home, kind, x, z, 0) || this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
-    home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0 });
+    home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0, style: "natural" });
     home.designSpent += cost;
+    return true;
+  }
+
+  setFurnitureStyle(homeId: string, furnitureId: string, style: HomeFurnitureStyle) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (!home || !furniture || furniture.style === style) return false;
+    this.checkpoint();
+    furniture.style = style;
     return true;
   }
 
@@ -2832,7 +2842,10 @@ export class World {
           floorFinish: room.floorFinish ?? "oak",
           wallFinish: room.wallFinish ?? "warm-white"
         })),
-        furniture: home.furniture ?? [],
+        furniture: (home.furniture ?? []).map(item => ({
+          ...item,
+          style: normalizeHomeFurnitureStyle(item.style)
+        })),
         designBudget: Math.max(0, Math.round(home.designBudget ?? 60_000)),
         designSpent: Math.max(0, Math.round(
           home.designSpent
@@ -3906,6 +3919,10 @@ function normalizeConversationIntent(intent: ConversationIntent | undefined): Co
     || intent === "apologize"
     ? intent
     : "chat";
+}
+
+function normalizeHomeFurnitureStyle(style: HomeFurnitureStyle | undefined): HomeFurnitureStyle {
+  return style === "light" || style === "dark" || style === "colorful" ? style : "natural";
 }
 
 function normalizeRelationships(

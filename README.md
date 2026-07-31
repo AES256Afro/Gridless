@@ -81,7 +81,7 @@ The current vertical slice proves:
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots
-- Room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
+- Room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, persistent Natural, Light, Dark, or Colorful furniture styles, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
 - A focused household creator for resident name, adult or child life stage, daily role, and exactly two behavior-shaping personality traits, with an eight-person household limit and immediate profile preview
 
 This is a visual and interaction prototype with local persistence and a deterministic early economic simulation. The current reference scenario passes its automated ten-year stability gate; qualitative diagnosis and fun remain playtest questions.
