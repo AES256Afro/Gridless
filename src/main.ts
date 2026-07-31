@@ -359,6 +359,7 @@ app.innerHTML = `
         <option value="clay">Clay · $10/m²</option>
         <option value="slate">Slate · $12/m²</option>
       </select></label>
+      <button id="furnish-room">Furnish room</button>
       <button id="delete-room">Delete room</button>
     </div>
     <div class="resident-creator" id="resident-creator" role="dialog" aria-modal="true" aria-labelledby="resident-creator-title" hidden>
@@ -5592,6 +5593,16 @@ document.querySelector("#room-wall-finish")!.addEventListener("change", event =>
   }
   renderWorld();
   notice(`${room.kind} walls updated for ${formatHomeCurrency(cost)}`);
+});
+document.querySelector("#furnish-room")!.addEventListener("click", () => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  if (!home || !room) return;
+  const result = world.autoFurnishRoom(home.id, room.id);
+  renderWorld();
+  notice(result.placed
+    ? `${room.kind} furnished with ${result.placed} object${result.placed === 1 ? "" : "s"} for ${formatHomeCurrency(result.spent)}${result.skipped ? ` · ${result.skipped} could not fit` : ""}`
+    : `No new ${room.kind.toLowerCase()} objects fit the room and remaining budget`);
 });
 document.querySelector("#delete-room")!.addEventListener("click", () => {
   const home = currentHome();
