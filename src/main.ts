@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
 import { cityAdvisorActions } from "./advisor";
+import { homeAdvisorActions } from "./home-advisor";
 import {
   CITY_EVENT_DEFINITIONS,
   HOME_BUILD_COSTS,
@@ -3877,6 +3878,14 @@ function updateHouseholdSummary(home: Home) {
     const entrance = world.accessibilityEntrances.find(
       item => item.targetKind === "lot" && item.targetId === selectedLot!.id
     );
+    const homeAdvice = homeAdvisorActions({
+      residents: home.residents,
+      furniture: home.furniture,
+      roomCount: home.rooms.length,
+      householdFunds: world.homeHouseholdFunds(home),
+      dailyNet: world.homeDailyNet(home),
+      highestTension: Math.max(0, ...home.relationships.map(relationship => relationship.tension ?? 0))
+    });
     details.innerHTML = `
       <div class="home-wellbeing-overview">
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
@@ -3886,6 +3895,16 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Household funds</span><strong>${formatHomeCurrency(world.homeHouseholdFunds(home))}</strong></div>
         <div><span>Last daily net</span><strong>${formatSignedHomeCurrency(world.homeDailyNet(home))}</strong></div>
       </div>
+      ${homeAdvice.length ? `
+        <section class="home-advisor" aria-label="Home Advisor">
+          <div class="relationship-title">Household wants</div>
+          ${homeAdvice.map(action => `
+            <button type="button" data-home-advisor-action="${action.action}" ${action.furnitureKind ? `data-home-advisor-kind="${action.furnitureKind}"` : ""}>
+              <strong>${action.title}</strong><span>${action.detail}</span>
+            </button>
+          `).join("")}
+        </section>
+      ` : ""}
       ${outages.length ? `
         <div class="home-outage">
           <span>Utility disruption</span>
@@ -3976,6 +3995,26 @@ function updateHouseholdSummary(home: Home) {
       ` : ""}
     `;
     details.classList.add("visible");
+    details.querySelectorAll<HTMLButtonElement>("[data-home-advisor-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.homeAdvisorAction;
+        const kind = button.dataset.homeAdvisorKind as HomeFurnitureKind | undefined;
+        if (action === "resident") {
+          document.querySelector<HTMLButtonElement>("#add-resident")?.click();
+        } else if (action === "room") {
+          activateHomeTool("room");
+        } else if (action === "catalog" && kind) {
+          const catalog = document.querySelector<HTMLSelectElement>("#home-catalog")!;
+          catalog.value = kind;
+          document.querySelector("#place-catalog-item")!.textContent = `Place ${homeFurnitureLabel(kind)}`;
+          activateHomeTool(kind);
+        } else if (action === "social") {
+          details.querySelector<HTMLButtonElement>(".resident-control:not(:disabled)")?.click();
+        } else {
+          notice(`${formatHomeCurrency(world.homeHouseholdFunds(home))} household funds · ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily net`);
+        }
+      });
+    });
     details.querySelectorAll<HTMLButtonElement>("[data-control-resident]").forEach(button => {
       button.addEventListener("click", () => {
         if (!button.dataset.controlResident || mode !== "home") return;

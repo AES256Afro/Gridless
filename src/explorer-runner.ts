@@ -21,6 +21,7 @@ import {
 import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { soundscapeProfile } from "./soundscape";
 import { cityAdvisorActions } from "./advisor";
+import { homeAdvisorActions } from "./home-advisor";
 import {
   assessAccessibleTrip,
   buildAccessibleRoute,
@@ -139,6 +140,57 @@ check(
   healthyCityAdvice.length === 1 && healthyCityAdvice[0].id === "growth",
   "City Advisor did not fall back to development review for a healthy city."
 );
+const emptyHomeAdvice = homeAdvisorActions({
+  residents: [],
+  furniture: [],
+  roomCount: 1,
+  householdFunds: 15_000,
+  dailyNet: 0,
+  highestTension: 0
+});
+check(
+  emptyHomeAdvice.map(action => action.id).join(",") === "resident,shower,fridge",
+  "Home Advisor did not create a clear first-household furnishing path."
+);
+const pressuredHomeAdvice = homeAdvisorActions({
+  residents: [{
+    energy: 54,
+    comfort: 48,
+    health: 65,
+    stress: 58,
+    traits: ["creative", "empathetic"]
+  }, {
+    energy: 60,
+    comfort: 55,
+    health: 72,
+    stress: 50,
+    traits: ["organized", "homebody"]
+  }],
+  furniture: [],
+  roomCount: 1,
+  householdFunds: 2_000,
+  dailyNet: 20,
+  highestTension: 50
+});
+check(
+  pressuredHomeAdvice.map(action => action.id).join(",") === "bed,shower,social",
+  "Home Advisor did not prioritize sleep, health, and relationship pressure."
+);
+const supportedHomeAdvice = homeAdvisorActions({
+  residents: [{ energy: 82, comfort: 80, health: 84, stress: 20, traits: ["creative", "organized"] }],
+  furniture: [
+    { id: "bed", kind: "bed", x: 0, z: 0, rotation: 0 },
+    { id: "shower", kind: "shower", x: 2, z: 0, rotation: 0 },
+    { id: "fridge", kind: "fridge", x: -2, z: 0, rotation: 0 },
+    { id: "sofa", kind: "sofa", x: 0, z: 2, rotation: 0 },
+    { id: "desk", kind: "desk", x: 0, z: -2, rotation: 0 }
+  ],
+  roomCount: 2,
+  householdFunds: 20_000,
+  dailyNet: 120,
+  highestTension: 0
+});
+check(supportedHomeAdvice.length === 0, "Home Advisor invented pressure for a supported healthy household.");
 
 const road: Road = {
   id: "test-road",
