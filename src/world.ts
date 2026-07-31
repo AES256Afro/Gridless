@@ -565,6 +565,7 @@ export type SpatialLodSummary = {
 
 export type WorldSnapshot = {
   version: 1;
+  cityName?: string;
   templateId?: WorldTemplate["id"];
   roads: Road[];
   areas?: Area[];
@@ -635,6 +636,7 @@ const RESIDENT_TRAIT_DETAILS: Record<ResidentTrait, { label: string; description
 };
 
 export class World {
+  cityName = "New Gridless City";
   templateId: WorldTemplate["id"] = "nyc";
   roads: Road[] = [];
   areas: Area[] = [];
@@ -714,6 +716,7 @@ export class World {
     this.refreshSpatialChunks();
     return clone({
       version: 1,
+      cityName: this.cityName,
       templateId: this.templateId,
       roads: this.roads,
       areas: this.areas,
@@ -2574,6 +2577,7 @@ export class World {
     const template = WORLD_TEMPLATES[id];
     if (!template) return false;
     this.checkpoint();
+    this.cityName = id === "nyc" ? "New Gridless City" : "Untitled Region";
     this.templateId = id;
     this.roads = clone(template.roads);
     this.areas = clone(template.areas);
@@ -2621,6 +2625,15 @@ export class World {
 
   canRedo() {
     return this.future.length > 0;
+  }
+
+  setCityName(value: string) {
+    const name = value.trim().replace(/\s+/g, " ");
+    if (name.length < 2 || name.length > 40 || !/^[\p{L}\p{N} .'-]+$/u.test(name)) return false;
+    if (name === this.cityName) return true;
+    this.checkpoint();
+    this.cityName = name;
+    return true;
   }
 
   changeRevision() {
@@ -3019,6 +3032,8 @@ export class World {
   }
 
   private apply(snapshot: WorldSnapshot) {
+    const savedCityName = snapshot.cityName?.trim().replace(/\s+/g, " ") ?? "New Gridless City";
+    this.cityName = savedCityName.length >= 2 && savedCityName.length <= 40 ? savedCityName : "New Gridless City";
     this.templateId = snapshot.templateId ?? "nyc";
     this.spatialChunkSize = Math.round(clamp(snapshot.spatialChunkSize ?? 256, 128, 1024));
     this.roads = clone(snapshot.roads);

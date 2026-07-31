@@ -354,6 +354,9 @@ function checkpoint(world: World): StabilityCheckpoint {
 function integrityFailures(world: World) {
   const failures: string[] = [];
   findNonFinite(world.snapshot(), "snapshot", failures);
+  if (world.cityName.length < 2 || world.cityName.length > 40 || !/^[\p{L}\p{N} .'-]+$/u.test(world.cityName)) {
+    failures.push("Saved city identity is invalid.");
+  }
   if (world.incidents.length > 24) failures.push(`Retained incident history grew to ${world.incidents.length}.`);
   if (world.utilityFailures.length > 18) failures.push(`Retained utility-failure history grew to ${world.utilityFailures.length}.`);
   if (world.commuteFlows.length > 72) failures.push(`Commute representative set grew to ${world.commuteFlows.length}.`);

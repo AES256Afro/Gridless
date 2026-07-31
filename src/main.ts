@@ -102,7 +102,7 @@ const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="hud">
-    <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="lod-status" id="lod-status">Preparing region detail</div></div>
+    <div class="brand"><div class="eyebrow">A living city sandbox</div><h1>Gridless</h1><div class="city-name" id="city-name-label">New Gridless City</div><div class="lod-status" id="lod-status">Preparing region detail</div></div>
     <button class="help-trigger" id="help-open" type="button" aria-label="Open controls guide"><kbd>?</kbd><span>Help</span></button>
     <button class="settings-trigger" id="settings-open" type="button" aria-label="Open interface settings"><span>Settings</span></button>
     <button class="activity-trigger" id="activity-open" type="button" aria-label="Open activity center"><span>Activity</span><b id="activity-count" hidden>0</b></button>
@@ -172,6 +172,8 @@ app.innerHTML = `
         <div class="eyebrow">REGION FOUNDATION</div>
         <strong>Start structured, change anything</strong>
       </div>
+      <input id="city-name-input" aria-label="City name" maxlength="40" value="New Gridless City">
+      <button id="rename-city" type="button">Rename</button>
       <select id="template-select" aria-label="Region template">
         <option value="nyc">New York City foundation</option>
         <option disabled>Chicago foundation · planned</option>
@@ -1920,6 +1922,10 @@ function renderWorld() {
   updateHistoryControls();
   scheduleAutosave();
   renderStarterJourney();
+  document.querySelector("#city-name-label")!.textContent = world.cityName;
+  const cityNameInput = document.querySelector<HTMLInputElement>("#city-name-input")!;
+  if (document.activeElement !== cityNameInput) cityNameInput.value = world.cityName;
+  document.title = `${world.cityName} · Gridless`;
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
     explorerVehicleGroup.position.set(world.playerVehicle.position.x, .16, world.playerVehicle.position.z);
@@ -5563,6 +5569,24 @@ document.querySelector("#starter-steps")!.addEventListener("click", event => {
   } else if (step === "home") {
     setMode("home");
   }
+});
+function applyCityName() {
+  const input = document.querySelector<HTMLInputElement>("#city-name-input")!;
+  const previous = world.cityName;
+  if (!world.setCityName(input.value)) {
+    input.value = previous;
+    notice("Use 2 to 40 letters, numbers, spaces, apostrophes, periods, or hyphens");
+    return;
+  }
+  renderWorld();
+  notice(previous === world.cityName ? `${world.cityName} already has that name` : `City renamed ${world.cityName}`);
+}
+document.querySelector("#rename-city")!.addEventListener("click", applyCityName);
+document.querySelector("#city-name-input")!.addEventListener("keydown", event => {
+  if ((event as KeyboardEvent).code !== "Enter") return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyCityName();
 });
 document.querySelector("#sound-toggle")!.addEventListener("click", async () => {
   if (soundscape.enabled) {
