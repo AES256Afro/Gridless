@@ -676,6 +676,19 @@ kbd {
   font-size: 8px;
   line-height: 1.35;
 }
+.resident-growth {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.resident-growth span { min-width: 0; }
+.resident-growth strong, .resident-growth small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resident-growth strong { color: #d7e1d9; font-size: 8px; }
+.resident-growth small, .resident-growth em { color: #899a90; font-size: 7px; font-style: normal; }
+.resident-growth i { overflow: hidden; height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); }
+.resident-growth i b { display: block; height: 100%; border-radius: inherit; background: #70b4d0; }
 .resident-action-row {
   display: grid;
   grid-template-columns: auto 1fr auto;

@@ -38,7 +38,7 @@ Every foundation must remain editable. Their value comes from distinct constrain
 
 - **Structure:** room drawing, selectable room plans, persistent floor and wall finishes, and safe room deletion are live; multiple stories, manual doors, windows, roofs, stairs, and foundation choices remain ahead
 - **Furnishing:** object catalog, snapping, free rotation, recolors, object interactions, inventories, and build budget
-- **Households:** resident creator, relationships, personalities, skills, needs, schedules, careers, and household finances
+- **Households:** resident creator, relationships, personalities, skills, needs, schedules, and career progression are live; household finances and deeper career branching remain ahead
 - **Daily life:** autonomous choices, direct control, conversations, cooking, sleep, work, school, travel, celebrations, and emergencies
 - **Neighborhood connection:** visitors, deliveries, local businesses, service quality, commute cost, noise, land value, weather, and community events
 
@@ -129,13 +129,14 @@ Current vertical slice:
 - Confrontations add persistent relationship tension and conflict history. Apologies reduce tension, can mark a conflict repaired, and enter a bounded eight-memory relationship history with the initiating resident and outcome.
 - Empathetic residents notice unresolved tension during autonomous partner ranking and can choose to make amends without direct player control.
 - Repeated remembered outcomes form resident-specific social preferences. Positive chats, support, or jokes become familiar autonomous choices, difficult interactions become visible avoidances, and the Home Simulator resident card explains both the current preference and its evidence count.
+- Household actions build persistent Communication, Creativity, Wellness, or Practical skill points according to what the resident actually did. Office, service, and student roles gain relevant practice and career experience after each completed work or school day, progress through ten levels, and expose their title, strongest skill, and next-level progress in Home Simulator.
 - Beds, tables, sofas, and plants now have functional simulation roles. Resident placement and poses in Home Simulator follow the active action and its target object.
 - Action scoring includes duration, need pressure, context, and a recency penalty so residents respond to their condition without repeating one activity forever.
 - Active household activity, remaining time, completion history, and resulting need changes are visible in Home Simulator, City Explorer, and the City Builder parcel inspector.
 - In-progress actions, targets, partners, timing, and completed-action counts persist through save and reload.
 - `npm run test:stability` advances a fixed serviced NYC reference city for ten years in 14,400 six-hour steps, then repeats the full decade and requires an identical deterministic signature.
 - The gate checks calendar and budget boundaries, resident needs, household and business cohorts, commute references, service and utility state, incident backlogs, save growth, finite numbers, and bounded population change.
-- The verified baseline ends at 29,090 residents, 1,576 businesses, 74% city wellbeing, an 85% staffed service network, and a positive $1.92 million monthly balance.
+- The verified baseline ends at 29,090 residents, 1,576 businesses, 74% city wellbeing, an 85% staffed service network, and a positive $2.26 million monthly balance.
 - Across the baseline decade, 10,799 of 10,800 emergency incidents and 7,199 of 7,200 utility failures resolve before the cutoff. The remaining incident and failure are active events generated immediately before the final timestamp.
 - The stability work removed redundant citywide population and staffing calculations from every lot-service evaluation, keeping the long-run gate practical while preserving the simulation result.
 
@@ -233,7 +234,7 @@ Current vertical slice:
 - Scheduled 3D fleets render across every active line instead of only the first route.
 - `npm run test:explorer` verifies road lookup, normalized planning-view road pressure, closure severity, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, curb enforcement and revenue, named event scheduling and recurrence, attendance, event-controlled curbs, traffic pressure, event transit demand, event finance and persistence, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, interior entry access, room doorways, rotated lot transforms, wall and furniture collision, home purchase debits, collision rejection, cost-free furniture moves, wall-safe 45-degree object rotation, half-cost selling, room finish costs and persistence, duplicate finish charge protection, final-room protection, room-removal furniture cleanup and refunds, over-budget rejection, design-budget persistence, authored resident profiles, duplicate and unsafe name rejection, child-role normalization, direct resident selection, persistent home positions, nearby object selection, directed action completion, personality persistence, compatibility ranking, all five conversation intents and their need effects, conflict tension, apology repair, bounded social memories, autonomous reconciliation, persistent recent outcomes, paired autonomous conversations, shared need effects, transit generation, bidirectional fleets, unique line naming, transfer detection, connected-demand gain, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are resident skills and careers, richer household construction, city soundscapes, and metropolitan streaming built on the current simulation level of detail.
+Next systems are richer career branches and household finances, expanded furnishing interactions, city soundscapes, and metropolitan streaming built on the current simulation level of detail.
 
 ## Milestone 3: Metropolitan scale
 

@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `c9f76510`
+Deterministic signature: `b2dc7fc9`
 
 Command:
 
@@ -33,7 +33,7 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 336 KB | 356 KB |
 
-The largest observed snapshot was 362,989 bytes.
+The largest observed snapshot was 363,066 bytes.
 
 ## Load and recovery
 
@@ -57,6 +57,7 @@ The run found no:
 - missing, undersized, duplicate, unreachable, or invalidly finished home rooms, duplicate furnishings, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
 - invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, or conversation counts
 - non-finite or out-of-range learned resident social preferences derived from relationship memories
+- non-integer or out-of-range resident skill points, career levels, or career experience
 - broken home, incident, failure, service, utility, or commute references
 - non-finite or out-of-range road traffic pressure used by City Builder planning views
 - non-finite or out-of-range deterministic temperature, wind, precipitation, or visibility

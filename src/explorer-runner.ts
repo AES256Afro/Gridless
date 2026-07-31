@@ -464,6 +464,14 @@ check(
   residentCreatorWorld.snapshot().homes[0].residents[0].traits.join(",") === "creative,organized",
   "Authored resident profile was omitted from the world snapshot."
 );
+residentCreatorHome.residents[0].careerXp = 38;
+residentCreatorWorld.advanceMinutes(24 * 60, 0);
+check(
+  residentCreatorWorld.residentCareerLevel(residentCreatorHome.residents[0]) === 2
+    && residentCreatorWorld.residentCareerTitle(residentCreatorHome.residents[0]) === "Associate"
+    && residentCreatorWorld.residentSkills(residentCreatorHome.residents[0]).communication === 1,
+  "A completed workday did not advance persistent career and role-relevant skills."
+);
 const directControlWorld = new World();
 const directControlHome = structuredClone(interiorHome);
 directControlHome.residents = [{
@@ -579,6 +587,16 @@ check(
   completedRelationship?.lastIntent === "chat"
     && completedRelationship.lastChange === directedRelationshipGain,
   "Completed conversation did not persist its intent and relationship outcome."
+);
+check(
+  directControlWorld.residentSkills(directControlHome.residents[0]).communication === 2
+    && directControlWorld.residentSkills(directControlHome.residents[0]).practical === 2
+    && directControlWorld.residentSkills(directControlHome.residents[1]).communication === 2,
+  "Completed household actions did not build persistent resident skills."
+);
+check(
+  directControlWorld.snapshot().homes[0].residents[0].skills?.communication === 2,
+  "Resident skill progress was omitted from the world snapshot."
 );
 check(
   directControlWorld.clock.minute === 11 * 60 + 45

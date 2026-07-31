@@ -479,6 +479,21 @@ function integrityFailures(world: World) {
       ) {
         failures.push(`Resident ${resident.id} has invalid learned social preferences.`);
       }
+      const skills = world.residentSkills(resident);
+      if (Object.values(skills).some(value => !Number.isInteger(value) || value < 0 || value > 100)) {
+        failures.push(`Resident ${resident.id} has invalid skill progress.`);
+      }
+      const careerLevel = world.residentCareerLevel(resident);
+      if (
+        !Number.isInteger(careerLevel)
+        || careerLevel < 1
+        || careerLevel > 10
+        || !Number.isFinite(resident.careerXp ?? 0)
+        || (resident.careerXp ?? 0) < 0
+        || (careerLevel < 10 && (resident.careerXp ?? 0) >= careerLevel * 40)
+      ) {
+        failures.push(`Resident ${resident.id} has invalid career progress.`);
+      }
       if (resident.homePosition && !isInteriorPositionValid(home, resident.homePosition)) {
         failures.push(`Resident ${resident.id} has an invalid saved home position.`);
       }

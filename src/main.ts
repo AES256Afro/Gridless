@@ -3736,6 +3736,8 @@ function updateHouseholdSummary(home: Home) {
           const status = world.residentStatus(resident);
           const canEnterHome = Boolean(entrance && world.entranceIsUsable(entrance));
           const canControl = status === "Home" && canEnterHome;
+          const topSkill = world.residentTopSkill(resident);
+          const careerProgress = Math.round(world.residentCareerProgress(resident) * 100);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
@@ -3747,6 +3749,11 @@ function updateHouseholdSummary(home: Home) {
                 <small>${world.residentPersonalitySummary(resident)}</small>
               </div>
               <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
+              <div class="resident-growth">
+                <span><strong>${world.residentCareerTitle(resident)}</strong><small>${world.residentSkillLabel(topSkill[0])} · skill ${world.residentSkillLevel(resident, topSkill[0])}</small></span>
+                <i><b style="width:${careerProgress}%"></b></i>
+                <em>${resident.role === "home" ? "Home" : `${careerProgress}%`}</em>
+              </div>
               <div class="resident-action-row">
                 <span>${action ? `${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m remaining` : world.residentStatus(resident)}</span>
                 <i><b style="width:${action ? actionProgress : 100}%"></b></i>
