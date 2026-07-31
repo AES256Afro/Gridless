@@ -3896,6 +3896,7 @@ function updateHouseholdSummary(home: Home) {
       dailyNet: world.homeDailyNet(home),
       highestTension: Math.max(0, ...home.relationships.map(relationship => relationship.tension ?? 0))
     });
+    const homeFunctionality = world.homeFunctionality(home);
     details.innerHTML = `
       <div class="home-wellbeing-overview">
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
@@ -3904,6 +3905,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Entrance</span><strong>${entrance ? entranceAccessLabel(entrance) : "Not connected"}</strong></div>
         <div><span>Household funds</span><strong>${formatHomeCurrency(world.homeHouseholdFunds(home))}</strong></div>
         <div><span>Last daily net</span><strong>${formatSignedHomeCurrency(world.homeDailyNet(home))}</strong></div>
+        <div title="${homeFunctionality.completeness}% functions · ${homeFunctionality.alignment}% room fit"><span>Room function</span><strong>${homeFunctionality.score}%</strong></div>
       </div>
       ${homeAdvice.length ? `
         <section class="home-advisor" aria-label="Home Advisor">
@@ -4785,7 +4787,10 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedRoomId = null;
       renderHome();
       const selected = home.furniture.find(item => item.id === selectedFurnitureId);
-      if (selected) notice(`${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} selected`);
+      if (selected) {
+        const fit = world.furniturePurposeFit(home, selected);
+        notice(`${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} selected${fit === false ? " · consider a more suitable room" : fit === true ? " · room purpose fits" : ""}`);
+      }
       return;
     }
     const roomHit = raycaster

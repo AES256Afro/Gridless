@@ -507,6 +507,17 @@ export const HOME_FURNITURE_SIZE: Record<Home["furniture"][number]["kind"], { wi
   shower: { width: 1.05, depth: 1.05 }
 };
 
+const HOME_FURNITURE_PURPOSES: Record<Home["furniture"][number]["kind"], readonly HomeRoomKind[] | "any"> = {
+  sofa: ["Living room", "Studio"],
+  table: ["Dining room", "Kitchen", "Living room"],
+  bed: ["Bedroom", "Nursery", "Studio"],
+  plant: "any",
+  desk: ["Study", "Bedroom", "Studio"],
+  bookcase: ["Study", "Living room", "Bedroom", "Studio"],
+  fridge: ["Kitchen"],
+  shower: ["Bathroom"]
+};
+
 export type SpatialChunk = {
   id: string;
   gridX: number;
@@ -2191,9 +2202,53 @@ export class World {
     const residentCount = Math.max(1, home.residents.length);
     const roomShare = Math.min(1, home.rooms.length / residentCount);
     const bedShare = Math.min(1, home.furniture.filter(item => item.kind === "bed").length / residentCount);
-    const furnitureVariety = new Set(home.furniture.map(item => item.kind)).size / 4;
+    const furnitureVariety = Math.min(1, new Set(home.furniture.map(item => item.kind)).size / 8);
     const plants = Math.min(3, home.furniture.filter(item => item.kind === "plant").length);
-    return Math.round(clamp(32 + roomShare * 24 + bedShare * 24 + furnitureVariety * 15 + plants * 2, 0, 100));
+    const functionality = this.homeFunctionality(home);
+    return Math.round(clamp(
+      30
+      + roomShare * 22
+      + bedShare * 24
+      + functionality.completeness / 100 * 15
+      + functionality.alignment / 100 * 5
+      + furnitureVariety * 7
+      + plants * 2,
+      0,
+      100
+    ));
+  }
+
+  furniturePurposeFit(home: Home, furniture: Home["furniture"][number]) {
+    const room = home.rooms.find(candidate =>
+      Math.abs(furniture.x - candidate.x) <= candidate.width / 2
+      && Math.abs(furniture.z - candidate.z) <= candidate.depth / 2
+    );
+    const purposes = HOME_FURNITURE_PURPOSES[furniture.kind];
+    if (!room || purposes === "any") return true;
+    if (!HOME_ROOM_KINDS.includes(room.kind as HomeRoomKind)) return undefined;
+    return purposes.includes(room.kind as HomeRoomKind);
+  }
+
+  homeFunctionality(home: Home) {
+    const available = [
+      home.furniture.some(item => item.kind === "bed"),
+      home.furniture.some(item => item.kind === "table" || item.kind === "fridge"),
+      home.furniture.some(item => item.kind === "shower"),
+      home.furniture.some(item => item.kind === "sofa"),
+      home.furniture.some(item => item.kind === "desk" || item.kind === "bookcase")
+    ].filter(Boolean).length;
+    const functionalFurniture = home.furniture.filter(item => item.kind !== "plant");
+    const alignmentPoints = functionalFurniture.reduce((total, furniture) => {
+      const fit = this.furniturePurposeFit(home, furniture);
+      return total + (fit === true ? 1 : fit === undefined ? .5 : 0);
+    }, 0);
+    const completeness = available / 5 * 100;
+    const alignment = functionalFurniture.length ? alignmentPoints / functionalFurniture.length * 100 : 0;
+    return {
+      completeness: Math.round(completeness),
+      alignment: Math.round(alignment),
+      score: Math.round(completeness * .72 + alignment * .28)
+    };
   }
 
   lotHasService(lot: Lot, kind: ServiceKind) {
