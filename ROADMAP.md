@@ -40,7 +40,7 @@ Every foundation must remain editable. Their value comes from distinct constrain
 
 - **Structure:** room drawing, eight persistent room purposes, selectable plans, persistent floor and wall finishes, and safe room deletion are live; multiple stories, manual doors, windows, roofs, stairs, and foundation choices remain ahead
 - **Furnishing:** a categorized eight-object catalog, four persistent style swatches, purpose-aware one-click starter sets, priced placement, collision-aware rotation, selling, budget, and functional interactions are live; object variants, per-part recolors, free rotation, snapping choices, and inventories remain ahead
-- **Households:** resident creator, relationships, personalities, skills, needs, schedules, career progression, wages, daily expenses, and household funds are live; deeper career branching and discretionary purchases remain ahead
+- **Households:** resident creator, relationships, personalities, skills, needs, schedules, career progression, wages, daily expenses, household funds, and three discretionary purchases are live; deeper career branching, inventories, and recurring preferences remain ahead
 - **Guidance:** prioritized household wants are live for residents, beds, crowding, hygiene, meals, comfort, skill growth, relationship tension, and finances; longer-term aspirations and player-pinned goals remain ahead
 - **Daily life:** autonomous choices, direct control, conversations, cooking, sleep, work, school, travel, celebrations, and emergencies
 - **Neighborhood connection:** visitors, deliveries, local businesses, service quality, commute cost, noise, land value, weather, and community events
@@ -136,6 +136,7 @@ Current vertical slice:
 - Repeated remembered outcomes form resident-specific social preferences. Positive chats, support, or jokes become familiar autonomous choices, difficult interactions become visible avoidances, and the Home Simulator resident card explains both the current preference and its evidence count.
 - Household actions build persistent Communication, Creativity, Wellness, or Practical skill points according to what the resident actually did. Office, service, and student roles gain relevant practice and career experience after each completed work or school day, progress through ten levels, and expose their title, strongest skill, and next-level progress in Home Simulator.
 - Office and service career levels determine daily wages. Every household settles resident living costs, room maintenance, furnishing upkeep, and utility inefficiency once per day into a persistent household balance that stays separate from the build-mode design budget. The last income, expenses, and net result remain inspectable, while serious debt becomes a resident wellbeing pressure.
+- Household funds can buy meal delivery, creative supplies, or wellness care for a selected resident. Each purchase has distinct bounded need and skill effects, remains separate from design funds, records lifetime extra spending plus the latest purchase, participates in Undo and Redo, and refuses unaffordable transactions cleanly.
 - Beds, tables, sofas, plants, desks, bookcases, fridges, and showers have functional simulation roles. Resident placement and poses in Home Simulator follow the active action and its target object.
 - Action scoring includes duration, need pressure, context, and a recency penalty so residents respond to their condition without repeating one activity forever.
 - Active household activity, remaining time, completion history, and resulting need changes are visible in Home Simulator, City Explorer, and the City Builder parcel inspector.
@@ -258,6 +259,8 @@ Functional-room regression coverage verifies full sleep, meal, hygiene, relaxati
 One-click furnishing regression coverage verifies exact Living Room cost, correct catalog contents, purpose fit, wall and overlap safety, repeat idempotence, and budget-constrained rejection.
 
 History regression coverage verifies edit capture, exact Undo, exact Redo, availability state, and redo-branch invalidation after a new edit.
+
+Household-purchase regression coverage verifies exact fund debits, design-budget separation, meal, creativity, wellness, and calm effects, skill progress, spending-history persistence, and unaffordable-purchase rejection.
 
 ## Milestone 3: Metropolitan scale
 

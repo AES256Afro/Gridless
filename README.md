@@ -81,6 +81,7 @@ The current vertical slice proves:
 - Emergent resident social preferences derived from repeated remembered outcomes, with visible preferred and avoided conversation styles plus preference-weighted autonomous choices
 - Persistent Communication, Creativity, Wellness, and Practical skills earned through household actions plus ten-level office, service, and student progression advanced by completed work or school days
 - Persistent household funds with career-level daily wages, readable living and home-maintenance costs, daily net results, save migration, and financial-security feedback into resident wellbeing
+- Household-funded meal delivery, creative supplies, and wellness care with immediate need and skill effects, persistent total discretionary spending, last-purchase history, affordability checks, and strict separation from the design budget
 - Autonomous reconciliation attempts from empathetic residents when household tension remains unresolved
 - Relationship-driven autonomous conversations that choose an available partner from familiarity, personality compatibility, and social need, then reserve both residents for the shared activity
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback

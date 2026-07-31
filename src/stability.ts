@@ -1,4 +1,5 @@
 import {
+  RESIDENT_PURCHASES,
   World,
   type Home,
   type ServiceKind,
@@ -458,6 +459,9 @@ function integrityFailures(world: World) {
       || (home.lastDailyExpenses ?? 0) < 0
       || world.homeFinancialSecurity(home) < 0
       || world.homeFinancialSecurity(home) > 100
+      || !Number.isInteger(home.discretionarySpent ?? 0)
+      || (home.discretionarySpent ?? 0) < 0
+      || (home.discretionarySpent ?? 0) > 10_000_000
     ) {
       failures.push(`Home ${home.id} has invalid household finances.`);
     }
@@ -466,6 +470,16 @@ function integrityFailures(world: World) {
     const furnitureIds = new Set(home.furniture.map(item => item.id));
     const residentIds = new Set(home.residents.map(resident => resident.id));
     const residentNames = new Set(home.residents.map(resident => resident.name.toLocaleLowerCase()));
+    if (
+      home.lastPurchase
+      && (
+        !residentIds.has(home.lastPurchase.residentId)
+        || !RESIDENT_PURCHASES[home.lastPurchase.kind]
+        || home.lastPurchase.cost !== RESIDENT_PURCHASES[home.lastPurchase.kind].cost
+        || home.lastPurchase.at < 0
+        || home.lastPurchase.at > world.clock.elapsedMinutes
+      )
+    ) failures.push(`Home ${home.id} has an invalid household purchase record.`);
     const relationshipKeys = new Set<string>();
     if (roomIds.size !== home.rooms.length) failures.push(`Home ${home.id} has duplicate room IDs.`);
     if (furnitureIds.size !== home.furniture.length) failures.push(`Home ${home.id} has duplicate furniture IDs.`);

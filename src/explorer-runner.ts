@@ -727,6 +727,65 @@ check(
     && constrainedAutoHome.furniture.length === 0,
   "One-click furnishing exceeded the remaining design budget."
 );
+const purchaseWorld = new World();
+const purchaseHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "purchase-home",
+  householdFunds: 500,
+  discretionarySpent: 0,
+  residents: [{
+    id: "purchase-resident",
+    name: "Riley",
+    age: "adult",
+    role: "home",
+    energy: 50,
+    social: 60,
+    comfort: 50,
+    health: 60,
+    stress: 55,
+    traits: ["creative", "active"],
+    completedActions: 0
+  }],
+  relationships: []
+};
+purchaseWorld.homes = [purchaseHome];
+const purchaseDesignBudget = purchaseWorld.homeRemainingBudget(purchaseHome);
+check(
+  purchaseWorld.purchaseForResident(purchaseHome.id, "purchase-resident", "meal-delivery").ok
+    && purchaseWorld.homeHouseholdFunds(purchaseHome) === 465
+    && purchaseWorld.homeRemainingBudget(purchaseHome) === purchaseDesignBudget
+    && purchaseHome.residents[0].energy === 62
+    && purchaseWorld.residentSkills(purchaseHome.residents[0]).practical === 1,
+  "Meal delivery did not debit household funds separately or apply resident effects."
+);
+check(
+  purchaseWorld.purchaseForResident(purchaseHome.id, "purchase-resident", "creative-supplies").ok
+    && purchaseHome.discretionarySpent === 125
+    && purchaseHome.residents[0].stress === 45
+    && purchaseWorld.residentSkills(purchaseHome.residents[0]).creativity === 5,
+  "Creative supplies did not persist spending, calm, and skill effects."
+);
+check(
+  purchaseWorld.purchaseForResident(purchaseHome.id, "purchase-resident", "wellness-care").ok
+    && purchaseHome.residents[0].health === 71
+    && purchaseHome.residents[0].stress === 31
+    && purchaseWorld.residentSkills(purchaseHome.residents[0]).wellness === 4,
+  "Wellness care did not apply health, calm, and skill effects."
+);
+const purchaseSnapshot = purchaseWorld.snapshot().homes[0];
+check(
+  purchaseSnapshot.discretionarySpent === 245
+    && purchaseSnapshot.lastPurchase?.kind === "wellness-care"
+    && purchaseSnapshot.lastPurchase?.cost === 120,
+  "Household discretionary spending history was omitted from the snapshot."
+);
+purchaseHome.householdFunds = 20;
+const healthBeforeRejectedPurchase = purchaseHome.residents[0].health;
+check(
+  !purchaseWorld.purchaseForResident(purchaseHome.id, "purchase-resident", "wellness-care").ok
+    && purchaseHome.residents[0].health === healthBeforeRejectedPurchase,
+  "An unaffordable household purchase changed resident state."
+);
 const residentCreatorWorld = new World();
 const residentCreatorHome = structuredClone(interiorHome);
 residentCreatorHome.id = "resident-creator-home";
