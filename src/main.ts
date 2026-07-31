@@ -166,6 +166,7 @@ app.innerHTML = `
         <option value="1">Full staff · 100%</option>
       </select>
       <span id="notice" aria-live="polite">World ready</span>
+      <span id="save-status" data-state="idle">Recovery starts after first edit</span>
     </div>
     <div class="city-tools">
       <div>
@@ -5346,8 +5347,7 @@ addEventListener("keydown", event => {
   }
   if ((event.metaKey || event.ctrlKey) && event.code === "KeyS") {
     event.preventDefault();
-    world.save();
-    notice("Manual save updated");
+    document.querySelector<HTMLButtonElement>("#save")!.click();
     return;
   }
   if (event.altKey && ["Digit1", "Digit2", "Digit3"].includes(event.code)) {
@@ -6072,9 +6072,20 @@ function updateHistoryControls() {
   document.querySelector<HTMLButtonElement>("#undo")!.disabled = !world.canUndo();
   document.querySelector<HTMLButtonElement>("#redo")!.disabled = !world.canRedo();
 }
+function updateSaveStatus(text: string, state: "idle" | "pending" | "saved") {
+  const status = document.querySelector<HTMLElement>("#save-status")!;
+  status.textContent = text;
+  status.dataset.state = state;
+}
+function saveStatusTime() {
+  const hour = Math.floor(world.clock.minute / 60);
+  const minute = Math.floor(world.clock.minute % 60);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
 function scheduleAutosave(force = false) {
   if (!force && world.changeRevision() === lastAutosaveRevision) return;
   clearTimeout(autosaveTimer);
+  updateSaveStatus("Recovery pending", "pending");
   autosaveTimer = window.setTimeout(() => {
     world.saveAutosave();
     lastAutosaveRevision = world.changeRevision();
@@ -6083,6 +6094,7 @@ function scheduleAutosave(force = false) {
     const recoveryHour = Math.floor(world.clock.minute / 60);
     const recoveryMinute = Math.floor(world.clock.minute % 60);
     recover.title = `Latest recovery: Y${world.clock.year} M${world.clock.month} D${world.clock.day} ${String(recoveryHour).padStart(2, "0")}:${String(recoveryMinute).padStart(2, "0")}`;
+    updateSaveStatus(`Recovery protected · ${saveStatusTime()}`, "saved");
   }, 700);
 }
 function applyUndo() {
@@ -6097,13 +6109,25 @@ function applyRedo() {
 }
 document.querySelector("#undo")!.addEventListener("click", applyUndo);
 document.querySelector("#redo")!.addEventListener("click", applyRedo);
-document.querySelector("#save")!.addEventListener("click", () => { world.save(); notice("Manual save updated"); });
-document.querySelector("#load")!.addEventListener("click", () => { notice(world.load() ? "Saved city loaded" : "No saved city found"); renderWorld(); });
-document.querySelector("#recover-autosave")!.addEventListener("click", () => {
-  notice(world.loadAutosave() ? "Autosave recovered. Undo returns to the previous state." : "No autosave found");
+document.querySelector("#save")!.addEventListener("click", () => {
+  world.save();
+  updateSaveStatus(`Manual save · ${saveStatusTime()}`, "saved");
+  notice("Manual save updated");
+});
+document.querySelector("#load")!.addEventListener("click", () => {
+  const loaded = world.load();
+  notice(loaded ? "Saved city loaded" : "No saved city found");
   renderWorld();
+  updateSaveStatus(loaded ? `Manual save loaded · ${saveStatusTime()}` : "No manual save found", loaded ? "saved" : "idle");
+});
+document.querySelector("#recover-autosave")!.addEventListener("click", () => {
+  const recovered = world.loadAutosave();
+  notice(recovered ? "Autosave recovered. Undo returns to the previous state." : "No autosave found");
+  renderWorld();
+  updateSaveStatus(recovered ? `Recovery loaded · ${saveStatusTime()}` : "No recovery found", recovered ? "saved" : "idle");
 });
 document.querySelector<HTMLButtonElement>("#recover-autosave")!.disabled = !world.hasAutosave();
+if (world.hasAutosave()) updateSaveStatus("Recovery available", "saved");
 addEventListener("beforeunload", () => world.saveAutosave());
 let templateResetArmed = false;
 let templateResetTimer = 0;

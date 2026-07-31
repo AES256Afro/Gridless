@@ -57,6 +57,7 @@ The current vertical slice proves:
 - Player-editable home and household names in Home Simulator with safe validation, saved identity, activity feedback, and exact Undo and Redo support
 - Pause-safe Help, Settings, and Resident Creator modals that restore the exact prior simulation speed on every close path, including `Esc` and backdrop dismissal
 - Input-safe global shortcuts for manual save, mode switching, pause and resume, Help, Undo, and Redo, while focused text fields retain native typing and text Undo behavior
+- Visible save-state feedback for pending recovery writes, protected recovery snapshots, manual saves, manual loads, and recovered worlds
 - Live traffic, utilities, wellbeing, and development planning overlays derived from the same roads, commuter routes, service networks, households, and construction state used by the simulation
 - Persistent 256-meter spatial chunks with exact road and lot membership, population/job aggregates, focus-driven agent, active, and aggregate tiers, live regional-detail diagnostics, save migration, and a large-region renderer cutoff
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout
