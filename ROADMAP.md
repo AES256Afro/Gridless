@@ -67,6 +67,8 @@ Help, Settings, and Resident Creator are pause-safe modal tasks. Opening the fir
 
 Global keyboard routing now distinguishes gameplay from text entry and modal tasks. `Cmd/Ctrl+S` saves, `Alt+1/2/3` changes scale, backquote pauses or resumes the last active speed, and existing Help plus history shortcuts remain available without stealing movement, typing, or native text Undo from focused fields.
 
+The shared action bar reports save state independently from transient activity notices. It distinguishes pending recovery writes, protected snapshots, manual saves, successful loads, recovery loads, and missing save data with simulation-time confirmation where applicable.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.

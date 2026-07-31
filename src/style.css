@@ -566,6 +566,9 @@ kbd {
   font: 500 11px "DM Sans", sans-serif;
 }
 #notice { max-width: 150px; padding: 0 8px; color: #9fb0a3; font-size: 11px; }
+#save-status { max-width: 145px; padding: 5px 8px; border-left: 1px solid rgba(255,255,255,.1); color: #7f9186; font-size: 9px; line-height: 1.25; }
+#save-status[data-state="pending"] { color: #e1bd68; }
+#save-status[data-state="saved"] { color: #82bc92; }
 
 .home-tools {
   display: none;
