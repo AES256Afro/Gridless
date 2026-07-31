@@ -65,6 +65,8 @@ Home Simulator exposes the same authored identity for each property or household
 
 Help, Settings, and Resident Creator are pause-safe modal tasks. Opening the first modal remembers the exact simulation speed, every close path checks whether another modal remains, and the prior pause, normal, fast, or maximum speed returns only after the final modal closes.
 
+Global keyboard routing now distinguishes gameplay from text entry and modal tasks. `Cmd/Ctrl+S` saves, `Alt+1/2/3` changes scale, backquote pauses or resumes the last active speed, and existing Help plus history shortcuts remain available without stealing movement, typing, or native text Undo from focused fields.
+
 ## Milestone 0: City-shaping prototype
 
 Goal: make laying out a place feel good.
