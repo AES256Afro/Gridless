@@ -19,6 +19,8 @@ import {
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
   RESIDENT_LIFE_STAGES,
+  RESIDENT_PASTIME_DEFINITIONS,
+  RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
   normalizeRoadProfile,
   homeEntityFloor,
@@ -52,6 +54,8 @@ import {
   type ResidentAspiration,
   type ResidentCareerTrack,
   type ResidentLifeStage,
+  type ResidentPastime,
+  type ResidentPersonalItemKind,
   type ResidentPersonality,
   type ResidentPurchaseKind,
   type ResidentTrait,
@@ -434,6 +438,9 @@ app.innerHTML = `
         <option value="dark">Dark</option>
         <option value="colorful">Colorful</option>
       </select>
+      <select id="furniture-owner" aria-label="Selected furniture owner" disabled>
+        <option value="">Shared household</option>
+      </select>
       <button id="sell-furniture" disabled>Sell</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
@@ -476,6 +483,10 @@ app.innerHTML = `
         <div class="resident-field-row">
           <label class="resident-field">Career direction<select id="resident-career-track">${(Object.entries(RESIDENT_CAREER_TRACK_DEFINITIONS) as Array<[ResidentCareerTrack, (typeof RESIDENT_CAREER_TRACK_DEFINITIONS)[ResidentCareerTrack]]>).map(([track, definition]) => `<option value="${track}">${definition.label}</option>`).join("")}</select></label>
           <label class="resident-field">Long-term aspiration<select id="resident-aspiration">${(Object.entries(RESIDENT_ASPIRATION_DEFINITIONS) as Array<[ResidentAspiration, (typeof RESIDENT_ASPIRATION_DEFINITIONS)[ResidentAspiration]]>).map(([aspiration, definition]) => `<option value="${aspiration}">${definition.label}</option>`).join("")}</select></label>
+        </div>
+        <div class="resident-field-row">
+          <label class="resident-field">Favorite home style<select id="resident-decor-preference"><option value="natural">Natural</option><option value="light">Light</option><option value="dark">Dark</option><option value="colorful">Colorful</option></select></label>
+          <label class="resident-field">Favorite pastime<select id="resident-favorite-pastime">${(Object.entries(RESIDENT_PASTIME_DEFINITIONS) as Array<[ResidentPastime, (typeof RESIDENT_PASTIME_DEFINITIONS)[ResidentPastime]]>).map(([pastime, definition]) => `<option value="${pastime}">${definition.label}</option>`).join("")}</select></label>
         </div>
         <fieldset class="resident-caregiver-fields" id="resident-caregiver-fields" hidden>
           <legend>Generational continuity</legend>
@@ -4430,6 +4441,8 @@ function updateResidentCreatorPreview() {
   }
   const role = roleSelect.value as ResidentRole;
   const aspiration = document.querySelector<HTMLSelectElement>("#resident-aspiration")!.value as ResidentAspiration;
+  const decorPreference = document.querySelector<HTMLSelectElement>("#resident-decor-preference")!.value as HomeFurnitureStyle;
+  const favoritePastime = document.querySelector<HTMLSelectElement>("#resident-favorite-pastime")!.value as ResidentPastime;
   const caregiverFields = document.querySelector<HTMLElement>("#resident-caregiver-fields")!;
   caregiverFields.hidden = !dependent;
   const traits = selectedCreatorTraits();
@@ -4445,7 +4458,7 @@ function updateResidentCreatorPreview() {
         .filter(select => select.value)
         .map(select => select.options[select.selectedIndex]?.text)
     : [];
-  document.querySelector("#resident-preview-copy")!.textContent = `${RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].label} · ${residentRoleLabel(role)} · ${RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].label} · ${RESIDENT_ASPIRATION_DEFINITIONS[aspiration].label}${caregiverNames.length ? ` · caregivers ${caregiverNames.join(" + ")}` : ""} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
+  document.querySelector("#resident-preview-copy")!.textContent = `${RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].label} · ${residentRoleLabel(role)} · ${RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].label} · ${RESIDENT_ASPIRATION_DEFINITIONS[aspiration].label} · ${decorPreference} home · ${RESIDENT_PASTIME_DEFINITIONS[favoritePastime].label}${caregiverNames.length ? ` · caregivers ${caregiverNames.join(" + ")}` : ""} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
   const strongest = RESIDENT_PERSONALITY_AXES
     .map(axis => ({ axis, value: personality[axis], distance: Math.abs(personality[axis] - 50) }))
     .filter(entry => entry.distance > 0)
@@ -4471,6 +4484,8 @@ function openResidentCreator() {
   document.querySelector<HTMLSelectElement>("#resident-age")!.value = "adult";
   document.querySelector<HTMLSelectElement>("#resident-career-track")!.value = "civic";
   document.querySelector<HTMLSelectElement>("#resident-aspiration")!.value = "family";
+  document.querySelector<HTMLSelectElement>("#resident-decor-preference")!.value = "natural";
+  document.querySelector<HTMLSelectElement>("#resident-favorite-pastime")!.value = "socializing";
   const eligibleCaregivers = home.residents.filter(resident => ["young-adult", "adult", "elder"].includes(world.residentLifeStage(resident)));
   for (const selector of ["#resident-caregiver-a", "#resident-caregiver-b"]) {
     const select = document.querySelector<HTMLSelectElement>(selector)!;
@@ -4507,6 +4522,7 @@ function updateHomeBuildControls(home: Home | null) {
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
   const style = document.querySelector<HTMLSelectElement>("#furniture-style")!;
+  const owner = document.querySelector<HTMLSelectElement>("#furniture-owner")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
@@ -4524,6 +4540,12 @@ function updateHomeBuildControls(home: Home | null) {
   rotate.disabled = !selected;
   style.disabled = !selected;
   style.value = selected?.style ?? "natural";
+  owner.replaceChildren(
+    new Option("Shared household", ""),
+    ...(home?.residents ?? []).map(resident => new Option(`Owned by ${resident.name}`, resident.id))
+  );
+  owner.disabled = !selected || !home?.residents.length;
+  owner.value = selected?.ownerResidentId ?? "";
   sell.disabled = !selected;
   addResident.disabled = !home || home.residents.length >= 8;
   addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
@@ -4637,9 +4659,20 @@ function updateHouseholdSummary(home: Home) {
             </select>
             <button type="button" id="make-resident-purchase">Buy</button>
           </div>
+          <div class="personal-collection-row">
+            <select id="collection-resident" aria-label="Personal item recipient">
+              ${home.residents.map(resident => `<option value="${resident.id}">${resident.name}</option>`).join("")}
+            </select>
+            <select id="collection-kind" aria-label="Personal collection item">
+              ${(Object.entries(RESIDENT_PERSONAL_ITEM_DEFINITIONS) as Array<[ResidentPersonalItemKind, (typeof RESIDENT_PERSONAL_ITEM_DEFINITIONS)[ResidentPersonalItemKind]]>).map(([kind, item]) =>
+                `<option value="${kind}">${item.label} · ${formatHomeCurrency(item.cost)}</option>`
+              ).join("")}
+            </select>
+            <button type="button" id="buy-personal-item">Add item</button>
+          </div>
           <small>${home.lastPurchase
             ? `Last: ${RESIDENT_PURCHASES[home.lastPurchase.kind].label} · ${formatHomeCurrency(home.lastPurchase.cost)} · total extras ${formatHomeCurrency(home.discretionarySpent ?? 0)}`
-            : "Uses household funds, not the home design budget."}</small>
+            : "Uses household funds, not the home design budget."} Personal items are permanent, unique belongings.</small>
         </section>
       ` : ""}
       ${outages.length ? `
@@ -4667,6 +4700,9 @@ function updateHouseholdSummary(home: Home) {
           const careerFit = world.residentCareerFit(resident);
           const aspirationProgress = world.residentAspirationProgress(resident);
           const caregiverNames = (resident.caregiverIds ?? []).map(id => home.residents.find(candidate => candidate.id === id)?.name).filter(Boolean);
+          const personalItems = world.residentPersonalItems(resident);
+          const ownedFurniture = world.residentOwnedFurniture(home, resident);
+          const ownershipSatisfaction = world.residentOwnershipSatisfaction(home, resident);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
@@ -4681,6 +4717,10 @@ function updateHouseholdSummary(home: Home) {
                 ${RESIDENT_PERSONALITY_AXES.map(axis => `<span title="${world.residentPersonalityAxisLabel(axis)}"><b style="width:${personality[axis]}%"></b><small>${world.residentPersonalityAxisLabel(axis).slice(0, 3)} ${personality[axis]}</small></span>`).join("")}
               </div>
               <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
+              <div class="resident-belongings">
+                <span><strong>${world.residentFavoritePastimeLabel(resident)} · ${world.residentDecorPreferenceLabel(resident)} home</strong><small>${personalItems.length ? personalItems.map(item => RESIDENT_PERSONAL_ITEM_DEFINITIONS[item.kind].label).join(" · ") : "No personal collection yet"} · ${ownedFurniture.length} owned ${ownedFurniture.length === 1 ? "furnishing" : "furnishings"}</small></span>
+                <b>${ownershipSatisfaction}% belonging</b>
+              </div>
               <div class="resident-growth">
                 <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · fit ${careerFit}%</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
@@ -4749,6 +4789,14 @@ function updateHouseholdSummary(home: Home) {
       const kind = details.querySelector<HTMLSelectElement>("#purchase-kind")?.value as ResidentPurchaseKind | undefined;
       if (!residentId || !kind) return;
       const result = world.purchaseForResident(home.id, residentId, kind);
+      if (result.ok) renderWorld();
+      notice(result.reason);
+    });
+    details.querySelector("#buy-personal-item")?.addEventListener("click", () => {
+      const residentId = details.querySelector<HTMLSelectElement>("#collection-resident")?.value;
+      const kind = details.querySelector<HTMLSelectElement>("#collection-kind")?.value as ResidentPersonalItemKind | undefined;
+      if (!residentId || !kind) return;
+      const result = world.buyResidentPersonalItem(home.id, residentId, kind);
       if (result.ok) renderWorld();
       notice(result.reason);
     });
@@ -6685,8 +6733,17 @@ document.querySelector("#furniture-style")!.addEventListener("change", event => 
   const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
   const style = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureStyle;
   if (!home || !item || !world.setFurnitureStyle(home.id, item.id, style)) return;
-  renderHome();
+  renderWorld();
   notice(`${homeFurnitureLabel(item.kind)} style changed to ${style}`);
+});
+document.querySelector("#furniture-owner")!.addEventListener("change", event => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const residentId = (event.currentTarget as HTMLSelectElement).value || undefined;
+  if (!home || !item || !world.setFurnitureOwner(home.id, item.id, residentId)) return;
+  renderWorld();
+  const owner = residentId ? home.residents.find(resident => resident.id === residentId) : undefined;
+  notice(`${homeFurnitureLabel(item.kind)} is now ${owner ? `owned by ${owner.name}` : "shared by the household"}`);
 });
 document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   const home = currentHome();
@@ -6773,6 +6830,8 @@ document.querySelector("#resident-age")!.addEventListener("change", updateReside
 document.querySelector("#resident-role")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-career-track")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-aspiration")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-decor-preference")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-favorite-pastime")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-caregiver-a")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-caregiver-b")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-inherit-personality")!.addEventListener("change", updateResidentCreatorPreview);
@@ -6795,6 +6854,8 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
   const role = document.querySelector<HTMLSelectElement>("#resident-role")!.value as ResidentRole;
   const careerTrack = document.querySelector<HTMLSelectElement>("#resident-career-track")!.value as ResidentCareerTrack;
   const aspiration = document.querySelector<HTMLSelectElement>("#resident-aspiration")!.value as ResidentAspiration;
+  const decorPreference = document.querySelector<HTMLSelectElement>("#resident-decor-preference")!.value as HomeFurnitureStyle;
+  const favoritePastime = document.querySelector<HTMLSelectElement>("#resident-favorite-pastime")!.value as ResidentPastime;
   const caregiverIds = [...new Set([
     document.querySelector<HTMLSelectElement>("#resident-caregiver-a")!.value,
     document.querySelector<HTMLSelectElement>("#resident-caregiver-b")!.value
@@ -6806,7 +6867,7 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
     notice("Choose exactly two personality traits");
     return;
   }
-  if (!world.addResident(home.id, { name, age, lifeStage, role, traits, personality, careerTrack, aspiration, caregiverIds, inheritPersonality })) {
+  if (!world.addResident(home.id, { name, age, lifeStage, role, traits, personality, careerTrack, aspiration, caregiverIds, inheritPersonality, decorPreference, favoritePastime })) {
     notice("Use a unique name with letters, numbers, spaces, apostrophes, periods, or hyphens");
     return;
   }

@@ -240,6 +240,8 @@ export type ResidentRole = "office" | "service" | "student" | "home";
 export type ResidentLifeStage = "infant" | "toddler" | "child" | "teen" | "young-adult" | "adult" | "elder";
 export type ResidentAspiration = "family" | "mastery" | "community" | "prosperity" | "creative";
 export type ResidentCareerTrack = "civic" | "enterprise" | "hospitality" | "care" | "creative";
+export type ResidentPastime = "reading" | "gardening" | "cooking" | "socializing" | "relaxing";
+export type ResidentPersonalItemKind = "book-set" | "garden-kit" | "recipe-box" | "game-set" | "comfort-kit";
 
 export type ResidentTrait =
   | "outgoing"
@@ -274,6 +276,12 @@ export type ResidentSkill = "communication" | "creativity" | "wellness" | "pract
 export type ResidentSkills = Record<ResidentSkill, number>;
 export type ResidentPurchaseKind = "meal-delivery" | "creative-supplies" | "wellness-care";
 
+export type ResidentPersonalItem = {
+  id: string;
+  kind: ResidentPersonalItemKind;
+  acquiredAt: number;
+};
+
 export const RESIDENT_PURCHASES: Record<ResidentPurchaseKind, { label: string; cost: number; effect: string }> = {
   "meal-delivery": { label: "Order a meal", cost: 35, effect: "Energy, comfort, and practical skill" },
   "creative-supplies": { label: "Buy creative supplies", cost: 90, effect: "Creativity, comfort, and calm" },
@@ -306,6 +314,9 @@ export type Resident = {
   careerBranch?: string;
   generation?: number;
   caregiverIds?: string[];
+  decorPreference?: HomeFurnitureStyle;
+  favoritePastime?: ResidentPastime;
+  inventory?: ResidentPersonalItem[];
   destinationLotId?: string;
   energy: number;
   social: number;
@@ -332,6 +343,8 @@ export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits">
   careerTrack?: ResidentCareerTrack;
   caregiverIds?: string[];
   inheritPersonality?: boolean;
+  decorPreference?: HomeFurnitureStyle;
+  favoritePastime?: ResidentPastime;
 };
 
 export const RESIDENT_LIFE_STAGES: ResidentLifeStage[] = [
@@ -373,6 +386,32 @@ export const RESIDENT_CAREER_TRACK_DEFINITIONS: Record<ResidentCareerTrack, {
   hospitality: { label: "Hospitality", role: "service", primarySkills: ["practical", "communication"], baseWage: 145, wageStep: 34, branches: ["Culinary", "Guest experience"] },
   care: { label: "Care services", role: "service", primarySkills: ["wellness", "communication"], baseWage: 165, wageStep: 38, branches: ["Clinical care", "Community wellness"] },
   creative: { label: "Creative practice", role: "home", primarySkills: ["creativity", "communication"], baseWage: 110, wageStep: 31, branches: ["Studio artist", "Independent media"] }
+};
+
+export const RESIDENT_PASTIME_DEFINITIONS: Record<ResidentPastime, {
+  label: string;
+  summary: string;
+  action: ResidentActionKind;
+}> = {
+  reading: { label: "Reading", summary: "settles in with books and focused study", action: "study" },
+  gardening: { label: "Gardening", summary: "cares for plants and restorative spaces", action: "tend-plants" },
+  cooking: { label: "Cooking", summary: "turns meals into a practiced household ritual", action: "eat" },
+  socializing: { label: "Social time", summary: "seeks shared conversation and games", action: "socialize" },
+  relaxing: { label: "Quiet comfort", summary: "values a calm place to decompress", action: "relax" }
+};
+
+export const RESIDENT_PERSONAL_ITEM_DEFINITIONS: Record<ResidentPersonalItemKind, {
+  label: string;
+  cost: number;
+  pastime: ResidentPastime;
+  skill: ResidentSkill;
+  aspiration: ResidentAspiration;
+}> = {
+  "book-set": { label: "Personal book set", cost: 80, pastime: "reading", skill: "creativity", aspiration: "mastery" },
+  "garden-kit": { label: "Garden kit", cost: 110, pastime: "gardening", skill: "wellness", aspiration: "community" },
+  "recipe-box": { label: "Recipe box", cost: 95, pastime: "cooking", skill: "practical", aspiration: "prosperity" },
+  "game-set": { label: "Tabletop game set", cost: 75, pastime: "socializing", skill: "communication", aspiration: "family" },
+  "comfort-kit": { label: "Comfort collection", cost: 90, pastime: "relaxing", skill: "wellness", aspiration: "creative" }
 };
 
 const CAREER_TRACK_PERSONALITY_TARGETS: Record<ResidentCareerTrack, ResidentPersonality> = {
@@ -724,7 +763,7 @@ export type Home = {
   name: string;
   floors: number;
   rooms: HomeRoom[];
-  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; floor?: number }>;
+  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; floor?: number; ownerResidentId?: string }>;
   stairs?: HomeStair[];
   designBudget: number;
   designSpent: number;
@@ -2485,6 +2524,47 @@ export class World {
     return resident.careerBranch ?? (this.residentCareerLevel(resident) >= 4 ? "Branch pending" : "Foundation path");
   }
 
+  residentDecorPreference(resident: Resident) {
+    return normalizeResidentDecorPreference(resident.decorPreference, resident);
+  }
+
+  residentDecorPreferenceLabel(resident: Resident) {
+    const style = this.residentDecorPreference(resident);
+    return `${style[0].toUpperCase()}${style.slice(1)}`;
+  }
+
+  residentFavoritePastime(resident: Resident) {
+    return normalizeResidentPastime(resident.favoritePastime, resident);
+  }
+
+  residentFavoritePastimeLabel(resident: Resident) {
+    return RESIDENT_PASTIME_DEFINITIONS[this.residentFavoritePastime(resident)].label;
+  }
+
+  residentPersonalItems(resident: Resident) {
+    return resident.inventory ?? [];
+  }
+
+  residentOwnedFurniture(home: Home, resident: Resident) {
+    return home.furniture.filter(item => item.ownerResidentId === resident.id);
+  }
+
+  residentOwnershipSatisfaction(home: Home | undefined, resident: Resident) {
+    if (!home) return 50;
+    const owned = this.residentOwnedFurniture(home, resident);
+    const inventory = this.residentPersonalItems(resident);
+    const preferredStyle = this.residentDecorPreference(resident);
+    const matchingStyles = owned.filter(item => (item.style ?? "natural") === preferredStyle).length;
+    return Math.round(clamp(
+      35
+      + Math.min(30, owned.length * 15)
+      + Math.min(20, inventory.length * 5)
+      + (owned.length ? matchingStyles / owned.length * 15 : 0),
+      0,
+      100
+    ));
+  }
+
   residentActionPersonalityInfluence(resident: Resident, action: ResidentActionKind) {
     return residentActionPersonalityBonus(resident, action);
   }
@@ -2908,16 +2988,18 @@ export class World {
     const commuteBurden = this.residentCommuteBurden(resident);
     const financialSecurity = home ? this.homeFinancialSecurity(home) : 50;
     const aspirationProgress = this.residentAspirationProgress(resident);
+    const ownershipSatisfaction = this.residentOwnershipSatisfaction(home, resident);
     const dependent = ["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(resident));
     const hasCaregiver = !dependent || Boolean(home && (resident.caregiverIds ?? []).some(id => home.residents.some(candidate => candidate.id === id)));
     const score = Math.round(clamp(
       resident.energy * .15
       + resident.social * .14
-      + resident.comfort * .17
+      + resident.comfort * .13
       + resident.health * .22
       + (100 - resident.stress) * .16
       + financialSecurity * .1
       + aspirationProgress * .06
+      + ownershipSatisfaction * .04
       + (hasCaregiver ? 0 : -8),
       0,
       100
@@ -2931,6 +3013,7 @@ export class World {
       { value: 100 - financialSecurity, text: "Household financial pressure" },
       { value: hasCaregiver ? 0 : 78, text: "Needs a household caregiver" },
       { value: (100 - aspirationProgress) * .48, text: `${this.residentAspirationLabel(resident)} needs progress` },
+      { value: (100 - ownershipSatisfaction) * .5, text: "Needs a personal corner and belongings" },
       { value: 100 - resident.social, text: "Social isolation" },
       { value: 100 - neighborhoodSupport, text: "Limited neighborhood support" }
     ].sort((a, b) => b.value - a.value);
@@ -3565,6 +3648,17 @@ export class World {
     return true;
   }
 
+  setFurnitureOwner(homeId: string, furnitureId: string, residentId?: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (!home || !furniture || (residentId && !home.residents.some(resident => resident.id === residentId))) return false;
+    const normalizedOwner = residentId || undefined;
+    if (furniture.ownerResidentId === normalizedOwner) return false;
+    this.checkpoint();
+    furniture.ownerResidentId = normalizedOwner;
+    return true;
+  }
+
   canPlaceFurniture(
     home: Home,
     kind: Home["furniture"][number]["kind"],
@@ -3650,6 +3744,34 @@ export class World {
     return { ok: true, reason: `${purchase.label} for ${resident.name} · $${purchase.cost}` };
   }
 
+  buyResidentPersonalItem(homeId: string, residentId: string, kind: ResidentPersonalItemKind) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    const definition = RESIDENT_PERSONAL_ITEM_DEFINITIONS[kind];
+    if (!home || !resident || !definition) return { ok: false, reason: "That personal item is unavailable" };
+    if (this.residentPersonalItems(resident).some(item => item.kind === kind)) {
+      return { ok: false, reason: `${resident.name} already owns ${definition.label.toLowerCase()}.` };
+    }
+    if (this.homeHouseholdFunds(home) < definition.cost) {
+      return { ok: false, reason: `${definition.label} needs $${definition.cost}. The household has $${this.homeHouseholdFunds(home)}.` };
+    }
+    this.checkpoint();
+    home.householdFunds = this.homeHouseholdFunds(home) - definition.cost;
+    home.discretionarySpent = Math.max(0, Math.round(home.discretionarySpent ?? 0)) + definition.cost;
+    resident.inventory = [...this.residentPersonalItems(resident), {
+      id: crypto.randomUUID(),
+      kind,
+      acquiredAt: this.clock.elapsedMinutes
+    }];
+    resident.skills = normalizeResidentSkills(resident.skills);
+    resident.skills[definition.skill] = clamp(resident.skills[definition.skill] + 3, 0, 100);
+    resident.comfort = clamp(resident.comfort + 5, 0, 100);
+    if (this.residentAspiration(resident) === definition.aspiration) {
+      resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 5);
+    }
+    return { ok: true, reason: `${definition.label} added to ${resident.name}'s personal collection · $${definition.cost}` };
+  }
+
   rotateFurniture(homeId: string, furnitureId: string, quarterTurns = 1) {
     const home = this.homes.find(item => item.id === homeId);
     const furniture = home?.furniture.find(item => item.id === furnitureId);
@@ -3703,6 +3825,8 @@ export class World {
     if (profile?.lifeStage && !RESIDENT_LIFE_STAGES.includes(profile.lifeStage)) return false;
     if (profile?.aspiration && !RESIDENT_ASPIRATION_DEFINITIONS[profile.aspiration]) return false;
     if (profile?.careerTrack && !RESIDENT_CAREER_TRACK_DEFINITIONS[profile.careerTrack]) return false;
+    if (profile?.decorPreference && !(["natural", "light", "dark", "colorful"] as HomeFurnitureStyle[]).includes(profile.decorPreference)) return false;
+    if (profile?.favoritePastime && !RESIDENT_PASTIME_DEFINITIONS[profile.favoritePastime]) return false;
     const caregiverIds = [...new Set(profile?.caregiverIds ?? [])];
     if (caregiverIds.length > 2) return false;
     const caregivers = caregiverIds.map(id => home.residents.find(resident => resident.id === id)).filter((resident): resident is Resident => Boolean(resident));
@@ -3738,6 +3862,9 @@ export class World {
       careerTrack: profile?.careerTrack,
       generation,
       caregiverIds,
+      decorPreference: profile?.decorPreference,
+      favoritePastime: profile?.favoritePastime,
+      inventory: [],
       energy: 82,
       social: 68,
       comfort: 74,
@@ -3756,6 +3883,8 @@ export class World {
     };
     resident.aspiration = normalizeResidentAspiration(resident.aspiration, resident);
     resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
+    resident.decorPreference = normalizeResidentDecorPreference(resident.decorPreference, resident);
+    resident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, resident);
     for (const existing of home.residents) {
       home.relationships.push({
         residentIds: orderedResidentIds(existing.id, resident.id),
@@ -3846,11 +3975,14 @@ export class World {
           careerXp: Math.max(0, Math.round(resident.careerXp ?? 0)),
           generation: Math.round(clamp(resident.generation ?? 1, 1, 100)),
           caregiverIds: [...new Set(resident.caregiverIds ?? [])].slice(0, 2),
+          inventory: normalizeResidentInventory(resident.inventory, resident.id, savedElapsedMinutes),
           homeFloor: Math.round(clamp(resident.homeFloor ?? 0, 0, normalizedFloors - 1))
         };
         normalizedResident.aspiration = normalizeResidentAspiration(resident.aspiration, normalizedResident);
         normalizedResident.aspirationProgress = Math.round(clamp(resident.aspirationProgress ?? 0, 0, 100));
         normalizedResident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, normalizedResident);
+        normalizedResident.decorPreference = normalizeResidentDecorPreference(resident.decorPreference, normalizedResident);
+        normalizedResident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, normalizedResident);
         if (lifeStage === "young-adult" || lifeStage === "adult") {
           normalizedResident.role = RESIDENT_CAREER_TRACK_DEFINITIONS[normalizedResident.careerTrack].role;
         }
@@ -3905,7 +4037,8 @@ export class World {
         furniture: (home.furniture ?? []).map(item => ({
           ...item,
           floor: Math.round(clamp(item.floor ?? 0, 0, normalizedFloors - 1)),
-          style: normalizeHomeFurnitureStyle(item.style)
+          style: normalizeHomeFurnitureStyle(item.style),
+          ownerResidentId: item.ownerResidentId && residentIds.has(item.ownerResidentId) ? item.ownerResidentId : undefined
         })),
         stairs: (home.stairs ?? []).filter(stair =>
           Number.isFinite(stair.x)
@@ -4650,15 +4783,18 @@ export class World {
       && (resident.traits.includes("empathetic") || availablePartnerMatch.tension >= 45)
         ? "apologize"
         : learnedPreference.preferredIntent ?? "chat";
+    const preferredFurniture = (kind: Home["furniture"][number]["kind"]) =>
+      home.furniture.find(item => item.kind === kind && item.ownerResidentId === resident.id)
+      ?? home.furniture.find(item => item.kind === kind);
     const furniture = {
-      bed: home.furniture.find(item => item.kind === "bed"),
-      sofa: home.furniture.find(item => item.kind === "sofa"),
-      table: home.furniture.find(item => item.kind === "table"),
-      plant: home.furniture.find(item => item.kind === "plant"),
-      desk: home.furniture.find(item => item.kind === "desk"),
-      bookcase: home.furniture.find(item => item.kind === "bookcase"),
-      fridge: home.furniture.find(item => item.kind === "fridge"),
-      shower: home.furniture.find(item => item.kind === "shower")
+      bed: preferredFurniture("bed"),
+      sofa: preferredFurniture("sofa"),
+      table: preferredFurniture("table"),
+      plant: preferredFurniture("plant"),
+      desk: preferredFurniture("desk"),
+      bookcase: preferredFurniture("bookcase"),
+      fridge: preferredFurniture("fridge"),
+      shower: preferredFurniture("shower")
     };
     const candidates: Array<{
       kind: ResidentActionKind;
@@ -4715,10 +4851,16 @@ export class World {
       },
       { kind: "idle", score: 18 }
     ];
+    const favoriteAction = RESIDENT_PASTIME_DEFINITIONS[this.residentFavoritePastime(resident)].action;
+    const inventoryActions = new Set(this.residentPersonalItems(resident).map(item =>
+      RESIDENT_PASTIME_DEFINITIONS[RESIDENT_PERSONAL_ITEM_DEFINITIONS[item.kind].pastime].action
+    ));
     for (const candidate of candidates) {
       candidate.score += hashString(`${resident.id}-${candidate.kind}-${Math.floor(now / 60)}`) % 9;
       candidate.score += residentActionTraitBonus(resident, candidate.kind);
       candidate.score += residentActionPersonalityBonus(resident, candidate.kind);
+      if (candidate.kind === favoriteAction) candidate.score += 16;
+      if (inventoryActions.has(candidate.kind)) candidate.score += 6;
       if (
         resident.lastActionKind === candidate.kind
         && resident.lastActionAt !== undefined
@@ -5216,6 +5358,48 @@ function normalizeResidentCareerTrack(track: ResidentCareerTrack | undefined, re
   if (resident.role === "home") return "creative";
   if (resident.role === "office") return personality.spontaneity >= 58 ? "enterprise" : "civic";
   return resident.traits.includes("creative") && personality.spontaneity >= 65 ? "creative" : "civic";
+}
+
+function normalizeResidentDecorPreference(style: HomeFurnitureStyle | undefined, resident: Pick<Resident, "id" | "traits" | "personality">): HomeFurnitureStyle {
+  if (style === "light" || style === "dark" || style === "colorful" || style === "natural") return style;
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (resident.traits.includes("creative") || personality.spontaneity >= 74) return "colorful";
+  if (resident.traits.includes("organized") || personality.cleanliness >= 72) return "light";
+  if (personality.emotionality <= 32 && personality.sociability <= 42) return "dark";
+  return "natural";
+}
+
+function normalizeResidentPastime(pastime: ResidentPastime | undefined, resident: Pick<Resident, "id" | "traits" | "personality">): ResidentPastime {
+  if (pastime && RESIDENT_PASTIME_DEFINITIONS[pastime]) return pastime;
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (resident.traits.includes("outgoing") || personality.sociability >= 72) return "socializing";
+  if (resident.traits.includes("active") || personality.activity >= 72) return "gardening";
+  if (resident.traits.includes("organized") || personality.cleanliness >= 72) return "cooking";
+  if (resident.traits.includes("homebody") || personality.emotionality >= 72) return "relaxing";
+  return hashString(`${resident.id}:pastime`) % 2 ? "reading" : "gardening";
+}
+
+function normalizeResidentInventory(
+  inventory: ResidentPersonalItem[] | undefined,
+  residentId: string,
+  elapsedMinutes: number
+): ResidentPersonalItem[] {
+  const normalized: ResidentPersonalItem[] = [];
+  const seenKinds = new Set<ResidentPersonalItemKind>();
+  const seenIds = new Set<string>();
+  for (const [index, item] of (Array.isArray(inventory) ? inventory : []).entries()) {
+    if (!item || !RESIDENT_PERSONAL_ITEM_DEFINITIONS[item.kind] || seenKinds.has(item.kind)) continue;
+    seenKinds.add(item.kind);
+    const savedId = typeof item.id === "string" && item.id.length > 0 ? item.id : undefined;
+    const id = savedId && !seenIds.has(savedId) ? savedId : `${residentId}-${item.kind}-${index}`;
+    seenIds.add(id);
+    normalized.push({
+      id,
+      kind: item.kind,
+      acquiredAt: Math.round(clamp(item.acquiredAt ?? 0, 0, elapsedMinutes))
+    });
+  }
+  return normalized;
 }
 
 function nextResidentLifeStage(stage: ResidentLifeStage): ResidentLifeStage | undefined {

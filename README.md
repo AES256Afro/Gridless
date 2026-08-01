@@ -50,6 +50,7 @@ The current vertical slice proves:
 - Seven persistent life stages from Infant through Elder with deterministic daily aging, stage-aware school and work roles, caregiver lineage, generation numbers, inherited personality blends, family bonds, and legacy-save migration
 - Five long-term aspirations that progress through relationships, skill practice, career success, household prosperity, aging milestones, and elder mentorship
 - Five skill-linked career tracks with distinct roles and wages, deterministic specialization branches at level four, personality fit, ten career levels, and stage-aware retirement
+- Persistent favorite home styles and pastimes, unique five-item personal collections, resident-owned furnishings, preferred-object autonomy, and a visible belonging score that rewards matching personal space
 - Household and city wellbeing visible across planning, street exploration, and Home Simulator, with local wellbeing feeding back into daily growth
 - Degrading utility infrastructure with deterministic local outages, street-routed repair crews, traffic-sensitive restoration, affected-parcel consequences, and persistent recovery state
 - Persistent autonomous household actions chosen from resident needs, schedules, available furniture, and who is home, with visible 3D behavior, progress, completed-action history, and direct need effects
@@ -99,15 +100,15 @@ The current vertical slice proves:
 - Persistent bounded social memories with tension, conflict counts, repaired-conflict counts, initiator history, and contextual Apologize actions
 - Emergent resident social preferences derived from repeated remembered outcomes, with visible preferred and avoided conversation styles plus preference-weighted autonomous choices
 - Persistent Communication, Creativity, Wellness, and Practical skills earned through household actions plus ten-level office, service, and student progression advanced by completed work or school days
-- Persistent household funds with career-level daily wages, readable living and home-maintenance costs, daily net results, save migration, and financial-security feedback into resident wellbeing
+- Persistent household funds with career-level daily wages, readable living and home-maintenance costs, daily net results, personal-collection spending, save migration, and financial-security feedback into resident wellbeing
 - Household-funded meal delivery, creative supplies, and wellness care with immediate need and skill effects, persistent total discretionary spending, last-purchase history, affordability checks, and strict separation from the design budget
 - Autonomous reconciliation attempts from empathetic residents when household tension remains unresolved
 - Relationship-driven autonomous conversations that choose an available partner from familiarity, personality compatibility, and social need, then reserve both residents for the shared activity
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots
-- Floor-aware room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, persistent Natural, Light, Dark, or Colorful furniture styles, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
-- A focused household creator for resident name, seven life stages, career direction, aspiration, daily role, caregivers, inherited personality, and exactly two behavior-shaping traits, with an eight-person household limit and immediate profile preview
+- Floor-aware room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, persistent Natural, Light, Dark, or Colorful furniture styles, resident ownership, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
+- A focused household creator for resident name, seven life stages, career direction, aspiration, favorite home style, pastime, daily role, caregivers, inherited personality, and exactly two behavior-shaping traits, with an eight-person household limit and immediate profile preview
 - A contextual Home Advisor that turns resident needs, bed and room capacity, missing functional objects, creative traits, relationship tension, and finances into three prioritized household wants with direct build actions
 
 This is a visual and interaction prototype with local persistence and a deterministic early economic simulation. The current reference scenario passes its automated ten-year stability gate; qualitative diagnosis and fun remain playtest questions.
