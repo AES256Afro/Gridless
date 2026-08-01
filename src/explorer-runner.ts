@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1887,6 +1887,21 @@ check(
     && restoredMoveInGoals
     && restoredMoveInGoalWorld.homes[0].moveInGoalKinds?.length === pinnedMoveInGoals.kinds.length,
   "Pinned move-in goals did not persist or complete from corrected live home evidence."
+);
+const firstNightComfortBefore = safeHome.residents.reduce((total, resident) => total + resident.comfort, 0);
+const suspendedFirstNight = beginApprovedHomeFirstNight(moveInApprovalWorld, suspendedMoveInHome);
+const firstNight = beginApprovedHomeFirstNight(moveInApprovalWorld, safeHome);
+const restoredFirstNightWorld = new World();
+check(
+  !suspendedFirstNight.ok
+    && firstNight.ok
+    && firstNight.residents === safeHome.residents.length
+    && firstNight.comfortGain === safeHome.residents.reduce((total, resident) => total + resident.comfort, 0) - firstNightComfortBefore
+    && safeHome.residents.every(resident => resident.currentAction?.directed && resident.milestones?.some(milestone => milestone.kind === "homecoming"))
+    && !beginApprovedHomeFirstNight(moveInApprovalWorld, safeHome).ok
+    && restoredFirstNightWorld.restore(moveInApprovalWorld.serialize())
+    && restoredFirstNightWorld.homes[0].firstNightAt === safeHome.firstNightAt,
+  "Approved first-night simulation did not gate, affect residents, remain one-time, or persist."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -4478,6 +4493,7 @@ console.log(JSON.stringify({
   homeReadiness: { unsafe: unsafeReadiness, safe: safeReadiness },
   homeMoveInDecision: { approved: activeMoveInAuthorization, suspended: suspendedMoveInAuthorization },
   homeMoveInGoals: { unsafe: unsafeMoveInGoals, corrected: correctedMoveInGoals },
+  homeFirstNight: { residents: firstNight.residents, comfortGain: firstNight.comfortGain, action: safeHome.residents[0].currentAction?.kind },
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,
