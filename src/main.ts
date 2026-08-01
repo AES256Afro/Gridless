@@ -5556,6 +5556,7 @@ function updateHouseholdSummary(home: Home) {
           const routineProfile = world.residentRoutineProfile(resident);
           const milestones = world.residentMilestones(resident).slice(0, 3);
           const carePriority = world.caregivingPriority(home, resident);
+          const familyMoveIds = world.familyMoveResidentIds(home.id, resident.id);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
@@ -5633,7 +5634,8 @@ function updateHouseholdSummary(home: Home) {
                   <select data-resident-move-destination="${resident.id}" aria-label="Move ${resident.name} to household">
                     ${destinationHomes.map(destinationHome => `<option value="${destinationHome.id}">${destinationHome.name}</option>`).join("")}
                   </select>
-                  <button type="button" data-move-resident="${resident.id}">Move household</button>
+                  <button type="button" data-move-resident="${resident.id}">Move resident</button>
+                  ${familyMoveIds.length > 1 ? `<button type="button" data-move-family="${resident.id}">Move family · ${familyMoveIds.length}</button>` : ""}
                 ` : `<small>Open another residential lot in Home Simulator to create a move destination.</small>`}
               </div>
             </div>
@@ -5729,6 +5731,22 @@ function updateHouseholdSummary(home: Home) {
         const result = world.moveResidentToHome(home.id, residentId, destinationId);
         if (result.ok) {
           if (controlledResidentId === residentId) controlledResidentId = null;
+          renderWorld();
+        }
+        notice(result.reason);
+      });
+    });
+    details.querySelectorAll<HTMLButtonElement>("[data-move-family]").forEach(button => {
+      button.addEventListener("click", () => {
+        const residentId = button.dataset.moveFamily;
+        const destinationId = residentId
+          ? details.querySelector<HTMLSelectElement>(`[data-resident-move-destination="${residentId}"]`)?.value
+          : undefined;
+        if (!residentId || !destinationId) return;
+        const residentIds = world.familyMoveResidentIds(home.id, residentId);
+        const result = world.moveHouseholdGroup(home.id, residentIds, destinationId);
+        if (result.ok) {
+          if (controlledResidentId && result.residentIds.includes(controlledResidentId)) controlledResidentId = null;
           renderWorld();
         }
         notice(result.reason);

@@ -2827,6 +2827,70 @@ check(
   "Household move accepted a resident who was not in the source home."
 );
 
+const familySplitWorld = new World();
+const familySplitSource = structuredClone(directControlBaseline);
+familySplitSource.id = "family-split-source";
+familySplitSource.name = "Shared Family Home";
+familySplitSource.householdFunds = 18_000;
+familySplitSource.residents[0].id = "family-caregiver-a";
+familySplitSource.residents[1].id = "family-caregiver-b";
+const familyChild = structuredClone(familySplitSource.residents[1]);
+familyChild.id = "family-child";
+familyChild.name = "Family Child";
+familyChild.lifeStage = "child";
+familyChild.age = "child";
+familyChild.role = "student";
+familyChild.caregiverIds = ["family-caregiver-a", "family-caregiver-b"];
+familySplitSource.residents.push(familyChild);
+familySplitSource.relationships = [
+  { residentIds: ["family-caregiver-a", "family-caregiver-b"], score: 91, conversations: 8 },
+  { residentIds: ["family-caregiver-a", "family-child"], score: 88, conversations: 5 },
+  { residentIds: ["family-caregiver-b", "family-child"], score: 86, conversations: 4 }
+];
+familySplitSource.furniture[0].ownerResidentId = "family-caregiver-a";
+const familySplitDestination: Home = {
+  ...structuredClone(familySplitSource),
+  id: "family-split-destination",
+  lotId: "family-split-lot",
+  name: "New Family Home",
+  residents: [],
+  relationships: [],
+  gatherings: [],
+  furniture: [],
+  householdFunds: 2_000
+};
+familySplitWorld.homes = [familySplitSource, familySplitDestination];
+const familyMoveIds = familySplitWorld.familyMoveResidentIds(familySplitSource.id, "family-caregiver-a");
+const familySplitResult = familySplitWorld.moveHouseholdGroup(
+  familySplitSource.id,
+  familyMoveIds,
+  familySplitDestination.id
+);
+const preservedFamilyRelationship = familySplitDestination.relationships.find(relationship =>
+  relationship.residentIds.includes("family-caregiver-a") && relationship.residentIds.includes("family-caregiver-b")
+);
+check(
+  familyMoveIds.length === 3
+    && familySplitResult.ok
+    && familySplitResult.transferred === 18_000
+    && familySplitSource.residents.length === 0
+    && familySplitSource.householdFunds === 0
+    && familySplitDestination.residents.length === 3
+    && familySplitDestination.householdFunds === 20_000
+    && preservedFamilyRelationship?.score === 91
+    && familySplitSource.furniture[0].ownerResidentId === undefined
+    && familySplitDestination.residents.find(resident => resident.id === "family-child")?.caregiverIds?.length === 2
+    && familySplitDestination.residents.every(resident => familySplitWorld.residentMilestones(resident)[0]?.kind === "move"),
+  "A family household split did not move atomically with care, funds, relationships, and life history intact."
+);
+const restoredFamilySplitWorld = new World();
+check(
+  Boolean(restoredFamilySplitWorld.restore(familySplitWorld.serialize())
+    && restoredFamilySplitWorld.homes.find(home => home.id === familySplitDestination.id)?.residents.length === 3
+    && restoredFamilySplitWorld.homes.find(home => home.id === familySplitDestination.id)?.relationships.some(relationship => relationship.score === 91)),
+  "A split family household did not survive save and restore."
+);
+
 function runConversationIntentProbe(intent: ConversationIntent, initialTension = 0) {
   const world = new World();
   const home = structuredClone(directControlBaseline);
@@ -3765,6 +3829,9 @@ console.log(JSON.stringify({
   movedResidentHome: moveDestination.name,
   movedResidentFunds: moveResult.transferred,
   movedResidentMilestone: recurringPreferenceWorld.residentMilestones(movedResident)[0]?.kind,
+  movedFamilyResidents: familySplitResult.residentIds.length,
+  movedFamilyFunds: familySplitResult.transferred,
+  preservedFamilyRelationship: preservedFamilyRelationship?.score,
   lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
   latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
