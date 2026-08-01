@@ -31,6 +31,7 @@ import {
   homeFloorView,
   roadCapacityForProfile,
   roadConstructionCost,
+  snapRoadDrawingPoint,
   roadWidthForProfile,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
@@ -55,6 +56,7 @@ import {
   type Road,
   type RoadClass,
   type RoadProfile,
+  type RoadDrawingSnap,
   type Resident,
   type ResidentRole,
   type ResidentAspiration,
@@ -261,6 +263,11 @@ app.innerHTML = `
             <button type="button" data-road-feature="median" aria-pressed="false">Median</button>
             <button type="button" data-road-feature="curbParking" aria-pressed="true" class="active">Parking</button>
             <button type="button" data-road-feature="streetTrees" aria-pressed="true" class="active">Trees</button>
+          </div>
+          <div class="road-drawing-aids" aria-label="Road drawing aids">
+            <button type="button" id="road-snap-endpoints" aria-pressed="true" class="active">Snap ends</button>
+            <button type="button" id="road-angle-lock" aria-pressed="false">15° lock</button>
+            <output id="road-snap-status">Endpoint snap · free angle</output>
           </div>
           <output id="road-profile-summary" aria-live="polite"></output>
           <button type="button" id="apply-road-profile" disabled>Apply profile</button>
@@ -702,6 +709,7 @@ const pointer = new THREE.Vector2();
 const keys = new Set<string>();
 let mode: Mode = "city";
 let draft: Point2[] = [];
+let lastRoadSnap: RoadDrawingSnap | null = null;
 let selectedLot: Lot | null = null;
 let selectedTransitLineId: string | null = world.transitLines[0]?.id ?? null;
 let cityTool: CityTool = "road";
@@ -3476,10 +3484,26 @@ function renderDraft() {
       new THREE.MeshBasicMaterial({ color: utility ? utilityColor(utility) : 0xe8cb68, transparent: true, opacity: .78 })
     ));
   }
-  for (const point of draft) {
-    const marker = new THREE.Mesh(new THREE.SphereGeometry(1.5), new THREE.MeshBasicMaterial({ color: 0xffe07b }));
+  for (const [index, point] of draft.entries()) {
+    const isSnappedEndpoint = cityTool === "road" && index === draft.length - 1 && lastRoadSnap?.kind === "endpoint";
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(isSnappedEndpoint ? 2.1 : 1.5), new THREE.MeshBasicMaterial({ color: isSnappedEndpoint ? 0x73c68b : 0xffe07b }));
     marker.position.set(point.x, 1.5, point.z);
     previewGroup.add(marker);
+  }
+  if (cityTool === "road" && draft.length > 1) {
+    const from = draft[draft.length - 2];
+    const to = draft[draft.length - 1];
+    const length = Math.round(Math.hypot(to.x - from.x, to.z - from.z));
+    const angle = Math.round((Math.atan2(to.z - from.z, to.x - from.x) * 180 / Math.PI + 360) % 360);
+    const alignment = lastRoadSnap?.kind === "endpoint"
+      ? ` · joins ${lastRoadSnap.targetRoadName}`
+      : lastRoadSnap?.kind === "angle"
+        ? " · angle locked"
+        : "";
+    const guide = makeLabel(`${length}m · ${angle}°${alignment}`);
+    guide.position.set((from.x + to.x) / 2, 7, (from.z + to.z) / 2);
+    guide.scale.set(56, 9, 1);
+    previewGroup.add(guide);
   }
   if (mode === "home" && selectedLot && homeDraft) {
     const marker = new THREE.Mesh(
@@ -3546,6 +3570,23 @@ function currentRoadConfig() {
     profile,
     width: roadWidthForProfile(profile)
   };
+}
+
+function roadDrawingAidEnabled(id: "road-snap-endpoints" | "road-angle-lock") {
+  return document.querySelector<HTMLButtonElement>(`#${id}`)?.getAttribute("aria-pressed") === "true";
+}
+
+function updateRoadDrawingAidStatus() {
+  const status = document.querySelector<HTMLOutputElement>("#road-snap-status");
+  if (!status) return;
+  const endpointCopy = roadDrawingAidEnabled("road-snap-endpoints") ? "Endpoint snap" : "Free endpoints";
+  const angleCopy = roadDrawingAidEnabled("road-angle-lock") ? "15° angle lock" : "free angle";
+  const liveCopy = lastRoadSnap?.kind === "endpoint"
+    ? ` · joined ${lastRoadSnap.targetRoadName}`
+    : lastRoadSnap?.kind === "angle"
+      ? ` · aligned ${lastRoadSnap.angleDegrees}°`
+      : "";
+  status.textContent = `${endpointCopy} · ${angleCopy}${liveCopy}`;
 }
 
 function roadFeatureEnabled(feature: keyof RoadProfile) {
@@ -5316,6 +5357,7 @@ function setMode(next: Mode) {
   orbit.enabled = next !== "explore";
   renderAccessibilityEntrances();
   draft = [];
+  lastRoadSnap = null;
   homeDraft = null;
   renderDraft();
   document.querySelector(".home-tools")!.classList.toggle("visible", next === "home");
@@ -5805,11 +5847,12 @@ function updateCityToolPanel(lot?: Lot) {
   if (cityTool === "road") {
     const road = currentRoadConfig();
     const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
+    const drawingAids = `${roadDrawingAidEnabled("road-snap-endpoints") ? "endpoints snap within 12m" : "endpoint snapping off"} · ${roadDrawingAidEnabled("road-angle-lock") ? "15° angle lock on" : "free-angle curves"}`;
     setPanel(
       "STREET DESIGNER",
       targetId ? "Retrofit a living street" : "Draw beyond the grid",
-      `${road.profile.travelLanes} travel lanes at ${road.profile.speedLimitKph} km/h · ${road.width}m roadway · capacity ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} vehicles per hour. ${roadProfileEffects(road.profile)}. Every choice changes cost, traffic capacity, and visible street geometry.`,
-      targetId ? "Profile controls|Design retrofit;Apply profile|Commit changes;⌘ Z|Undo" : "Click|Add a curve point;Enter|Build and pay;Target menu|Edit an existing road;⌘ Z|Undo"
+      `${road.profile.travelLanes} travel lanes at ${road.profile.speedLimitKph} km/h · ${road.width}m roadway · capacity ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} vehicles per hour. ${roadProfileEffects(road.profile)} · ${drawingAids}. Every choice changes cost, traffic capacity, and visible street geometry.`,
+      targetId ? "Profile controls|Design retrofit;Apply profile|Commit changes;⌘ Z|Undo" : "Click|Add a curve point;Enter|Build and pay;Backspace|Remove last point;Escape|Cancel draft;⌘ Z|Undo"
     );
   } else if (cityTool === "inspect") {
     const roadName = lot ? world.roads.find(road => road.id === lot.roadId)?.name ?? "Unnamed road" : "";
@@ -6323,12 +6366,30 @@ renderer.domElement.addEventListener("pointerdown", event => {
   }
   const hit = raycaster.intersectObject(ground)[0];
   if (hit) {
-    draft.push({ x: hit.point.x, z: hit.point.z });
+    const candidate = { x: hit.point.x, z: hit.point.z };
+    lastRoadSnap = snapRoadDrawingPoint(candidate, draft, world.roads, {
+      endpoints: roadDrawingAidEnabled("road-snap-endpoints"),
+      angleLock: roadDrawingAidEnabled("road-angle-lock"),
+      angleStepDegrees: 15,
+      endpointDistance: 12
+    });
+    const previous = draft[draft.length - 1];
+    if (previous && Math.hypot(lastRoadSnap.point.x - previous.x, lastRoadSnap.point.z - previous.z) < 2) {
+      notice("Choose a point at least 2m from the previous road point");
+      return;
+    }
+    draft.push(lastRoadSnap.point);
     renderDraft();
     updateRoadProfileSummary();
+    updateRoadDrawingAidStatus();
     const road = currentRoadConfig();
     const cost = draft.length > 1 ? roadConstructionCost(draft, road.profile) : 0;
-    notice(`${draft.length} road points${cost ? ` · $${cost.toLocaleString()} estimate` : ""}`);
+    const snapCopy = lastRoadSnap.kind === "endpoint"
+      ? ` · joined ${lastRoadSnap.targetRoadName}`
+      : lastRoadSnap.kind === "angle"
+        ? ` · locked ${lastRoadSnap.angleDegrees}°`
+        : "";
+    notice(`${draft.length} road points${snapCopy}${cost ? ` · $${cost.toLocaleString()} estimate` : ""}`);
   }
 });
 
@@ -6512,6 +6573,26 @@ addEventListener("keydown", event => {
       explorerVerticalVelocity = 5.3;
     }
   }
+  if (mode === "city" && event.code === "Backspace" && draft.length) {
+    event.preventDefault();
+    draft.pop();
+    lastRoadSnap = null;
+    renderDraft();
+    updateRoadProfileSummary();
+    updateRoadDrawingAidStatus();
+    notice(draft.length ? `${draft.length} draft point${draft.length === 1 ? "" : "s"} remaining` : "Road draft cleared");
+    return;
+  }
+  if (mode === "city" && event.code === "Escape" && draft.length) {
+    event.preventDefault();
+    draft = [];
+    lastRoadSnap = null;
+    renderDraft();
+    updateRoadProfileSummary();
+    updateRoadDrawingAidStatus();
+    notice("Road draft canceled");
+    return;
+  }
   if (mode === "city" && event.code === "Enter" && draft.length > 1) {
     if (cityTool === "utility") {
       const kind = currentUtilityKind();
@@ -6529,7 +6610,9 @@ addEventListener("keydown", event => {
       return;
     }
     draft = [];
+    lastRoadSnap = null;
     renderDraft();
+    updateRoadDrawingAidStatus();
     updateRoadProfileSummary();
     renderWorld();
   }
@@ -6792,7 +6875,9 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
     settings.classList.toggle("active", settings.dataset.cityToolSettings === cityTool);
   });
   draft = [];
+  lastRoadSnap = null;
   renderDraft();
+  updateRoadDrawingAidStatus();
   document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(item => item.classList.toggle("active", item === button));
   renderAccessibilityEntrances();
   renderTransitInfrastructure();
@@ -6835,7 +6920,9 @@ document.querySelector("#road-target")!.addEventListener("change", () => {
     setRoadProfileControls(ROAD_PROFILE_PRESETS[roadClass], roadClass);
   }
   draft = [];
+  lastRoadSnap = null;
   renderDraft();
+  updateRoadDrawingAidStatus();
   updateCityToolPanel();
   notice(road ? `${road.name ?? "Road"} selected for retrofit` : "New road profile selected");
 });
@@ -6851,6 +6938,16 @@ document.querySelectorAll<HTMLButtonElement>("[data-road-feature]").forEach(butt
   renderDraft();
   updateRoadProfileSummary();
   updateCityToolPanel();
+}));
+document.querySelectorAll<HTMLButtonElement>("#road-snap-endpoints, #road-angle-lock").forEach(button => button.addEventListener("click", () => {
+  const enabled = button.getAttribute("aria-pressed") !== "true";
+  button.setAttribute("aria-pressed", String(enabled));
+  button.classList.toggle("active", enabled);
+  updateRoadDrawingAidStatus();
+  updateCityToolPanel();
+  notice(button.id === "road-snap-endpoints"
+    ? `Road endpoint snapping ${enabled ? "enabled" : "disabled"}`
+    : `15° angle locking ${enabled ? "enabled" : "disabled"}`);
 }));
 document.querySelector("#apply-road-profile")!.addEventListener("click", () => {
   const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
@@ -6872,6 +6969,7 @@ document.querySelector("#service-kind")!.addEventListener("change", () => {
 });
 document.querySelector("#utility-kind")!.addEventListener("change", () => {
   draft = [];
+  lastRoadSnap = null;
   renderDraft();
   if (cityTool === "utility") updateCityToolPanel();
   const kind = currentUtilityKind();
