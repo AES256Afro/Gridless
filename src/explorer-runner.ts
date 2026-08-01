@@ -1410,6 +1410,47 @@ check(
     ),
   "Exterior wall exposure did not produce bounded deterministic home daylight."
 );
+const authoredWindowWorld = new World();
+authoredWindowWorld.homes = [structuredClone(interiorHome)];
+const authoredWindowHome = authoredWindowWorld.homes[0];
+const authoredWindowBudget = authoredWindowWorld.homeRemainingBudget(authoredWindowHome);
+check(
+  authoredWindowWorld.addHomeWindow(authoredWindowHome.id, { x: -4, z: 0 }, 0, "clear"),
+  "Home Simulator rejected a clear window snapped to an exterior wall."
+);
+check(
+  authoredWindowHome.windows?.length === 1
+    && authoredWindowHome.windows[0].orientation === "x"
+    && authoredWindowHome.windows[0].roomId === "living-room"
+    && authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]) === 51,
+  "An authored clear window did not persist or produce deterministic daylight."
+);
+check(
+  !authoredWindowWorld.addHomeWindow(authoredWindowHome.id, { x: -4, z: .2 }, 0, "clear"),
+  "Home Simulator allowed authored windows to overlap."
+);
+check(
+  authoredWindowWorld.addHomeWindow(authoredWindowHome.id, { x: 0, z: -3 }, 0, "privacy")
+    && authoredWindowWorld.homeRemainingBudget(authoredWindowHome) === authoredWindowBudget
+      - HOME_BUILD_COSTS.window * 2
+      - HOME_BUILD_COSTS.privacyGlazing,
+  "Privacy glazing did not use its explicit placement cost."
+);
+const authoredClearWindowId = authoredWindowHome.windows?.find(window => window.glazing === "clear")?.id;
+const daylightBeforeWindowRemoval = authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]);
+check(
+  Boolean(authoredClearWindowId)
+    && authoredWindowWorld.removeHomeWindow(authoredWindowHome.id, authoredClearWindowId!)
+    && authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]) < daylightBeforeWindowRemoval,
+  "Removing an authored window did not reduce room daylight."
+);
+const restoredWindowWorld = new World();
+check(
+  restoredWindowWorld.restore(authoredWindowWorld.serialize())
+    && restoredWindowWorld.homes[0].windows?.length === 1
+    && restoredWindowWorld.homes[0].windows?.[0].glazing === "privacy",
+  "Authored window glazing did not survive save and restore."
+);
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
@@ -3872,6 +3913,9 @@ console.log(JSON.stringify({
   interiorDoorways: interiorDoorways(interiorHome).length,
   homeExteriorWalls: interiorExteriorWalls.length,
   homeDaylight: furniturePlacementWorld.homeDaylight(furniturePlacementWorld.homes[0]),
+  authoredWindows: authoredWindowHome.windows?.length ?? 0,
+  authoredWindowGlazing: authoredWindowHome.windows?.[0]?.glazing,
+  authoredWindowDaylight: authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]),
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
