@@ -2295,6 +2295,55 @@ check(
     && directControlWorld.residentStatus(directControlHome.residents[0]) === "Out in city",
   "Directed conversation did not finish cleanly across a normal schedule boundary."
 );
+const recurringPreferenceWorld = new World();
+const recurringPreferenceHome = structuredClone(directControlBaseline);
+recurringPreferenceWorld.homes = [recurringPreferenceHome];
+recurringPreferenceWorld.clock.minute = 7 * 60;
+recurringPreferenceWorld.setControlledResident("controlled-resident");
+recurringPreferenceWorld.setResidentHomePosition(recurringPreferenceHome.id, "controlled-resident", { x: -2, z: 0 });
+const recurringTable = recurringPreferenceHome.furniture.find(item => item.kind === "table")!;
+for (let repetition = 0; repetition < 3; repetition++) {
+  check(
+    recurringPreferenceWorld.commandResidentFurnitureAction(
+      recurringPreferenceHome.id,
+      "controlled-resident",
+      recurringTable.id
+    ).ok,
+    "A repeated meal could not start while learning an activity preference."
+  );
+  recurringPreferenceWorld.advanceMinutes(45, 0);
+}
+const recurringResident = recurringPreferenceHome.residents[0];
+const mealPreference = recurringPreferenceWorld.residentActivityPreferences(recurringResident)
+  .find(preference => preference.action === "eat");
+check(
+  mealPreference?.repetitions === 3
+    && mealPreference.satisfaction >= 18
+    && recurringPreferenceWorld.residentActivityPreferenceBias(recurringResident, "eat") > 0
+    && recurringPreferenceWorld.residentActivityPreferenceSummary(recurringResident).includes("Returns to shared meals"),
+  "Repeated satisfying activities did not become a bounded, explainable autonomy preference."
+);
+const restoredPreferenceWorld = new World();
+check(
+  restoredPreferenceWorld.restore(recurringPreferenceWorld.serialize())
+    && JSON.stringify(restoredPreferenceWorld.residentActivityPreferences(restoredPreferenceWorld.homes[0].residents[0]))
+      === JSON.stringify(recurringPreferenceWorld.residentActivityPreferences(recurringResident)),
+  "Learned resident activity preferences did not survive save and restore."
+);
+const corruptedPreferenceSnapshot = recurringPreferenceWorld.snapshot();
+corruptedPreferenceSnapshot.homes[0].residents[0].activityPreferences = [
+  { action: "eat", repetitions: 99_999, satisfaction: 999, lastAt: recurringPreferenceWorld.clock.elapsedMinutes + 999 },
+  { action: "eat", repetitions: 2, satisfaction: 4, lastAt: 0 }
+];
+const migratedPreferenceWorld = new World();
+check(
+  migratedPreferenceWorld.restore(JSON.stringify(corruptedPreferenceSnapshot))
+    && migratedPreferenceWorld.residentActivityPreferences(migratedPreferenceWorld.homes[0].residents[0]).length === 1
+    && migratedPreferenceWorld.residentActivityPreferences(migratedPreferenceWorld.homes[0].residents[0])[0].repetitions === 10_000
+    && migratedPreferenceWorld.residentActivityPreferences(migratedPreferenceWorld.homes[0].residents[0])[0].satisfaction === 100
+    && migratedPreferenceWorld.residentActivityPreferences(migratedPreferenceWorld.homes[0].residents[0])[0].lastAt === migratedPreferenceWorld.clock.elapsedMinutes,
+  "Legacy activity preferences did not receive bounded duplicate-safe migration."
+);
 
 function runConversationIntentProbe(intent: ConversationIntent, initialTension = 0) {
   const world = new World();
@@ -2326,6 +2375,7 @@ function runConversationIntentProbe(intent: ConversationIntent, initialTension =
   );
   world.advanceMinutes({ chat: 60, support: 55, joke: 40, confront: 35, apologize: 45 }[intent], 0);
   return {
+    world,
     first,
     second,
     relationship: world.relationshipBetween(home, first.id, second.id),
@@ -2368,6 +2418,13 @@ check(
     && confrontProbe.relationship.memories[0].tensionChange === 30
     && confrontProbe.expectedChange < 0,
   "Confront did not create its intended relationship loss and stress tradeoff."
+);
+const confrontActivityPreference = confrontProbe.first.activityPreferences?.find(preference => preference.action === "socialize");
+check(
+  (confrontActivityPreference?.satisfaction ?? 0) <= -8
+    && confrontProbe.world.residentActivityPreferenceBias(confrontProbe.first, "socialize") < 0
+    && confrontProbe.world.residentActivityPreferenceSummary(confrontProbe.first).includes("avoids social time"),
+  "A repeated-routine memory did not retain and explain an unsatisfying social activity."
 );
 const apologyProbe = runConversationIntentProbe("apologize", 55);
 check(
@@ -3138,6 +3195,10 @@ console.log(JSON.stringify({
   residentRoutineSummary: lifeCycleWorld.residentRoutineSummary(samira),
   splitShiftWindows: splitSchedule.workWindows.length,
   weekendWorkWindows: weekendSchedule.workWindows.length,
+  learnedActivity: mealPreference?.action,
+  learnedActivityRepeats: mealPreference?.repetitions,
+  learnedActivityBias: recurringPreferenceWorld.residentActivityPreferenceBias(recurringResident, "eat"),
+  avoidedActivity: confrontActivityPreference?.action,
   lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
   latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),

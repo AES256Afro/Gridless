@@ -108,6 +108,7 @@ The current vertical slice proves:
 - Intent-specific paired actions with distinct social, calm, stress, duration, personality, and relationship effects plus a persistent recent-outcome history
 - Persistent bounded social memories with tension, conflict counts, repaired-conflict counts, initiator history, and contextual Apologize actions
 - Emergent resident social preferences derived from repeated remembered outcomes, with visible preferred and avoided conversation styles plus preference-weighted autonomous choices
+- Bounded resident activity preferences learned from repeated need outcomes, favorite pastimes, and owned-object use, with explainable favorite or avoided routines that feed future autonomous choices
 - Persistent Communication, Creativity, Wellness, and Practical skills earned through household actions plus ten-level office, service, and student progression advanced by completed work or school days
 - Persistent household funds with career-level daily wages, readable living and home-maintenance costs, daily net results, personal-collection spending, save migration, and financial-security feedback into resident wellbeing
 - Household-funded meal delivery, creative supplies, and wellness care with immediate need and skill effects, persistent total discretionary spending, last-purchase history, affordability checks, and strict separation from the design budget
