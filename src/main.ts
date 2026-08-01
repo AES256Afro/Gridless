@@ -2773,6 +2773,8 @@ function updateCityStats() {
     jobs,
     openBusinesses,
     workersOnShift,
+    privateSectorRevenue,
+    privateSectorProfit,
     monthlyBalance: balance,
     residentialTaxRevenue,
     commercialTaxRevenue,
@@ -2857,7 +2859,7 @@ function updateCityStats() {
         ? "Available jobs are increasing demand for nearby housing."
         : "Demand reflects current households, jobs, and available land.";
   document.querySelector("#economy-summary")!.textContent =
-    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · ${customersPresent.toLocaleString()} customers present · taxes ${formatParkingMonthly(residentialTaxRevenue + commercialTaxRevenue + industrialTaxRevenue)} · policies -${formatParkingMonthly(districtPolicyCosts)} · debt -${formatParkingMonthly(debtPayments)} · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
+    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · ${customersPresent.toLocaleString()} customers present · private sector ${formatHomeCurrency(privateSectorRevenue)}/day revenue, ${formatSignedHomeCurrency(privateSectorProfit)}/day profit · taxes ${formatParkingMonthly(residentialTaxRevenue + commercialTaxRevenue + industrialTaxRevenue)} · policies -${formatParkingMonthly(districtPolicyCosts)} · debt -${formatParkingMonthly(debtPayments)} · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
   updateCityAdvisor({
     roads: world.roads.length,
@@ -3705,7 +3707,7 @@ function updateEconomyPanel() {
   setPanel(
     "CITY ECONOMY",
     `${economy.monthlyBalance >= 0 ? "+" : "-"}$${(Math.abs(economy.monthlyBalance) / 1_000_000).toFixed(2)}m monthly balance`,
-    `Taxes: homes $${(economy.residentialTaxRevenue / 1_000_000).toFixed(2)}m, shops $${(economy.commercialTaxRevenue / 1_000_000).toFixed(2)}m, industry $${(economy.industrialTaxRevenue / 1_000_000).toFixed(2)}m. Services and operations cost $${((economy.monthlyCosts - economy.debtPayments - economy.districtPolicyCosts) / 1_000_000).toFixed(2)}m, policies cost $${(economy.districtPolicyCosts / 1_000_000).toFixed(2)}m, and debt service costs $${(economy.debtPayments / 1_000_000).toFixed(2)}m. Average developed land value is ${averageLandValue}/100. ${district?.name ?? "District"}: ${policyCopy}.`,
+    `Private businesses produced ${formatHomeCurrency(economy.privateSectorRevenue)} revenue and ${formatSignedHomeCurrency(economy.privateSectorProfit)} profit on the latest modeled day. Taxes: homes $${(economy.residentialTaxRevenue / 1_000_000).toFixed(2)}m, shops $${(economy.commercialTaxRevenue / 1_000_000).toFixed(2)}m, industry $${(economy.industrialTaxRevenue / 1_000_000).toFixed(2)}m. Services and operations cost $${((economy.monthlyCosts - economy.debtPayments - economy.districtPolicyCosts) / 1_000_000).toFixed(2)}m, policies cost $${(economy.districtPolicyCosts / 1_000_000).toFixed(2)}m, and debt service costs $${(economy.debtPayments / 1_000_000).toFixed(2)}m. Average developed land value is ${averageLandValue}/100. ${district?.name ?? "District"}: ${policyCopy}.`,
     "Taxes|Revenue vs demand;District policy|Local benefit and cost;Bond|Cash now, repayment later;Land value view|See place effects;Undo|Reverse policy"
   );
 }
@@ -5771,13 +5773,26 @@ function renderParcelDetails(lot: Lot) {
             ? { tone: "warning", text: "Citywide power reliability is reducing service effectiveness here." }
             : world.effectiveStaffing() < world.serviceFunding * .9
               ? { tone: "warning", text: "The city lacks enough workers to deliver its selected staffing policy." }
-              : { tone: "healthy", text: "This parcel has the core support needed for stable daily growth." };
+              : lot.businesses > 0 && (lot.businessFinance?.consecutiveLossDays ?? 0) >= 3
+                ? { tone: "warning", text: `Local businesses have lost money for ${lot.businessFinance!.consecutiveLossDays} consecutive days. Their operating reserve and future occupancy are under pressure.` }
+                : lot.businesses > 0 && (lot.businessFinance?.lastProfit ?? 0) > 0
+                  ? { tone: "healthy", text: `Local businesses are profitable, supporting operating reserves and future occupancy alongside the parcel's core services.` }
+                  : { tone: "healthy", text: "This parcel has the core support needed for stable daily growth." };
   const anchor = lot.anchorBusiness
     ? `<div class="parcel-anchor"><span>Neighborhood anchor</span><strong>${lot.anchorBusiness.name}</strong><small>${businessLabels[lot.anchorBusiness.sector]} · ${lot.anchorBusiness.jobs} jobs · ${world.businessIsOpen(lot.anchorBusiness.sector) ? "Open now" : "Closed now"}</small></div>`
     : "";
   const assignedWorkers = world.residentsAssignedToWorkplace(lot.id);
   const activeWorkers = world.residentsAtWorkplace(lot.id);
   const workplaceActivity = lot.businesses > 0 ? world.workplaceActivity(lot) : undefined;
+  const businessFinance = lot.businesses > 0 ? world.businessFinance(lot) : undefined;
+  const businessProjection = lot.businesses > 0 && !businessFinance?.lastSettledAt
+    ? world.businessFinanceProjection(lot)
+    : undefined;
+  const businessRevenue = businessProjection?.revenue ?? businessFinance?.lastRevenue ?? 0;
+  const businessPayroll = businessProjection?.payroll ?? businessFinance?.lastPayroll ?? 0;
+  const businessOperatingCosts = businessProjection?.operatingCosts ?? businessFinance?.lastOperatingCosts ?? 0;
+  const businessProfit = businessProjection?.profit ?? businessFinance?.lastProfit ?? 0;
+  const businessMargin = businessProjection?.margin ?? (businessFinance ? world.businessProfitMargin(lot) : 0);
   const workforce = assignedWorkers.length ? `
     <div class="parcel-autonomy">
       <span>Named workplace roster</span>
@@ -5789,6 +5804,13 @@ function renderParcelDetails(lot: Lot) {
     <div class="parcel-line">
       <span>Workplace activity</span>
       <strong>${workplaceActivity.label} · ${workplaceActivity.coworkersOnShift} coworkers · ${workplaceActivity.customersPresent} customers present · ${workplaceActivity.hourlyCustomerDemand} visits/hour · ${workplaceActivity.servicePressure}% service pressure</strong>
+    </div>
+  ` : "";
+  const businessViability = businessFinance ? `
+    <div class="parcel-autonomy">
+      <span>Business viability · ${world.businessViabilityLabel(lot)}</span>
+      <strong>${businessProjection ? "Projected" : "Last settled"} day · ${formatHomeCurrency(businessRevenue)} revenue · ${formatHomeCurrency(businessPayroll)} payroll · ${formatHomeCurrency(businessOperatingCosts)} operations · ${formatSignedHomeCurrency(businessProfit)} profit (${businessMargin.toFixed(1)}%)</strong>
+      <small>${formatHomeCurrency(businessFinance.operatingReserve)} operating reserve${businessFinance.consecutiveLossDays ? ` · ${businessFinance.consecutiveLossDays} consecutive loss days` : " · no current loss streak"}${businessFinance.lastClosureAt !== undefined ? " · a closure has occurred here" : ""}</small>
     </div>
   ` : "";
   details.innerHTML = `
@@ -5829,6 +5851,7 @@ function renderParcelDetails(lot: Lot) {
     ${commute ? `<div class="parcel-commute"><span>Representative commute</span><strong>${flowModeName(commute.mode)} · ${world.estimatedCommuteMinutes(commute)}m · ${Math.round(commute.distance)}m</strong><small>${commute.travelers} travelers to ${commuteDestinationName}${activeCommute ? ` · ${activeCommute.direction === "outbound" ? "Going to work" : "Returning home"}` : ""}</small></div>` : ""}
     ${anchor}
     ${customerActivity}
+    ${businessViability}
     ${workforce}
     <div class="service-pills">${required.map(kind => {
       const covered = isLotCovered(lot, kind);

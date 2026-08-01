@@ -55,6 +55,7 @@ The current vertical slice proves:
 - Five skill-linked career tracks with distinct roles and wages, deterministic specialization branches at level four, personality fit, ten career levels, and stage-aware retirement
 - Physical career workplaces with deterministic track-specific daily tasks, sector and commute-aware performance, completed-shift history, persistent assignments, Builder rosters, Explorer street context, and Home Simulator career evidence
 - Schedule, sector, nearby population, transit, congestion, and event-aware workplace activity with visible named workers, coworkers, and customers plus parcel-level service pressure
+- Persistent daily business ledgers that turn customer demand into revenue, payroll, operating costs, profit, reserves, multi-day loss pressure, deterministic closures, and parcel growth feedback
 - Persistent favorite home styles and pastimes, unique five-item personal collections, resident-owned furnishings, preferred-object autonomy, and a visible belonging score that rewards matching personal space
 - Persistent resident wardrobes with five silhouettes, five color palettes, creator controls, live Home editing, age-scaled 3D avatars, named-worker continuity in Explorer, and deterministic legacy migration
 - Persistent household invitations with four gathering types, bounded guest lists, visible 3D visitors, scheduling conflicts, household costs, relationship and need outcomes, Explorer context, and legacy-safe histories

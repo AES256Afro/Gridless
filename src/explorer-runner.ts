@@ -1996,6 +1996,63 @@ check(
     && openRetailActivity.servicePressure <= 100,
   "Workplace coworkers or sector, schedule, and customer activity did not respond deterministically."
 );
+const retailFinanceProjection = lifeCycleWorld.businessFinanceProjection(retailProbe);
+const overloadedRetailProbe = {
+  ...retailProbe,
+  id: "overloaded-retail-finance-probe",
+  anchorBusiness: { ...retailProbe.anchorBusiness, jobs: 10_000 }
+};
+const overloadedFinanceProjection = lifeCycleWorld.businessFinanceProjection(overloadedRetailProbe);
+const settledWorkplaceFinance = lifeCycleWorld.businessFinance(samiraWorkplace!);
+check(
+  retailFinanceProjection.dailyCustomers > 0
+    && retailFinanceProjection.revenue > 0
+    && retailFinanceProjection.payroll > 0
+    && retailFinanceProjection.operatingCosts > 0
+    && retailFinanceProjection.profit === retailFinanceProjection.revenue - retailFinanceProjection.payroll - retailFinanceProjection.operatingCosts
+    && retailFinanceProjection.profit > overloadedFinanceProjection.profit
+    && overloadedFinanceProjection.profit < 0
+    && settledWorkplaceFinance.lastSettledAt === lifeCycleWorld.clock.elapsedMinutes
+    && lifeCycleWorld.cityEconomy().privateSectorRevenue > 0,
+  "Daily customer demand did not produce coherent persistent business revenue, payroll, costs, and profit."
+);
+const viabilityWorld = new World();
+const failingBusinessLot = viabilityWorld.lots.find(lot => lot.businesses > 0 && viabilityWorld.constructionProgress(lot) >= 1)!;
+const failingSector = viabilityWorld.workplaceSector(failingBusinessLot);
+failingBusinessLot.anchorBusiness = { name: "Overextended Works", sector: failingSector, jobs: 100_000 };
+failingBusinessLot.businessFinance = {
+  lastRevenue: 1,
+  lastPayroll: 2,
+  lastOperatingCosts: 0,
+  lastProfit: -1,
+  operatingReserve: 0,
+  consecutiveLossDays: 4,
+  lastSettledAt: 0
+};
+viabilityWorld.advanceMinutes(24 * 60, 0);
+const failedFinance = viabilityWorld.businessFinance(failingBusinessLot);
+check(
+  failedFinance.lastClosureAt === viabilityWorld.clock.elapsedMinutes
+    && failedFinance.consecutiveLossDays === 0
+    && failedFinance.lastProfit < 0
+    && viabilityWorld.businessViabilityLabel(failingBusinessLot) !== "Loss-making",
+  "An exhausted five-day business loss streak did not close one establishment and reset its recovery state."
+);
+const restoredViabilityWorld = new World();
+check(
+  restoredViabilityWorld.restore(viabilityWorld.serialize())
+    && JSON.stringify(restoredViabilityWorld.lots.find(lot => lot.id === failingBusinessLot.id)?.businessFinance)
+      === JSON.stringify(failingBusinessLot.businessFinance),
+  "Business finance, reserves, or closure history did not survive save and restore."
+);
+const legacyViabilitySnapshot = JSON.parse(viabilityWorld.serialize());
+for (const lot of legacyViabilitySnapshot.lots) delete lot.businessFinance;
+const migratedViabilityWorld = new World();
+check(
+  migratedViabilityWorld.restore(JSON.stringify(legacyViabilitySnapshot))
+    && migratedViabilityWorld.lots.every(lot => lot.businessFinance?.operatingReserve === lot.businesses * 5_000),
+  "Legacy lots did not receive safe business finance reserves during migration."
+);
 check(
   lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "promotion")
     && lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "career-branch")
@@ -3038,6 +3095,10 @@ console.log(JSON.stringify({
   workplaceCustomers: openRetailActivity.customersPresent,
   workplaceCustomerDemand: openRetailActivity.hourlyCustomerDemand,
   closedWorkplaceLabel: closedRetailActivity.label,
+  businessDailyRevenue: retailFinanceProjection.revenue,
+  businessDailyProfit: retailFinanceProjection.profit,
+  businessClosureAt: failedFinance.lastClosureAt,
+  privateSectorProfit: lifeCycleWorld.cityEconomy().privateSectorProfit,
   lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
   latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
