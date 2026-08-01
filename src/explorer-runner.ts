@@ -2173,6 +2173,46 @@ check(
   catalogWorld.homeRemainingBudget(catalogHome) === 60_000 - 4_370,
   "Expanded catalog purchases did not debit the exact design budget."
 );
+const groupEditWorld = new World();
+const groupEditHome = structuredClone(catalogHome);
+groupEditWorld.homes = [groupEditHome];
+const groupEditIds = groupEditHome.furniture.filter(item => item.kind === "desk" || item.kind === "bookcase").map(item => item.id);
+const groupEditAnchor = groupEditHome.furniture.find(item => item.id === groupEditIds[0])!;
+const groupEditStart = groupEditHome.furniture.filter(item => groupEditIds.includes(item.id)).map(item => ({
+  id: item.id,
+  x: item.x,
+  z: item.z,
+  rotation: item.rotation
+}));
+check(
+  groupEditWorld.setFurnitureGroupStyle(groupEditHome.id, groupEditIds, "dark")
+    && groupEditHome.furniture.filter(item => groupEditIds.includes(item.id)).every(item => item.style === "dark")
+    && groupEditWorld.undo()
+    && groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id)).every(item => item.style === "natural")
+    && groupEditWorld.redo()
+    && groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id)).every(item => item.style === "dark"),
+  "Grouped furnishing style edits did not apply and Undo atomically."
+);
+check(
+  groupEditWorld.setFurnitureGroupVariant(groupEditHome.id, groupEditIds, "soft")
+    && groupEditWorld.setFurnitureGroupTint(groupEditHome.id, groupEditIds, "#2563EB")
+    && groupEditWorld.rotateFurnitureGroup(groupEditHome.id, groupEditIds)
+    && groupEditWorld.moveFurnitureGroup(groupEditHome.id, groupEditIds, groupEditAnchor.id, -2, -2),
+  "Grouped furnishing design, rotation, or collision-safe movement failed."
+);
+const movedGroupItems = groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id));
+const groupSale = groupEditWorld.removeFurnitureGroup(groupEditHome.id, groupEditIds);
+check(
+  movedGroupItems.length === 2
+    && movedGroupItems.every((item, index) => item.x === groupEditStart[index].x + 1 && item.z === groupEditStart[index].z + 1)
+    && movedGroupItems.every(item => item.rotation === Math.PI / 4 && item.variant === "soft" && item.tint === "#2563eb")
+    && groupSale.ok
+    && groupSale.count === 2
+    && groupSale.refund === Math.round((HOME_BUILD_COSTS.desk + HOME_BUILD_COSTS.bookcase) * .5)
+    && groupEditWorld.undo()
+    && groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id)).length === 2,
+  "Grouped furnishing sale did not refund and restore the full selection atomically."
+);
 const catalogDesk = catalogHome.furniture.find(item => item.kind === "desk")!;
 const budgetBeforeStyle = catalogWorld.homeRemainingBudget(catalogHome);
 check(
@@ -4366,6 +4406,13 @@ console.log(JSON.stringify({
     cost: furnitureDuplicate.cost,
     preservedStyle: copiedTable?.style,
     ownershipCleared: copiedTable?.ownerResidentId === undefined
+  },
+  furnishingMultiSelect: {
+    count: groupEditIds.length,
+    movedBy: { x: 1, z: 1 },
+    rotation: movedGroupItems[0]?.rotation,
+    refund: groupSale.refund,
+    undoRestored: groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id)).length === 2
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,

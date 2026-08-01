@@ -515,6 +515,7 @@ app.innerHTML = `
       <button id="duplicate-furniture" disabled>Duplicate</button>
       <button id="sample-furniture-design" disabled>Eyedrop design</button>
       <button id="repair-furniture" disabled>Repair</button>
+      <span class="home-budget" id="furniture-selection-status">Select an object · Shift-click to build a group</span>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
       <button id="auto-assign-rooms" type="button">Smart assign rooms</button>
@@ -797,6 +798,7 @@ let homeFloor = 0;
 let explorerInteriorFloor = 0;
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
+const selectedFurnitureIds = new Set<string>();
 let selectedRoomId: string | null = null;
 let selectedHomeWindowId: string | null = null;
 let selectedHomeDoorId: string | null = null;
@@ -4769,8 +4771,11 @@ function renderHome() {
   }
   const activeFloor = mode === "home" ? homeFloor : explorerInteriorFloor;
   const floorHome = homeFloorView(home, activeFloor);
-  if (selectedFurnitureId && !floorHome.furniture.some(item => item.id === selectedFurnitureId)) {
-    selectedFurnitureId = null;
+  for (const id of selectedFurnitureIds) {
+    if (!floorHome.furniture.some(item => item.id === id)) selectedFurnitureIds.delete(id);
+  }
+  if (selectedFurnitureId && !selectedFurnitureIds.has(selectedFurnitureId)) {
+    selectedFurnitureId = selectedFurnitureIds.values().next().value ?? null;
   }
   if (selectedRoomId && !floorHome.rooms.some(room => room.id === selectedRoomId)) {
     selectedRoomId = null;
@@ -5451,7 +5456,7 @@ function createFurniture(item: Home["furniture"][number]) {
     if (child instanceof THREE.Mesh) child.castShadow = child.receiveShadow = true;
   });
   group.traverse(child => { child.userData.furnitureId = item.id; });
-  if (mode === "home" && selectedFurnitureId === item.id) {
+  if (mode === "home" && selectedFurnitureIds.has(item.id)) {
     const size = HOME_FURNITURE_SIZE[item.kind];
     const outerRadius = Math.max(size.width, size.depth) * .62 + .16;
     const selection = new THREE.Mesh(
@@ -5634,6 +5639,11 @@ function closeResidentCreator() {
 
 function updateHomeBuildControls(home: Home | null) {
   const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
+  const selectedItems = home?.furniture.filter(item => selectedFurnitureIds.has(item.id)) ?? [];
+  const selectionCount = selectedItems.length;
+  document.querySelector("#furniture-selection-status")!.textContent = selectionCount
+    ? `${selectionCount} furnishing${selectionCount === 1 ? "" : "s"} selected${selectionCount === 1 ? " · Shift-click to add more" : " · group edits use one Undo step"}`
+    : "Select an object · Shift-click to build a group";
   const selectedWindow = home?.windows?.find(item => item.id === selectedHomeWindowId) ?? null;
   const selectedDoor = home?.doors?.find(item => item.id === selectedHomeDoorId) ?? null;
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
@@ -5710,15 +5720,15 @@ function updateHomeBuildControls(home: Home | null) {
     new Option("Shared household", ""),
     ...(home?.residents ?? []).map(resident => new Option(`Owned by ${resident.name}`, resident.id))
   );
-  owner.disabled = !selected || !home?.residents.length;
+  owner.disabled = !selected || selectionCount > 1 || !home?.residents.length;
   owner.value = selected?.ownerResidentId ?? "";
-  sell.disabled = !selected;
+  sell.disabled = !selectionCount;
   const furnitureDuplicatePreview = home && selected ? world.previewFurnitureDuplicate(home, selected.id) : null;
-  duplicateFurniture.disabled = !selected || !furnitureDuplicatePreview || !home || world.homeRemainingBudget(home) < furnitureDuplicatePreview.cost;
+  duplicateFurniture.disabled = selectionCount !== 1 || !furnitureDuplicatePreview || !home || world.homeRemainingBudget(home) < furnitureDuplicatePreview.cost;
   duplicateFurniture.textContent = selected && furnitureDuplicatePreview
     ? `Duplicate ${selected.kind} · ${formatHomeCurrency(furnitureDuplicatePreview.cost)}`
     : "Duplicate";
-  sampleFurnitureDesign.disabled = !selected && !sampledFurnitureDesign;
+  sampleFurnitureDesign.disabled = selectionCount > 1 || !selected && !sampledFurnitureDesign;
   sampleFurnitureDesign.textContent = selected
     ? `Eyedrop ${selected.style ?? "natural"} · ${selected.variant ?? "classic"}`
     : sampledFurnitureDesign
@@ -5726,18 +5736,21 @@ function updateHomeBuildControls(home: Home | null) {
       : "Eyedrop design";
   sampleFurnitureDesign.classList.toggle("active", Boolean(sampledFurnitureDesign));
   const repairCost = selected ? world.furnitureRepairCost(selected) : 0;
-  repair.disabled = !selected || !repairCost;
+  repair.disabled = selectionCount !== 1 || !repairCost;
   addResident.disabled = !home || home.residents.length >= 8;
   addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
   autoAssignRooms.disabled = !home?.residents.length || !home.rooms.some(room => world.roomResidentCapacity(home, room) > 0);
   homeNameInput.disabled = !home;
   document.querySelector<HTMLButtonElement>("#rename-home")!.disabled = !home;
   if (home && document.activeElement !== homeNameInput) homeNameInput.value = home.name;
-  move.textContent = movingFurnitureId && selected ? `Cancel ${selected.kind} move` : "Move";
+  move.textContent = movingFurnitureId && selected
+    ? `Cancel ${selectionCount > 1 ? `${selectionCount}-object` : selected.kind} move`
+    : selectionCount > 1 ? `Move ${selectionCount}` : "Move";
   move.classList.toggle("active", Boolean(movingFurnitureId && selected));
-  rotate.textContent = selected ? `Rotate ${selected.kind} 45°` : "Rotate 45°";
+  rotate.textContent = selected ? `Rotate ${selectionCount > 1 ? selectionCount : selected.kind} 45°` : "Rotate 45°";
+  const selectionRefund = selectedItems.reduce((total, item) => total + Math.round(HOME_BUILD_COSTS[item.kind] * .5), 0);
   sell.textContent = selected
-    ? `Sell ${selected.kind} · ${formatHomeCurrency(HOME_BUILD_COSTS[selected.kind] * .5)}`
+    ? `Sell ${selectionCount > 1 ? `${selectionCount} objects` : selected.kind} · ${formatHomeCurrency(selectionRefund)}`
     : "Sell";
   repair.textContent = selected
     ? repairCost
@@ -6438,6 +6451,7 @@ function setMode(next: Mode) {
   syncSoundscape();
   if (next !== "home") {
     selectedFurnitureId = null;
+    selectedFurnitureIds.clear();
     selectedRoomId = null;
     selectedHomeWindowId = null;
     selectedHomeDoorId = null;
@@ -7332,6 +7346,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedHomeDoorId = homeDoorHit.object.userData.homeDoorId as string;
       selectedHomeWindowId = null;
       selectedFurnitureId = null;
+      selectedFurnitureIds.clear();
       selectedRoomId = null;
       renderHome();
       const selected = home.doors?.find(item => item.id === selectedHomeDoorId);
@@ -7345,6 +7360,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedHomeWindowId = homeWindowHit.object.userData.homeWindowId as string;
       selectedHomeDoorId = null;
       selectedFurnitureId = null;
+      selectedFurnitureIds.clear();
       selectedRoomId = null;
       renderHome();
       const selected = home.windows?.find(item => item.id === selectedHomeWindowId);
@@ -7355,7 +7371,20 @@ renderer.domElement.addEventListener("pointerdown", event => {
       .intersectObjects(homeGroup.children, true)
       .find(item => item.object.userData.furnitureId);
     if (homeTool === "select" && !movingFurnitureId && home && furnitureHit) {
-      selectedFurnitureId = furnitureHit.object.userData.furnitureId as string;
+      const furnitureId = furnitureHit.object.userData.furnitureId as string;
+      if (event.shiftKey) {
+        if (selectedFurnitureIds.has(furnitureId)) {
+          selectedFurnitureIds.delete(furnitureId);
+          selectedFurnitureId = selectedFurnitureIds.values().next().value ?? null;
+        } else {
+          selectedFurnitureIds.add(furnitureId);
+          selectedFurnitureId = furnitureId;
+        }
+      } else {
+        selectedFurnitureIds.clear();
+        selectedFurnitureIds.add(furnitureId);
+        selectedFurnitureId = furnitureId;
+      }
       selectedRoomId = null;
       selectedHomeWindowId = null;
       selectedHomeDoorId = null;
@@ -7363,7 +7392,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       const selected = home.furniture.find(item => item.id === selectedFurnitureId);
       if (selected) {
         const fit = world.furniturePurposeFit(home, selected);
-        notice(`${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} selected${fit === false ? " · consider a more suitable room" : fit === true ? " · room purpose fits" : ""}`);
+        notice(`${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} selected${selectedFurnitureIds.size > 1 ? ` · ${selectedFurnitureIds.size} objects in group` : ""}${fit === false ? " · consider a more suitable room" : fit === true ? " · room purpose fits" : ""}`);
       }
       return;
     }
@@ -7373,6 +7402,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     if (homeTool === "select" && !movingFurnitureId && home && roomHit) {
       selectedRoomId = roomHit.object.userData.roomId as string;
       selectedFurnitureId = null;
+      selectedFurnitureIds.clear();
       selectedHomeWindowId = null;
       selectedHomeDoorId = null;
       renderHome();
@@ -7400,7 +7430,8 @@ renderer.domElement.addEventListener("pointerdown", event => {
     if (!home) return;
     if (movingFurnitureId) {
       const movingItem = home.furniture.find(item => item.id === movingFurnitureId);
-      if (!movingItem || !world.moveFurniture(home.id, movingFurnitureId, point.x, point.z)) {
+      const movingIds = [...selectedFurnitureIds];
+      if (!movingItem || !world.moveFurnitureGroup(home.id, movingIds, movingFurnitureId, point.x, point.z)) {
         notice("That position overlaps a wall or another furnishing");
         renderDraft();
         return;
@@ -7408,11 +7439,12 @@ renderer.domElement.addEventListener("pointerdown", event => {
       movingFurnitureId = null;
       renderWorld();
       renderDraft();
-      notice(`${movingItem.kind[0].toUpperCase()}${movingItem.kind.slice(1)} moved`);
+      notice(movingIds.length > 1 ? `${movingIds.length} furnishings moved together` : `${movingItem.kind[0].toUpperCase()}${movingItem.kind.slice(1)} moved`);
       return;
     }
     if (homeTool === "select") {
       selectedFurnitureId = null;
+      selectedFurnitureIds.clear();
       selectedRoomId = null;
       selectedHomeWindowId = null;
       selectedHomeDoorId = null;
@@ -8502,7 +8534,10 @@ function activateHomeTool(next: HomeTool) {
   homeTool = next;
   homeDraft = null;
   movingFurnitureId = null;
-  if (homeTool !== "select") selectedFurnitureId = null;
+  if (homeTool !== "select") {
+    selectedFurnitureId = null;
+    selectedFurnitureIds.clear();
+  }
   if (homeTool !== "select") selectedRoomId = null;
   if (homeTool !== "select") selectedHomeWindowId = null;
   if (homeTool !== "select") selectedHomeDoorId = null;
@@ -8531,6 +8566,7 @@ document.querySelector("#home-floor")!.addEventListener("change", event => {
   if (!home) return;
   homeFloor = Math.max(0, Math.min(home.floors - 1, Number((event.currentTarget as HTMLSelectElement).value)));
   selectedFurnitureId = null;
+  selectedFurnitureIds.clear();
   selectedRoomId = null;
   selectedHomeWindowId = null;
   selectedHomeDoorId = null;
@@ -8561,6 +8597,7 @@ document.querySelector("#remove-home-floor")!.addEventListener("click", () => {
   }
   homeFloor = Math.min(homeFloor, home.floors - 1);
   selectedFurnitureId = null;
+  selectedFurnitureIds.clear();
   selectedRoomId = null;
   selectedHomeWindowId = null;
   selectedHomeDoorId = null;
@@ -8685,41 +8722,47 @@ document.querySelector("#move-furniture")!.addEventListener("click", () => {
   movingFurnitureId = movingFurnitureId === item.id ? null : item.id;
   renderHome();
   renderDraft();
-  notice(movingFurnitureId ? `Choose a new position for the ${item.kind}` : "Furniture move cancelled");
+  notice(movingFurnitureId
+    ? `Choose a new position for ${selectedFurnitureIds.size > 1 ? `the ${selectedFurnitureIds.size}-object group` : `the ${item.kind}`}`
+    : "Furniture move cancelled");
 });
 document.querySelector("#rotate-furniture")!.addEventListener("click", () => {
   const home = currentHome();
-  if (!home || !selectedFurnitureId) return;
-  if (!world.rotateFurniture(home.id, selectedFurnitureId)) {
+  const ids = [...selectedFurnitureIds];
+  if (!home || !ids.length) return;
+  if (!world.rotateFurnitureGroup(home.id, ids)) {
     notice("Rotation blocked by a wall or another furnishing");
     return;
   }
   renderWorld();
-  notice("Furniture rotated 45°");
+  notice(ids.length > 1 ? `${ids.length} furnishings rotated 45° together` : "Furniture rotated 45°");
 });
 document.querySelector("#furniture-style")!.addEventListener("change", event => {
   const home = currentHome();
   const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const ids = [...selectedFurnitureIds];
   const style = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureStyle;
-  if (!home || !item || !world.setFurnitureStyle(home.id, item.id, style)) return;
+  if (!home || !item || !world.setFurnitureGroupStyle(home.id, ids, style)) return;
   renderWorld();
-  notice(`${homeFurnitureLabel(item.kind)} style changed to ${style}`);
+  notice(ids.length > 1 ? `${ids.length} furnishings changed to ${style}` : `${homeFurnitureLabel(item.kind)} style changed to ${style}`);
 });
 document.querySelector("#furniture-variant")!.addEventListener("change", event => {
   const home = currentHome();
   const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const ids = [...selectedFurnitureIds];
   const variant = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureVariant;
-  if (!home || !item || !HOME_FURNITURE_VARIANTS.includes(variant) || !world.setFurnitureVariant(home.id, item.id, variant)) return;
+  if (!home || !item || !HOME_FURNITURE_VARIANTS.includes(variant) || !world.setFurnitureGroupVariant(home.id, ids, variant)) return;
   renderWorld();
-  notice(`${homeFurnitureLabel(item.kind)} design changed to ${variant === "soft" ? "soft edge" : variant}`);
+  notice(ids.length > 1 ? `${ids.length} furnishings changed to ${variant === "soft" ? "soft edge" : variant}` : `${homeFurnitureLabel(item.kind)} design changed to ${variant === "soft" ? "soft edge" : variant}`);
 });
 document.querySelector("#furniture-tint")!.addEventListener("change", event => {
   const home = currentHome();
   const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const ids = [...selectedFurnitureIds];
   const tint = (event.currentTarget as HTMLInputElement).value;
-  if (!home || !item || !world.setFurnitureTint(home.id, item.id, tint)) return;
+  if (!home || !item || !world.setFurnitureGroupTint(home.id, ids, tint)) return;
   renderWorld();
-  notice(`${homeFurnitureLabel(item.kind)} color changed to ${tint.toUpperCase()}`);
+  notice(ids.length > 1 ? `${ids.length} furnishings changed to ${tint.toUpperCase()}` : `${homeFurnitureLabel(item.kind)} color changed to ${tint.toUpperCase()}`);
 });
 document.querySelector("#furniture-owner")!.addEventListener("change", event => {
   const home = currentHome();
@@ -8733,12 +8776,17 @@ document.querySelector("#furniture-owner")!.addEventListener("change", event => 
 document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   const home = currentHome();
   const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
-  if (!home || !item || !world.removeFurniture(home.id, item.id)) return;
-  const refund = HOME_BUILD_COSTS[item.kind] * .5;
+  const ids = [...selectedFurnitureIds];
+  if (!home || !item) return;
+  const result = world.removeFurnitureGroup(home.id, ids);
+  if (!result.ok) return;
   selectedFurnitureId = null;
+  selectedFurnitureIds.clear();
   movingFurnitureId = null;
   renderWorld();
-  notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
+  notice(result.count > 1
+    ? `${result.count} furnishings sold for ${formatHomeCurrency(result.refund)}`
+    : `${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(result.refund)}`);
 });
 document.querySelector("#repair-furniture")!.addEventListener("click", () => {
   const home = currentHome();
@@ -8763,6 +8811,8 @@ document.querySelector("#duplicate-furniture")!.addEventListener("click", () => 
     return;
   }
   selectedFurnitureId = result.furnitureId ?? selectedFurnitureId;
+  selectedFurnitureIds.clear();
+  if (selectedFurnitureId) selectedFurnitureIds.add(selectedFurnitureId);
   renderWorld();
   notice(result.reason);
 });
@@ -8897,6 +8947,7 @@ document.querySelector("#duplicate-room")!.addEventListener("click", () => {
   }
   selectedRoomId = result.roomId ?? null;
   selectedFurnitureId = null;
+  selectedFurnitureIds.clear();
   renderWorld();
   notice(result.reason);
 });
@@ -8910,6 +8961,7 @@ document.querySelector("#delete-room")!.addEventListener("click", () => {
   }
   selectedRoomId = null;
   selectedFurnitureId = null;
+  selectedFurnitureIds.clear();
   selectedHomeWindowId = null;
   selectedHomeDoorId = null;
   movingFurnitureId = null;

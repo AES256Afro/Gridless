@@ -6010,6 +6010,55 @@ export class World {
     return true;
   }
 
+  setFurnitureGroupStyle(homeId: string, furnitureIds: string[], style: HomeFurnitureStyle) {
+    const home = this.homes.find(item => item.id === homeId);
+    const ids = [...new Set(furnitureIds)];
+    const furniture = ids.map(id => home?.furniture.find(item => item.id === id));
+    if (
+      !home
+      || !ids.length
+      || furniture.some(item => !item)
+      || !(["natural", "light", "dark", "colorful"] as HomeFurnitureStyle[]).includes(style)
+      || furniture.every(item => item?.style === style)
+    ) return false;
+    this.checkpoint();
+    for (const item of furniture) item!.style = style;
+    return true;
+  }
+
+  setFurnitureGroupVariant(homeId: string, furnitureIds: string[], variant: HomeFurnitureVariant) {
+    const home = this.homes.find(item => item.id === homeId);
+    const ids = [...new Set(furnitureIds)];
+    const furniture = ids.map(id => home?.furniture.find(item => item.id === id));
+    if (
+      !home
+      || !ids.length
+      || furniture.some(item => !item)
+      || !HOME_FURNITURE_VARIANTS.includes(variant)
+      || furniture.every(item => (item?.variant ?? "classic") === variant)
+    ) return false;
+    this.checkpoint();
+    for (const item of furniture) item!.variant = variant;
+    return true;
+  }
+
+  setFurnitureGroupTint(homeId: string, furnitureIds: string[], tint: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const ids = [...new Set(furnitureIds)];
+    const furniture = ids.map(id => home?.furniture.find(item => item.id === id));
+    const normalizedTint = normalizeFurnitureTint(tint);
+    if (
+      !home
+      || !ids.length
+      || furniture.some(item => !item)
+      || !normalizedTint
+      || furniture.every(item => item?.tint === normalizedTint)
+    ) return false;
+    this.checkpoint();
+    for (const item of furniture) item!.tint = normalizedTint;
+    return true;
+  }
+
   setFurnitureOwner(homeId: string, furnitureId: string, residentId?: string) {
     const home = this.homes.find(item => item.id === homeId);
     const furniture = home?.furniture.find(item => item.id === furnitureId);
@@ -6069,6 +6118,39 @@ export class World {
     this.checkpoint();
     furniture.x = x;
     furniture.z = z;
+    return true;
+  }
+
+  moveFurnitureGroup(homeId: string, furnitureIds: string[], anchorId: string, x: number, z: number) {
+    const home = this.homes.find(item => item.id === homeId);
+    const ids = [...new Set(furnitureIds)];
+    const selected = ids.map(id => home?.furniture.find(item => item.id === id));
+    const anchor = home?.furniture.find(item => item.id === anchorId);
+    if (!home || !anchor || !ids.includes(anchorId) || !ids.length || selected.some(item => !item)) return false;
+    const floor = homeEntityFloor(anchor);
+    if (selected.some(item => homeEntityFloor(item!) !== floor)) return false;
+    const dx = x - anchor.x;
+    const dz = z - anchor.z;
+    if (Math.abs(dx) < .001 && Math.abs(dz) < .001) return false;
+    const workingHome: Home = { ...home, furniture: home.furniture.filter(item => !ids.includes(item.id)) };
+    const placements = selected.map(item => ({ item: item!, x: item!.x + dx, z: item!.z + dz }));
+    for (const placement of placements) {
+      if (!this.canPlaceFurniture(
+        workingHome,
+        placement.item.kind,
+        placement.x,
+        placement.z,
+        placement.item.rotation,
+        undefined,
+        floor
+      )) return false;
+      workingHome.furniture.push({ ...placement.item, x: placement.x, z: placement.z });
+    }
+    this.checkpoint();
+    for (const placement of placements) {
+      placement.item.x = placement.x;
+      placement.item.z = placement.z;
+    }
     return true;
   }
 
@@ -6373,6 +6455,33 @@ export class World {
     return true;
   }
 
+  rotateFurnitureGroup(homeId: string, furnitureIds: string[], quarterTurns = 1) {
+    const home = this.homes.find(item => item.id === homeId);
+    const ids = [...new Set(furnitureIds)];
+    const selected = ids.map(id => home?.furniture.find(item => item.id === id));
+    if (!home || !ids.length || selected.some(item => !item) || !Number.isInteger(quarterTurns) || quarterTurns === 0) return false;
+    const workingHome: Home = { ...home, furniture: home.furniture.filter(item => !ids.includes(item.id)) };
+    const placements = selected.map(item => ({
+      item: item!,
+      rotation: positiveModulo(item!.rotation + quarterTurns * Math.PI / 4, Math.PI * 2)
+    }));
+    for (const placement of placements) {
+      if (!this.canPlaceFurniture(
+        workingHome,
+        placement.item.kind,
+        placement.item.x,
+        placement.item.z,
+        placement.rotation,
+        undefined,
+        homeEntityFloor(placement.item)
+      )) return false;
+      workingHome.furniture.push({ ...placement.item, rotation: placement.rotation });
+    }
+    this.checkpoint();
+    for (const placement of placements) placement.item.rotation = placement.rotation;
+    return true;
+  }
+
   removeFurniture(homeId: string, furnitureId: string) {
     const home = this.homes.find(item => item.id === homeId);
     const index = home?.furniture.findIndex(item => item.id === furnitureId) ?? -1;
@@ -6384,6 +6493,23 @@ export class World {
       if (resident.currentAction?.targetFurnitureId === furnitureId) resident.currentAction = undefined;
     }
     return true;
+  }
+
+  removeFurnitureGroup(homeId: string, furnitureIds: string[]) {
+    const home = this.homes.find(item => item.id === homeId);
+    const ids = [...new Set(furnitureIds)];
+    const removed = ids.map(id => home?.furniture.find(item => item.id === id));
+    if (!home || !ids.length || removed.some(item => !item)) return { ok: false, count: 0, refund: 0 };
+    const refund = removed.reduce((total, item) => total + Math.round(HOME_BUILD_COSTS[item!.kind] * .5), 0);
+    this.checkpoint();
+    home.furniture = home.furniture.filter(item => !ids.includes(item.id));
+    home.designSpent = Math.max(0, home.designSpent - refund);
+    for (const resident of home.residents) {
+      if (resident.currentAction?.targetFurnitureId && ids.includes(resident.currentAction.targetFurnitureId)) {
+        resident.currentAction = undefined;
+      }
+    }
+    return { ok: true, count: removed.length, refund };
   }
 
   addResident(homeId: string, profile?: ResidentProfile) {
