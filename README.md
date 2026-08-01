@@ -61,6 +61,7 @@ The current vertical slice proves:
 - Persistent favorite home styles and pastimes, unique five-item personal collections, resident-owned furnishings, preferred-object autonomy, and a visible belonging score that rewards matching personal space
 - Persistent resident wardrobes with five silhouettes, five color palettes, creator controls, live Home editing, age-scaled 3D avatars, named-worker continuity in Explorer, and deterministic legacy migration
 - Persistent household invitations with four gathering types, bounded guest lists, visible 3D visitors, scheduling conflicts, household costs, relationship and need outcomes, Explorer context, and legacy-safe histories
+- Lasting relationship impressions derived from bounded social memories, with readable Warmth, Loyalty, Wariness, and Resentment states that shape partner choice and future conversation outcomes across Home Simulator and City Explorer
 - Household and city wellbeing visible across planning, street exploration, and Home Simulator, with local wellbeing feeding back into daily growth
 - Degrading utility infrastructure with deterministic local outages, street-routed repair crews, traffic-sensitive restoration, affected-parcel consequences, and persistent recovery state
 - Persistent autonomous household actions chosen from resident needs, schedules, available furniture, and who is home, with visible 3D behavior, progress, completed-action history, and direct need effects

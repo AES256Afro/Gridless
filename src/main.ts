@@ -4390,8 +4390,9 @@ function updateInteriorInteractionPrompt() {
       pendingPartner.id
     );
     const tension = relationship?.tension ?? 0;
+    const impression = relationship ? world.relationshipImpression(relationship) : undefined;
     prompt.innerHTML = `
-      <span class="conversation-heading">Talk with ${pendingPartner.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}% · ${world.relationshipTensionLabel(tension)} tension ${tension}%</small></span>
+      <span class="conversation-heading">Talk with ${pendingPartner.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}% · ${world.relationshipTensionLabel(tension)} tension ${tension}%${impression ? ` · ${impression.label}` : ""}</small></span>
       <span class="conversation-choice"><kbd>1</kbd>Friendly Chat<small>Social +20 · Calm +6</small></span>
       <span class="conversation-choice"><kbd>2</kbd>Offer Support<small>Social +12 · Strong calm</small></span>
       <span class="conversation-choice"><kbd>3</kbd>Tell a Joke<small>Social +16 · Calm +10</small></span>
@@ -4422,8 +4423,10 @@ function updateInteriorInteractionPrompt() {
       controlled.resident,
       nearbyResident.resident
     );
+    const relationship = world.relationshipBetween(controlled.home, controlled.resident.id, nearbyResident.resident.id);
+    const impression = relationship ? world.relationshipImpression(relationship) : undefined;
     prompt.innerHTML =
-      `<kbd>E</kbd><span>Talk with ${nearbyResident.resident.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}%</small></span><kbd>C</kbd><span>Switch resident</span>`;
+      `<kbd>E</kbd><span>Talk with ${nearbyResident.resident.name}<small>${world.compatibilityLabel(compatibility)} · ${world.relationshipLabel(relationshipScore)} ${relationshipScore}%${impression ? ` · ${impression.label}` : ""}</small></span><kbd>C</kbd><span>Switch resident</span>`;
     return;
   }
   const nearbyFurniture = nearbyInteriorFurnitureInteraction();
@@ -5580,6 +5583,7 @@ function updateHouseholdSummary(home: Home) {
             if (!first || !second) return "";
             const compatibility = world.relationshipCompatibility(first, second);
             const tension = relationship.tension ?? 0;
+            const impression = world.relationshipImpression(relationship);
             const recentOutcome = relationship.lastIntent && relationship.lastChange !== undefined
               ? `${world.conversationIntentLabel(relationship.lastIntent)} · ${relationship.lastChange > 0 ? "+" : ""}${relationship.lastChange} ${world.conversationOutcomeLabel(relationship.lastChange, relationship.lastIntent)}`
               : "";
@@ -5589,7 +5593,7 @@ function updateHouseholdSummary(home: Home) {
             }).join("");
             return `
               <div class="relationship-row">
-                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"} · ${relationship.conflicts ?? 0} conflicts · ${relationship.resolvedConflicts ?? 0} repaired${recentOutcome ? `<em>Last: ${recentOutcome}</em>` : ""}${memories ? `<span class="social-memory">${memories}</span>` : ""}</small></span>
+                <span><strong>${first.name} + ${second.name}</strong><small>${world.compatibilityLabel(compatibility)} · ${relationship.conversations} completed ${relationship.conversations === 1 ? "conversation" : "conversations"} · ${relationship.conflicts ?? 0} conflicts · ${relationship.resolvedConflicts ?? 0} repaired<em>${impression.label}: ${impression.summary}</em>${recentOutcome ? `<em>Last: ${recentOutcome}</em>` : ""}${memories ? `<span class="social-memory">${memories}</span>` : ""}</small></span>
                 <b>${world.relationshipLabel(relationship.score)} · ${relationship.score}%<small>${world.relationshipTensionLabel(tension)} ${tension}%</small></b>
               </div>
             `;

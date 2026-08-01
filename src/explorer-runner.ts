@@ -2748,6 +2748,28 @@ check(
     && confrontProbe.world.residentActivityPreferenceSummary(confrontProbe.first).includes("avoids social time"),
   "A repeated-routine memory did not retain and explain an unsatisfying social activity."
 );
+const resentfulImpression = confrontProbe.world.relationshipImpression(confrontProbe.relationship!);
+const supportWithoutHistory = confrontProbe.world.conversationRelationshipChange(
+  confrontProbe.first,
+  confrontProbe.second,
+  "support",
+  true,
+  confrontProbe.relationship!.tension
+);
+const supportThroughResentment = confrontProbe.world.conversationRelationshipChange(
+  confrontProbe.first,
+  confrontProbe.second,
+  "support",
+  true,
+  confrontProbe.relationship!.tension,
+  confrontProbe.relationship!
+);
+check(
+  resentfulImpression.kind === "resentment"
+    && resentfulImpression.outcomeBias < 0
+    && supportThroughResentment < supportWithoutHistory,
+  "A remembered confrontation did not create lasting resentment or shape the next conversation."
+);
 const apologyProbe = runConversationIntentProbe("apologize", 55);
 check(
   apologyProbe.first.social === 58
@@ -2933,6 +2955,7 @@ const learnedPreference = learnedPreferenceWorld.residentLearnedPreferences(
   learnedPreferenceHome,
   learnedPreferenceHome.residents[0]
 );
+const warmImpression = learnedPreferenceWorld.relationshipImpression(learnedPreferenceHome.relationships[0]);
 check(
   learnedPreference.preferredIntent === "support"
     && learnedPreference.avoidedIntent === "confront"
@@ -2942,6 +2965,13 @@ check(
       learnedPreferenceHome.residents[0]
     ).includes("Prefers Offer Support"),
   "Repeated social memories did not form a readable resident preference."
+);
+check(
+  warmImpression.kind === "warmth"
+    && warmImpression.strength === 16
+    && warmImpression.outcomeBias === 2
+    && warmImpression.partnerBias > 0,
+  "Repeated supportive memories did not form a bounded relationship-specific impression."
 );
 learnedPreferenceWorld.advanceMinutes(1, 0);
 check(
@@ -3554,6 +3584,8 @@ console.log(JSON.stringify({
   learnedActivityRepeats: mealPreference?.repetitions,
   learnedActivityBias: recurringPreferenceWorld.residentActivityPreferenceBias(recurringResident, "eat"),
   avoidedActivity: confrontActivityPreference?.action,
+  warmRelationshipImpression: warmImpression.label,
+  resentfulRelationshipImpression: resentfulImpression.label,
   movedResidentHome: moveDestination.name,
   movedResidentFunds: moveResult.transferred,
   movedResidentMilestone: recurringPreferenceWorld.residentMilestones(movedResident)[0]?.kind,
