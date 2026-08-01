@@ -664,6 +664,16 @@ function integrityFailures(world: World) {
       }
       if (!VALID_HOME_FLOOR_FINISHES.has(room.floorFinish ?? "oak")) failures.push(`Room ${room.id} has an invalid floor finish.`);
       if (!VALID_HOME_WALL_FINISHES.has(room.wallFinish ?? "warm-white")) failures.push(`Room ${room.id} has an invalid wall finish.`);
+      if (
+        !Number.isFinite(room.condition ?? 100)
+        || world.roomCondition(room) < 0
+        || world.roomCondition(room) > 100
+        || (room.lastRenovatedAt !== undefined && (
+          !Number.isInteger(room.lastRenovatedAt)
+          || room.lastRenovatedAt < 0
+          || room.lastRenovatedAt > world.clock.elapsedMinutes
+        ))
+      ) failures.push(`Room ${room.id} has invalid persistent condition.`);
     }
     for (const item of home.furniture) {
       if (!VALID_HOME_FURNITURE.has(item.kind)) failures.push(`Furniture ${item.id} has an unknown catalog kind.`);
@@ -671,6 +681,16 @@ function integrityFailures(world: World) {
       if (!VALID_HOME_FURNITURE_VARIANTS.has(item.variant ?? "classic")) failures.push(`Furniture ${item.id} has an invalid design variant.`);
       if (item.tint !== undefined && !/^#[0-9a-f]{6}$/.test(item.tint)) failures.push(`Furniture ${item.id} has an invalid custom color.`);
       if (item.ownerResidentId && !residentIds.has(item.ownerResidentId)) failures.push(`Furniture ${item.id} has a missing resident owner.`);
+      if (
+        !Number.isFinite(item.condition ?? 100)
+        || world.furnitureCondition(item) < 0
+        || world.furnitureCondition(item) > 100
+        || (item.lastRepairedAt !== undefined && (
+          !Number.isInteger(item.lastRepairedAt)
+          || item.lastRepairedAt < 0
+          || item.lastRepairedAt > world.clock.elapsedMinutes
+        ))
+      ) failures.push(`Furniture ${item.id} has invalid persistent condition.`);
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
         failures.push(`Furniture ${item.id} has an invalid rotation.`);
       }

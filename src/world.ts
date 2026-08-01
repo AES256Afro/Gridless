@@ -1107,6 +1107,8 @@ export type HomeRoom = {
   floorFinish?: HomeFloorFinish;
   wallFinish?: HomeWallFinish;
   floor?: number;
+  condition?: number;
+  lastRenovatedAt?: number;
 };
 
 export type HomeStair = {
@@ -1124,7 +1126,7 @@ export type Home = {
   name: string;
   floors: number;
   rooms: HomeRoom[];
-  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; variant?: HomeFurnitureVariant; tint?: string; floor?: number; ownerResidentId?: string }>;
+  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; variant?: HomeFurnitureVariant; tint?: string; floor?: number; ownerResidentId?: string; condition?: number; lastRepairedAt?: number }>;
   stairs?: HomeStair[];
   designBudget: number;
   designSpent: number;
@@ -3802,6 +3804,7 @@ export class World {
     const furnitureVariety = Math.min(1, new Set(home.furniture.map(item => item.kind)).size / 8);
     const plants = Math.min(3, home.furniture.filter(item => item.kind === "plant").length);
     const functionality = this.homeFunctionality(home);
+    const conditionPenalty = (100 - this.homeCondition(home)) * .24;
     return Math.round(clamp(
       30
       + roomShare * 22
@@ -3809,7 +3812,8 @@ export class World {
       + functionality.completeness / 100 * 15
       + functionality.alignment / 100 * 5
       + furnitureVariety * 7
-      + plants * 2,
+      + plants * 2
+      - conditionPenalty,
       0,
       100
     ));
@@ -4368,10 +4372,10 @@ export class World {
       lotId: lot.id,
       name: "New household",
       floors: 1,
-      rooms: [{ id: crypto.randomUUID(), kind: "Living space", x: 0, z: 0, width: 7, depth: 6, floorFinish: "oak", wallFinish: "warm-white", floor: 0 }],
+      rooms: [{ id: crypto.randomUUID(), kind: "Living space", x: 0, z: 0, width: 7, depth: 6, floorFinish: "oak", wallFinish: "warm-white", floor: 0, condition: 100 }],
       furniture: [
-        { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0, style: "natural", floor: 0 },
-        { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0, style: "natural", floor: 0 }
+        { id: crypto.randomUUID(), kind: "sofa", x: 0, z: 0, rotation: 0, style: "natural", floor: 0, condition: 100 },
+        { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0, style: "natural", floor: 0, condition: 100 }
       ],
       stairs: [],
       designBudget: 60_000,
@@ -4395,7 +4399,7 @@ export class World {
     const cost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
     if (this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
-    home.rooms.push({ id: crypto.randomUUID(), floorFinish: "oak", wallFinish: "warm-white", ...clone(room), floor });
+    home.rooms.push({ id: crypto.randomUUID(), floorFinish: "oak", wallFinish: "warm-white", ...clone(room), floor, condition: 100 });
     home.designSpent += cost;
     return true;
   }
@@ -4408,6 +4412,8 @@ export class World {
     if (this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
     room.floorFinish = finish;
+    room.condition = 100;
+    room.lastRenovatedAt = this.clock.elapsedMinutes;
     home.designSpent += cost;
     return true;
   }
@@ -4421,6 +4427,8 @@ export class World {
     if (this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
     room.wallFinish = finish;
+    room.condition = 100;
+    room.lastRenovatedAt = this.clock.elapsedMinutes;
     home.designSpent += cost;
     return true;
   }
@@ -4478,7 +4486,7 @@ export class World {
           this.canPlaceFurniture(workingHome, kind, candidate.x, candidate.z, rotation, undefined, roomFloor)
         );
         if (point) {
-          placement = { id: crypto.randomUUID(), kind, x: point.x, z: point.z, rotation, style: "natural", floor: roomFloor };
+          placement = { id: crypto.randomUUID(), kind, x: point.x, z: point.z, rotation, style: "natural", floor: roomFloor, condition: 100 };
           break;
         }
       }
@@ -4547,7 +4555,7 @@ export class World {
     const cost = HOME_BUILD_COSTS[kind];
     if (!home || !Number.isInteger(floor) || floor < 0 || floor >= home.floors || !this.canPlaceFurniture(home, kind, x, z, 0, undefined, floor) || this.homeRemainingBudget(home) < cost) return false;
     this.checkpoint();
-    home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0, style: "natural", floor });
+    home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0, style: "natural", floor, condition: 100 });
     home.designSpent += cost;
     return true;
   }
@@ -4720,6 +4728,68 @@ export class World {
     const funds = this.homeHouseholdFunds(home);
     const dailyNet = this.homeDailyNet(home);
     return Math.round(clamp(48 + funds / 420 + dailyNet * .1, 0, 100));
+  }
+
+  roomCondition(room: HomeRoom) {
+    return Math.round(clamp(room.condition ?? 100, 0, 100));
+  }
+
+  furnitureCondition(furniture: Home["furniture"][number]) {
+    return Math.round(clamp(furniture.condition ?? 100, 0, 100));
+  }
+
+  homeCondition(home: Home) {
+    const roomCondition = average(home.rooms.map(room => this.roomCondition(room)));
+    const furnitureCondition = home.furniture.length
+      ? average(home.furniture.map(item => this.furnitureCondition(item)))
+      : 100;
+    return Math.round(roomCondition * .58 + furnitureCondition * .42);
+  }
+
+  homeConditionLabel(condition: number) {
+    return condition >= 90 ? "Pristine" : condition >= 72 ? "Good" : condition >= 48 ? "Worn" : "Poor";
+  }
+
+  furnitureRepairCost(furniture: Home["furniture"][number]) {
+    const wear = 1 - this.furnitureCondition(furniture) / 100;
+    return wear <= 0 ? 0 : Math.max(25, Math.round(HOME_BUILD_COSTS[furniture.kind] * .42 * wear));
+  }
+
+  roomRenovationCost(room: HomeRoom) {
+    const wear = 1 - this.roomCondition(room) / 100;
+    return wear <= 0 ? 0 : Math.max(150, Math.round(room.width * room.depth * 24 * wear));
+  }
+
+  repairFurniture(homeId: string, furnitureId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (!home || !furniture) return { ok: false, cost: 0, reason: "That furnishing is unavailable" };
+    const cost = this.furnitureRepairCost(furniture);
+    if (!cost) return { ok: false, cost: 0, reason: "That furnishing is already pristine" };
+    if (this.homeHouseholdFunds(home) < cost) {
+      return { ok: false, cost, reason: `This repair needs $${cost}. The household has $${this.homeHouseholdFunds(home)}.` };
+    }
+    this.checkpoint();
+    home.householdFunds = this.homeHouseholdFunds(home) - cost;
+    furniture.condition = 100;
+    furniture.lastRepairedAt = this.clock.elapsedMinutes;
+    return { ok: true, cost, reason: `${furniture.kind} repaired` };
+  }
+
+  renovateRoom(homeId: string, roomId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    if (!home || !room) return { ok: false, cost: 0, reason: "That room is unavailable" };
+    const cost = this.roomRenovationCost(room);
+    if (!cost) return { ok: false, cost: 0, reason: "That room is already pristine" };
+    if (this.homeHouseholdFunds(home) < cost) {
+      return { ok: false, cost, reason: `This renovation needs $${cost}. The household has $${this.homeHouseholdFunds(home)}.` };
+    }
+    this.checkpoint();
+    home.householdFunds = this.homeHouseholdFunds(home) - cost;
+    room.condition = 100;
+    room.lastRenovatedAt = this.clock.elapsedMinutes;
+    return { ok: true, cost, reason: `${room.kind} renovated` };
   }
 
   householdGatherings(home: Home) {
@@ -5198,7 +5268,11 @@ export class World {
           ...room,
           floor: Math.round(clamp(room.floor ?? 0, 0, normalizedFloors - 1)),
           floorFinish: room.floorFinish ?? "oak",
-          wallFinish: room.wallFinish ?? "warm-white"
+          wallFinish: room.wallFinish ?? "warm-white",
+          condition: clamp(room.condition ?? 100, 0, 100),
+          lastRenovatedAt: room.lastRenovatedAt === undefined
+            ? undefined
+            : Math.round(clamp(room.lastRenovatedAt, 0, savedElapsedMinutes))
         })),
         furniture: (home.furniture ?? []).map(item => ({
           ...item,
@@ -5206,7 +5280,11 @@ export class World {
           style: normalizeHomeFurnitureStyle(item.style),
           variant: normalizeHomeFurnitureVariant(item.variant),
           tint: normalizeFurnitureTint(item.tint),
-          ownerResidentId: item.ownerResidentId && residentIds.has(item.ownerResidentId) ? item.ownerResidentId : undefined
+          ownerResidentId: item.ownerResidentId && residentIds.has(item.ownerResidentId) ? item.ownerResidentId : undefined,
+          condition: clamp(item.condition ?? 100, 0, 100),
+          lastRepairedAt: item.lastRepairedAt === undefined
+            ? undefined
+            : Math.round(clamp(item.lastRepairedAt, 0, savedElapsedMinutes))
         })),
         stairs: (home.stairs ?? []).filter(stair =>
           Number.isFinite(stair.x)
@@ -5773,6 +5851,7 @@ export class World {
 
   private settleHouseholdFinances(totalPopulation: number, effectiveStaffing: number) {
     for (const home of this.homes) {
+      this.degradeHomeCondition(home);
       const lot = this.lots.find(item => item.id === home.lotId);
       const utilityReliability = lot
         ? this.lotUtilityReliability(lot, totalPopulation, effectiveStaffing)
@@ -5802,6 +5881,16 @@ export class World {
           this.increaseResidentAspiration(resident, 2);
         }
       }
+    }
+  }
+
+  private degradeHomeCondition(home: Home) {
+    const occupiedWear = home.residents.length * .003;
+    for (const room of home.rooms) {
+      room.condition = clamp((room.condition ?? 100) - (.014 + occupiedWear), 25, 100);
+    }
+    for (const furniture of home.furniture) {
+      furniture.condition = clamp((furniture.condition ?? 100) - (.008 + home.residents.length * .002), 20, 100);
     }
   }
 
@@ -6267,16 +6356,26 @@ export class World {
     const targetFurniture = action.targetFurnitureId
       ? home.furniture.find(item => item.id === action.targetFurnitureId)
       : undefined;
+    const targetCondition = targetFurniture ? this.furnitureCondition(targetFurniture) : 100;
     const satisfaction = Math.round(clamp(
       (needScoreAfter - needScoreBefore) / 2
       + (favoriteAction === action.kind && action.conversationIntent !== "confront" ? 4 : 0)
       + (targetFurniture?.ownerResidentId === resident.id ? 3 : 0)
+      - (100 - targetCondition) * .035
       - (action.kind === "socialize" && action.conversationIntent === "confront" ? 4 : 0)
       - (action.kind === "idle" ? 3 : 0),
       -30,
       30
     ));
     this.rememberResidentActivity(resident, action.kind, satisfaction, action.endsAt);
+    if (targetFurniture) {
+      const useWear = targetFurniture.kind === "shower" || targetFurniture.kind === "fridge"
+        ? .32
+        : targetFurniture.kind === "bed"
+          ? .18
+          : .12;
+      targetFurniture.condition = clamp((targetFurniture.condition ?? 100) - useWear, 20, 100);
+    }
     resident.lastActionKind = action.kind;
     resident.lastActionAt = action.endsAt;
     resident.completedActions = (resident.completedActions ?? 0) + 1;

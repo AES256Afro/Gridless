@@ -659,6 +659,7 @@ kbd {
 }
 .room-editor.visible { display: flex; }
 .room-editor strong { max-width: 180px; color: #f0d980; font-size: 11px; white-space: nowrap; }
+.room-editor > span { color: #d8c98e; font-size: 9px; font-weight: 700; white-space: nowrap; }
 .room-editor label { display: flex; align-items: center; gap: 5px; color: #91a197; font-size: 9px; font-weight: 700; text-transform: uppercase; }
 .room-editor select { min-width: 128px; padding: 7px 26px 7px 8px; }
 .room-editor button { padding: 8px 10px; white-space: nowrap; }

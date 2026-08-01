@@ -379,6 +379,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 
 ### P0: A complete home shell
 
+- [Complete] Rooms and furnishings retain bounded persistent condition, age through occupancy and object use, visibly fade in 3D, influence home quality and resident satisfaction, and can be repaired or renovated from household funds.
 - Replace rectangle-only rooms with a wall, doorway, window, stair, foundation, roof, and floor-level toolset.
 - Add copy, multi-select, eyedropper, room duplication, search, favorites, recolors, and object variants.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
