@@ -126,12 +126,14 @@ function normalizeRoadRecord(road: Road): Road {
 export type Area = {
   id: string;
   name: string;
-  kind: "land" | "park" | "water" | "floodplain" | "district";
+  kind: "land" | "park" | "water" | "floodplain" | "slope" | "district";
   floodRisk?: "moderate" | "high";
+  terrainSlope?: "moderate" | "steep";
   points: Point2[];
 };
 
 export type FloodRisk = "none" | "moderate" | "high";
+export type TerrainSlope = "flat" | "moderate" | "steep";
 
 export type TaxCategory = "residential" | "commercial" | "industrial";
 
@@ -187,7 +189,7 @@ function normalizeTaxRate(rate: number) {
 }
 
 export type WorldTemplate = {
-  id: "nyc" | "chicago" | "houston" | "blank";
+  id: "nyc" | "chicago" | "houston" | "seattle" | "blank";
   name: string;
   description: string;
   roads: Road[];
@@ -1982,6 +1984,22 @@ export class World {
     return risk === "high" ? 1 : risk === "moderate" ? .55 : 0;
   }
 
+  lotTerrainSlope(lot: Lot): TerrainSlope {
+    const slopes = this.areas.filter(area => area.kind === "slope" && pointInPolygon(lot.center, area.points));
+    if (slopes.some(area => area.terrainSlope === "steep")) return "steep";
+    if (slopes.length) return "moderate";
+    return "flat";
+  }
+
+  lotTerrainSlopeScore(lot: Lot) {
+    const slope = this.lotTerrainSlope(lot);
+    return slope === "steep" ? .85 : slope === "moderate" ? .45 : 0;
+  }
+
+  lotEnvironmentalConstraintScore(lot: Lot) {
+    return Math.max(this.lotFloodRiskScore(lot), this.lotTerrainSlopeScore(lot));
+  }
+
   districtPoliciesForLot(lot: Lot) {
     const district = this.districtForLot(lot);
     return district ? this.districtPolicies[district.id] ?? [] : [];
@@ -2087,6 +2105,8 @@ export class World {
     const industrialPenalty = lot.zone === "industrial" ? 11 : 0;
     const floodRisk = this.lotFloodRisk(lot);
     const floodRiskPenalty = floodRisk === "high" ? 14 : floodRisk === "moderate" ? 7 : 0;
+    const terrainSlope = this.lotTerrainSlope(lot);
+    const terrainPenalty = terrainSlope === "steep" ? 9 : terrainSlope === "moderate" ? 4 : 0;
     return Math.round(clamp(
       22
       + utility * .22
@@ -2096,6 +2116,7 @@ export class World {
       - taxPenalty
       - industrialPenalty
       - floodRiskPenalty
+      - terrainPenalty
       + policyBonus,
       0,
       100
@@ -5735,6 +5756,12 @@ function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number
     if (x < -330 && (z < -220 || z > 255)) return "unassigned";
     if (Math.abs(x) < 155 && z < -130 && z > -340) return "mixed";
     if (Math.abs(z) < 190) return "mixed";
+    return "residential";
+  }
+  if (templateId === "seattle") {
+    if (x > -195 && x < 35 && z > -205 && z < 45) return "commercial";
+    if (z < -250 && x < -150) return "industrial";
+    if ((x > -25 && x < 175 && z > -90 && z < 175) || (z > 225 && Math.abs(x) < 230)) return "mixed";
     return "residential";
   }
   if (templateId === "chicago") {

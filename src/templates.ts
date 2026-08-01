@@ -43,13 +43,15 @@ const regionPolygon = (
   name: string,
   kind: Area["kind"],
   points: Array<[number, number]>,
-  floodRisk?: Area["floodRisk"]
+  floodRisk?: Area["floodRisk"],
+  terrainSlope?: Area["terrainSlope"]
 ): Area => ({
   id,
   name,
   kind,
   points: points.map(([x, z]) => ({ x, z })),
-  floodRisk
+  floodRisk,
+  terrainSlope
 });
 
 function nycRoads() {
@@ -342,6 +344,132 @@ export const HOUSTON_TEMPLATE: WorldTemplate = {
   ]
 };
 
+function seattleRoads() {
+  const roads: Road[] = [];
+  const northSouth = [
+    [-250, "15th Avenue West"],
+    [-190, "Elliott Avenue"],
+    [-130, "1st Avenue"],
+    [-70, "3rd Avenue"],
+    [-10, "Broadway"],
+    [50, "12th Avenue"],
+    [110, "23rd Avenue"],
+    [170, "Martin Luther King Jr Way"],
+    [225, "Lake Washington Boulevard"]
+  ] as const;
+  northSouth.forEach(([x, name], index) => roads.push(regionLine(
+    name === "3rd Avenue" ? "seattle-third" : `seattle-north-south-${index + 1}`,
+    name,
+    name === "3rd Avenue" || name === "23rd Avenue" ? "avenue" : "street",
+    name === "3rd Avenue" || name === "23rd Avenue" ? 12 : 9,
+    [[x, -450], [x + (index % 2 ? 8 : -6), 450]],
+    name === "3rd Avenue"
+      ? { travelLanes: 4, speedLimitKph: 30, sidewalkWidth: 4, bikeLanes: false, busLanes: true, median: false, curbParking: false, streetTrees: true }
+      : name === "Lake Washington Boulevard"
+        ? { travelLanes: 2, speedLimitKph: 30, sidewalkWidth: 3, bikeLanes: true, busLanes: false, median: false, curbParking: true, streetTrees: true }
+        : undefined
+  )));
+  const eastWest = [
+    [-420, "South Henderson Street"],
+    [-340, "South Orcas Street"],
+    [-260, "South Spokane Street"],
+    [-180, "South Jackson Street"],
+    [-100, "Madison Street"],
+    [-20, "Pine Street"],
+    [60, "Denny Way"],
+    [140, "Eastlake Avenue"],
+    [220, "North 45th Street"],
+    [320, "North 65th Street"],
+    [410, "North 85th Street"]
+  ] as const;
+  eastWest.forEach(([z, name], index) => roads.push(regionLine(
+    `seattle-east-west-${index + 1}`,
+    name,
+    name === "Madison Street" || name === "Denny Way" || name === "North 45th Street" ? "avenue" : "street",
+    name === "Madison Street" || name === "Denny Way" || name === "North 45th Street" ? 12 : 9,
+    [[-285, z], [245, z]]
+  )));
+  roads.push(regionLine(
+    "seattle-i5",
+    "Interstate 5",
+    "arterial",
+    22,
+    [[35, -500], [20, -250], [32, 0], [22, 260], [42, 500]],
+    { travelLanes: 6, speedLimitKph: 90, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "seattle-sr99",
+    "State Route 99",
+    "arterial",
+    18,
+    [[-175, -500], [-160, -245], [-170, -20], [-150, 240], [-165, 500]],
+    { travelLanes: 4, speedLimitKph: 70, sidewalkWidth: 1.5, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "seattle-520-bridge",
+    "State Route 520 Bridge",
+    "arterial",
+    18,
+    [[35, 175], [480, 175]],
+    { travelLanes: 4, speedLimitKph: 80, sidewalkWidth: 2.4, bikeLanes: true, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "seattle-i90-bridge",
+    "Interstate 90 Bridge",
+    "arterial",
+    20,
+    [[40, -185], [480, -185]],
+    { travelLanes: 6, speedLimitKph: 80, sidewalkWidth: 2, bikeLanes: true, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "seattle-west-bridge",
+    "West Seattle Bridge",
+    "arterial",
+    16,
+    [[-480, -270], [-210, -270]],
+    { travelLanes: 4, speedLimitKph: 60, sidewalkWidth: 2, bikeLanes: true, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "seattle-burke-gilman",
+    "Burke-Gilman Trail",
+    "street",
+    5,
+    [[-250, 280], [-90, 235], [70, 265], [235, 340]],
+    { travelLanes: 1, speedLimitKph: 20, sidewalkWidth: 3.2, bikeLanes: true, busLanes: false, median: false, curbParking: false, streetTrees: true },
+    false
+  ));
+  return roads;
+}
+
+export const SEATTLE_TEMPLATE: WorldTemplate = {
+  id: "seattle",
+  name: "Seattle Foundation",
+  description: "A flexible sound-and-lake city with constrained corridors, bridge crossings, mapped steep slopes, compact urban villages, bike routes, cool wet climate, and narrow developable land.",
+  roads: seattleRoads(),
+  areas: [
+    regionPolygon("seattle-land", "Seattle", "land", [[-315, -520], [275, -520], [300, -350], [270, -160], [290, 40], [265, 240], [285, 520], [-300, 520], [-330, 300], [-305, 90], [-345, -130], [-320, -340]]),
+    regionPolygon("seattle-lake-washington", "Lake Washington", "water", [[245, -520], [520, -520], [520, 520], [255, 520], [275, 330], [245, 120], [270, -80], [240, -300]]),
+    regionPolygon("seattle-lake-union", "Lake Union", "water", [[-112, 92], [88, 92], [110, 225], [42, 278], [-78, 260], [-125, 198]]),
+    regionPolygon("seattle-ship-canal", "Lake Washington Ship Canal", "water", [[-300, 225], [-72, 225], [-72, 250], [-300, 250]]),
+    regionPolygon("seattle-queen-anne-slope", "Queen Anne Hill", "slope", [[-225, 35], [-95, 35], [-75, 185], [-205, 205]], undefined, "steep"),
+    regionPolygon("seattle-capitol-hill-slope", "Capitol Hill", "slope", [[-20, -40], [145, -40], [155, 150], [-10, 150]], undefined, "moderate"),
+    regionPolygon("seattle-beacon-hill-slope", "Beacon Hill", "slope", [[-15, -390], [145, -390], [130, -150], [-35, -150]], undefined, "steep"),
+    regionPolygon("seattle-west-ridge-slope", "West Seattle Ridge", "slope", [[-315, -440], [-185, -440], [-195, -215], [-330, -215]], undefined, "moderate"),
+    regionPolygon("seattle-discovery-park", "Discovery Park", "park", [[-300, 260], [-175, 260], [-175, 410], [-300, 410]]),
+    regionPolygon("seattle-seward-park", "Seward Park", "park", [[165, -450], [250, -450], [245, -325], [175, -325]]),
+    regionPolygon("seattle-downtown", "Downtown", "district", [[-190, -190], [25, -190], [25, 35], [-190, 35]]),
+    regionPolygon("seattle-capitol-hill", "Capitol Hill", "district", [[-15, -75], [165, -75], [165, 155], [-15, 155]]),
+    regionPolygon("seattle-ballard", "Ballard", "district", [[-300, 240], [-95, 240], [-95, 440], [-300, 440]]),
+    regionPolygon("seattle-west", "West Seattle", "district", [[-315, -470], [-175, -470], [-175, -215], [-315, -215]]),
+    regionPolygon("seattle-university", "University District", "district", [[55, 235], [220, 235], [220, 420], [55, 420]])
+  ]
+};
+
 export const BLANK_TEMPLATE: WorldTemplate = {
   id: "blank",
   name: "Blank Region",
@@ -356,6 +484,7 @@ export const WORLD_TEMPLATES = {
   nyc: NYC_TEMPLATE,
   chicago: CHICAGO_TEMPLATE,
   houston: HOUSTON_TEMPLATE,
+  seattle: SEATTLE_TEMPLATE,
   blank: BLANK_TEMPLATE
 } satisfies Record<WorldTemplate["id"], WorldTemplate>;
 
@@ -420,6 +549,22 @@ export const TEMPLATE_REGIONAL_CONFIGS: Record<WorldTemplate["id"], TemplateRegi
     },
     parkingRoadIds: ["houston-main", "houston-i10-frontage-1", "houston-allen-parkway"],
     event: { id: "template-event-buffalo-bayou", name: "Buffalo Bayou Festival", kind: "concert", roadId: "houston-allen-parkway" }
+  },
+  seattle: {
+    defaultCityName: "New Sound City",
+    climate: {
+      monthlyTemperature: [5, 6, 8, 11, 14, 17, 20, 20, 17, 12, 8, 5],
+      wetThreshold: { winter: 60, spring: 48, summer: 22, autumn: 56 },
+      snowThreshold: 4,
+      windBase: 5
+    },
+    transit: {
+      roadId: "seattle-third",
+      lineName: "3rd Avenue Rapid S1",
+      stopNames: ["Rainier Valley", "International District", "Pioneer Square", "Downtown", "Belltown", "Seattle Center", "North Terminal"]
+    },
+    parkingRoadIds: ["seattle-third", "seattle-east-west-5", "seattle-north-south-1"],
+    event: { id: "template-event-waterfront-music", name: "Seattle Waterfront Music Walk", kind: "concert", roadId: "seattle-north-south-2" }
   },
   blank: {
     defaultCityName: "Untitled Region",

@@ -207,7 +207,7 @@ app.innerHTML = `
         <option value="nyc">New York City foundation</option>
         <option value="chicago">Chicago foundation</option>
         <option value="houston">Houston foundation</option>
-        <option disabled>Seattle foundation · planned</option>
+        <option value="seattle">Seattle foundation</option>
         <option disabled>Portland foundation · planned</option>
         <option value="blank">Blank region</option>
       </select>
@@ -2086,7 +2086,7 @@ function lotPlanningValue(
   if (view === "utilities") return world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "wellbeing") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "land-value") return world.lotLandValue(lot, totalPopulation, effectiveStaffing) / 100;
-  if (view === "environment") return 1 - world.lotFloodRiskScore(lot);
+  if (view === "environment") return 1 - world.lotEnvironmentalConstraintScore(lot);
   if (view === "development") return lot.zone === "unassigned" ? 0 : world.constructionProgress(lot);
   return 1;
 }
@@ -2962,9 +2962,11 @@ function renderTerrain() {
     shape.closePath();
     const areaMaterial = area.kind === "water"
       ? waterMaterial
-      : area.kind === "floodplain"
+      : area.kind === "floodplain" || area.kind === "slope"
         ? new THREE.MeshStandardMaterial({
-            color: area.floodRisk === "high" ? 0x5c89a1 : 0x789c9d,
+            color: area.kind === "slope"
+              ? area.terrainSlope === "steep" ? 0xb27655 : 0xaa9662
+              : area.floodRisk === "high" ? 0x5c89a1 : 0x789c9d,
             transparent: true,
             opacity: cityView === "environment" ? .48 : .18,
             roughness: .76,
@@ -2978,7 +2980,7 @@ function renderTerrain() {
           });
     const surface = new THREE.Mesh(new THREE.ShapeGeometry(shape), areaMaterial);
     surface.rotation.x = Math.PI / 2;
-    surface.position.y = area.kind === "park" ? .08 : area.kind === "floodplain" ? .045 : area.kind === "water" ? .02 : -.02;
+    surface.position.y = area.kind === "park" ? .08 : area.kind === "floodplain" || area.kind === "slope" ? .045 : area.kind === "water" ? .02 : -.02;
     surface.receiveShadow = true;
     terrainGroup.add(surface);
     if (area.kind === "park") {
@@ -5621,12 +5623,14 @@ function updateCityViewPanel() {
   } else if (cityView === "environment") {
     const highRisk = world.lots.filter(lot => world.lotFloodRisk(lot) === "high").length;
     const moderateRisk = world.lots.filter(lot => world.lotFloodRisk(lot) === "moderate").length;
+    const steep = world.lots.filter(lot => world.lotTerrainSlope(lot) === "steep").length;
+    const moderateSlope = world.lots.filter(lot => world.lotTerrainSlope(lot) === "moderate").length;
     legendCopy.textContent = "High exposure · lower exposure";
     setPanel(
       "ENVIRONMENT VIEW",
-      `${highRisk} high-risk floodplain parcels`,
-      `${moderateRisk} additional parcels have moderate flood exposure. Floodplain shading is regional evidence rather than a building ban: players can preserve open space, accept lower land value, or invest in future resilience systems while every parcel remains editable.`,
-      "Red|High flood risk;Amber|Moderate risk;Green|Outside mapped floodplain;Inspect|Review parcel"
+      `${highRisk + steep} high-constraint parcels`,
+      `${highRisk} parcels have high flood exposure, ${moderateRisk} have moderate flood exposure, ${steep} occupy steep terrain, and ${moderateSlope} occupy moderate slopes. Regional constraints remain editable, but apply explicit land-value pressure so open space, resilience, and corridor choices have visible tradeoffs.`,
+      "Red|High flood or steep slope;Amber|Moderate constraint;Green|Outside mapped constraint;Inspect|Review parcel"
     );
   } else if (cityView === "development") {
     const active = world.lots.filter(lot => world.constructionProgress(lot) < 1).length;

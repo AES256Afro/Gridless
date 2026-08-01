@@ -652,6 +652,100 @@ check(
   "A legacy Houston save without area geometry did not recover its regional terrain."
 );
 
+const seattleWorld = new World();
+check(
+  seattleWorld.applyTemplate("seattle")
+    && seattleWorld.cityName === "New Sound City"
+    && seattleWorld.templateId === "seattle",
+  "The Seattle foundation did not reset world and city identity."
+);
+check(
+  seattleWorld.roads.length === 26
+    && seattleWorld.areas.filter(area => area.kind === "water").length === 3
+    && seattleWorld.areas.filter(area => area.kind === "slope").length === 4
+    && seattleWorld.areas.filter(area => area.kind === "park").length === 2
+    && seattleWorld.areas.filter(area => area.kind === "district").length === 5,
+  "The Seattle foundation lost its water constraints, slopes, parks, districts, or road structure."
+);
+const seattleI5 = seattleWorld.roads.find(road => road.id === "seattle-i5")!;
+const seattleBridge = seattleWorld.roads.find(road => road.id === "seattle-520-bridge")!;
+const seattleThird = seattleWorld.roads.find(road => road.id === "seattle-third")!;
+check(
+  seattleI5.developable === false
+    && seattleI5.profile?.travelLanes === 6
+    && seattleI5.profile.speedLimitKph === 90
+    && seattleBridge.developable === false
+    && seattleBridge.profile?.bikeLanes === true
+    && seattleThird.profile?.busLanes === true
+    && !seattleWorld.lots.some(lot => lot.roadId === seattleI5.id || lot.roadId === seattleBridge.id),
+  "Seattle freeway, bridge, bicycle, and bus-priority profiles did not preserve constrained access."
+);
+const seattleSlopeCounts = { flat: 0, moderate: 0, steep: 0 };
+seattleWorld.lots.forEach(lot => seattleSlopeCounts[seattleWorld.lotTerrainSlope(lot)] += 1);
+const seattleZones = new Set(seattleWorld.lots.map(lot => lot.zone));
+check(
+  seattleWorld.lots.length > 500
+    && seattleSlopeCounts.flat > 0
+    && seattleSlopeCounts.moderate > 0
+    && seattleSlopeCounts.steep > 0
+    && seattleZones.has("residential")
+    && seattleZones.has("commercial")
+    && seattleZones.has("mixed")
+    && seattleZones.has("industrial"),
+  "Seattle did not create constrained developable land, three slope states, and an urban-village zoning mix."
+);
+const seattleFlatLot = seattleWorld.lots.find(lot => seattleWorld.lotTerrainSlope(lot) === "flat")!;
+const seattleFlatLandValue = seattleWorld.lotLandValue(seattleFlatLot);
+seattleWorld.areas.push({
+  id: "test-steep-slope",
+  name: "Test steep slope",
+  kind: "slope",
+  terrainSlope: "steep",
+  points: [
+    { x: seattleFlatLot.center.x - 2, z: seattleFlatLot.center.z - 2 },
+    { x: seattleFlatLot.center.x + 2, z: seattleFlatLot.center.z - 2 },
+    { x: seattleFlatLot.center.x + 2, z: seattleFlatLot.center.z + 2 },
+    { x: seattleFlatLot.center.x - 2, z: seattleFlatLot.center.z + 2 }
+  ]
+});
+check(
+  seattleWorld.lotTerrainSlope(seattleFlatLot) === "steep"
+    && seattleWorld.lotLandValue(seattleFlatLot) === Math.max(0, seattleFlatLandValue - 9),
+  "Steep terrain did not apply its explicit land-value pressure."
+);
+seattleWorld.areas.pop();
+check(
+  seattleWorld.transitLines[0]?.name === "3rd Avenue Rapid S1"
+    && seattleWorld.transitLines[0].stops.some(stop => stop.name === "Downtown")
+    && seattleWorld.parking.length === 3
+    && seattleWorld.cityEvents[0]?.name === "Seattle Waterfront Music Walk",
+  "The Seattle foundation did not seed its local transit, parking, and waterfront event."
+);
+const seattleWeather = seattleWorld.weather();
+const matchingSeattleWorld = new World();
+matchingSeattleWorld.applyTemplate("seattle");
+check(
+  seattleWeather.temperatureC < houstonWeather.temperatureC
+    && seattleWeather.visibility <= 1
+    && JSON.stringify(seattleWeather) === JSON.stringify(matchingSeattleWorld.weather()),
+  "Seattle climate was not cooler and deterministic on the reference winter date."
+);
+const restoredSeattleWorld = new World();
+check(
+  restoredSeattleWorld.restore(seattleWorld.serialize())
+    && restoredSeattleWorld.templateId === "seattle"
+    && restoredSeattleWorld.roads.some(road => road.id === "seattle-i90-bridge")
+    && restoredSeattleWorld.areas.some(area => area.kind === "slope" && area.terrainSlope === "steep"),
+  "Seattle regional identity, bridge geometry, or slope evidence was lost during persistence."
+);
+const legacySeattleSnapshot = JSON.parse(seattleWorld.serialize());
+delete legacySeattleSnapshot.areas;
+check(
+  restoredSeattleWorld.restore(JSON.stringify(legacySeattleSnapshot))
+    && restoredSeattleWorld.areas.some(area => area.kind === "water" && area.name === "Lake Washington"),
+  "A legacy Seattle save without area geometry did not recover its regional terrain."
+);
+
 const householdIdentityWorld = new World();
 const householdIdentityHome = householdIdentityWorld.ensureHome(householdIdentityWorld.lots[0]);
 check(!householdIdentityWorld.setHomeName(householdIdentityHome.id, "<home>"), "Home identity accepted unsafe markup characters.");

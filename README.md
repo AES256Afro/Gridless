@@ -4,7 +4,7 @@ A browser-first, realistic 3D city builder where city-scale planning and street-
 
 The experience operates at three connected scales: **City Builder → City Explorer → Home Simulator**. The city, streets, lots, homes, objects, and residents belong to one persistent world rather than separate game modes.
 
-The default region uses a flexible New York City foundation. Chicago adds a lakefront grid, river branches, alleys, diagonal corridors, and expressway structure. Houston adds bayous, mapped floodplains, freeway loops, frontage roads, large parcels, industrial corridors, and flexible land use. These are construction aids rather than locked maps. Players can modify every road or start from a blank region.
+The default region uses a flexible New York City foundation. Chicago adds a lakefront grid, river branches, alleys, diagonal corridors, and expressway structure. Houston adds bayous, mapped floodplains, freeway loops, frontage roads, and large parcels. Seattle adds sound and lake constraints, bridge crossings, mapped hill areas, narrow corridors, and urban villages. These are construction aids rather than locked maps. Players can modify every road or start from a blank region.
 
 ## Run the prototype
 
@@ -24,14 +24,14 @@ The current vertical slice proves:
 - A navigable 3D city at realistic human and urban scales
 - Freeform road placement without a tile grid
 - Curved road splines, intersections, generated lots, 40-step Undo and Redo history, manual browser saves, and crash-safe autosave recovery
-- Editable NYC, Chicago, and Houston regional foundations with distinct geometry, street hierarchy, zoning, transit, parking, events, climate, districts, parks, waterfront, and floodplain constraints, plus a blank-region alternative
+- Editable NYC, Chicago, Houston, and Seattle regional foundations with distinct geometry, street hierarchy, zoning, transit, parking, events, climate, districts, parks, waterfront, floodplain, and steep-terrain constraints, plus a blank-region alternative
 - A persistent road designer for local streets, avenues, and arterials with one to eight travel lanes, speed limits, variable sidewalks, protected cycling, bus priority, medians, curb parking, and street trees
 - Profile-aware road construction and retrofit costs, treasury checks, capacity and congestion consequences, live previews, exact Undo and Redo, and deterministic legacy-save migration
 - Clean profile-driven street geometry with distinct lane markings, bike and bus bands, planted medians, variable sidewalk edges, and instanced street trees in both Builder and Explorer
 - A city-economy workspace with separate residential, commercial, and industrial tax rates, immediate revenue and demand feedback, district policy operations, and undoable ten-year municipal bonds
 - Named-district recycling, school support, heavy-traffic bans, and small-business grants with explicit recurring costs plus local wellbeing, land-value, commercial-capacity, and freight-access effects
 - A live land-value planning view derived from utilities, neighborhood services, parks, road speed and traffic noise, zoning, tax pressure, and district policy
-- A regional Environment view with visible moderate and high floodplains, parcel exposure counts, editable risk-bearing development, and explicit land-value pressure
+- A regional Environment view with visible moderate and high floodplains, moderate and steep terrain, parcel exposure counts, editable risk-bearing development, and explicit land-value pressure
 - Parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
 - Persistent power, water, fire, health, and school facilities with coverage radii, operating costs, municipal balance, and demand feedback
@@ -43,7 +43,7 @@ The current vertical slice proves:
 - Daily household moves, business openings, explicit jobs, workforce-limited staffing, and power-dependent service effectiveness
 - Persistent household cohorts, business-sector mixes, named neighborhood anchor businesses, and parcel-level growth explanations
 - Time-aware household routines, business operating hours, municipal shifts, responder availability, and occupied-building night lighting
-- Deterministic region-aware NYC, Chicago, and Houston weather with distinct seasonal temperature, wind, rain, snow, visibility, wet surfaces, landscape color, and scale-aware precipitation across Builder and Explorer
+- Deterministic region-aware NYC, Chicago, Houston, and Seattle weather with distinct seasonal temperature, wind, rain, snow, visibility, wet surfaces, landscape color, and scale-aware precipitation across Builder and Explorer
 - Opt-in procedural soundscapes generated in the browser, with quiet regional ambience in City Builder, traffic-responsive streets in City Explorer, sheltered room tone in Home Simulator, and weather plus day/night transitions across all three
 - Persistent street-graph commutes with named resident workplaces, representative walking and driving groups, visible 3D travelers, congestion, and traffic-sensitive staffing and emergency response
 - Persistent resident energy, social, comfort, health, and stress needs shaped by schedules, home design, utilities, neighborhood services, incidents, and commute burden
