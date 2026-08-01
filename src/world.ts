@@ -494,6 +494,16 @@ export type HomeSpacePlan = {
   area: { squareMeters: number; targetSquareMeters: number };
   deficits: HomeSpaceDeficit[];
 };
+
+export type HomeOrganization = {
+  score: number;
+  storageCapacity: number;
+  possessionDemand: number;
+  looseItems: number;
+  clearFloorShare: number;
+  status: "Organized" | "Lived in" | "Crowded" | "Cluttered";
+  recommendation: string;
+};
 export type ResidentLifeStage = "infant" | "toddler" | "child" | "teen" | "young-adult" | "adult" | "elder";
 export type ResidentAspiration = "family" | "mastery" | "community" | "prosperity" | "creative";
 export type ResidentCareerTrack = "civic" | "enterprise" | "hospitality" | "care" | "creative";
@@ -4328,10 +4338,11 @@ export class World {
     const furnitureVariety = Math.min(1, new Set(home.furniture.map(item => item.kind)).size / 8);
     const plants = Math.min(3, home.furniture.filter(item => item.kind === "plant").length);
     const functionality = this.homeFunctionality(home);
+    const organization = this.homeOrganization(home);
     const conditionPenalty = (100 - this.homeCondition(home)) * .24;
     const daylightPenalty = (100 - this.homeDaylight(home)) * .08;
     return Math.round(clamp(
-      30
+      25
       + roomShare * 22
       + bedShare * 24
       + functionality.completeness / 100 * 15
@@ -4339,6 +4350,7 @@ export class World {
       + furnitureVariety * 7
       + plants * 2
       + (home.residents.length ? this.homePrivacy(home) / 100 * 6 : 0)
+      + organization.score / 100 * 5
       - conditionPenalty
       - daylightPenalty,
       0,
@@ -4488,6 +4500,45 @@ export class World {
       area: { squareMeters, targetSquareMeters },
       deficits
     };
+  }
+
+  homeOrganization(home: Home): HomeOrganization {
+    if (!home.residents.length) return {
+      score: 100,
+      storageCapacity: 0,
+      possessionDemand: 0,
+      looseItems: 0,
+      clearFloorShare: 100,
+      status: "Organized",
+      recommendation: "Storage needs will appear as residents and belongings move in."
+    };
+    const capacities: Partial<Record<Home["furniture"][number]["kind"], number>> = {
+      bookcase: 6,
+      desk: 2,
+      table: 2,
+      fridge: 4
+    };
+    const storageCapacity = home.furniture.reduce((total, item) => total + (capacities[item.kind] ?? 0), 0);
+    const personalItems = home.residents.reduce((total, resident) => total + this.residentPersonalItems(resident).length, 0);
+    const pastimeSupplies = home.residents.filter(resident => ["reading", "gardening", "cooking"].includes(this.residentFavoritePastime(resident))).length;
+    const possessionDemand = home.residents.length * 3 + personalItems * 2 + pastimeSupplies;
+    const looseItems = Math.max(0, possessionDemand - storageCapacity);
+    const totalRoomArea = Math.max(1, home.rooms.reduce((total, room) => total + room.width * room.depth, 0));
+    const furnitureArea = home.furniture.reduce((total, item) => {
+      const size = HOME_FURNITURE_SIZE[item.kind];
+      return total + size.width * size.depth;
+    }, 0);
+    const clearFloorShare = Math.round(clamp((1 - furnitureArea / totalRoomArea) * 100, 0, 100));
+    const storageScore = possessionDemand ? Math.min(1, storageCapacity / possessionDemand) * 72 : 72;
+    const clearanceScore = Math.min(1, clearFloorShare / 68) * 28;
+    const score = Math.round(clamp(storageScore + clearanceScore, 0, 100));
+    const status = score >= 88 ? "Organized" : score >= 68 ? "Lived in" : score >= 45 ? "Crowded" : "Cluttered";
+    const recommendation = looseItems
+      ? `Add ${Math.ceil(looseItems / 6)} bookcase${Math.ceil(looseItems / 6) === 1 ? "" : "s"} or combine desks, tables, and kitchen storage to hold ${looseItems} loose item${looseItems === 1 ? "" : "s"}.`
+      : clearFloorShare < 68
+        ? "Storage is sufficient, but furnishings need more open walking space."
+        : "Belongings have storage and the home retains comfortable circulation space.";
+    return { score, storageCapacity, possessionDemand, looseItems, clearFloorShare, status, recommendation };
   }
 
   lotHasService(lot: Lot, kind: ServiceKind) {
