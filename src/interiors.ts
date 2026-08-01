@@ -1,6 +1,7 @@
 import {
   HOME_FURNITURE_SIZE,
   homeFloorView,
+  homeSharedWallSegments,
   type AccessibilityEntrance,
   type Home,
   type Lot,
@@ -9,6 +10,7 @@ import {
 } from "./world";
 
 export type InteriorDoorway = {
+  id?: string;
   orientation: "x" | "z";
   boundary: number;
   center: number;
@@ -86,56 +88,21 @@ export function homeEntryStatus(home: Home | undefined, entrance: AccessibilityE
 }
 
 export function interiorDoorways(home: Home): InteriorDoorway[] {
-  const doorways: InteriorDoorway[] = [];
-  for (let firstIndex = 0; firstIndex < home.rooms.length; firstIndex++) {
-    const first = home.rooms[firstIndex];
-    for (let secondIndex = firstIndex + 1; secondIndex < home.rooms.length; secondIndex++) {
-      const second = home.rooms[secondIndex];
-      const firstLeft = first.x - first.width / 2;
-      const firstRight = first.x + first.width / 2;
-      const firstBack = first.z - first.depth / 2;
-      const firstFront = first.z + first.depth / 2;
-      const secondLeft = second.x - second.width / 2;
-      const secondRight = second.x + second.width / 2;
-      const secondBack = second.z - second.depth / 2;
-      const secondFront = second.z + second.depth / 2;
-
-      const zOverlapStart = Math.max(firstBack, secondBack);
-      const zOverlapEnd = Math.min(firstFront, secondFront);
-      const xBoundary = Math.abs(firstRight - secondLeft) <= .3
-        ? (firstRight + secondLeft) / 2
-        : Math.abs(secondRight - firstLeft) <= .3
-          ? (secondRight + firstLeft) / 2
-          : undefined;
-      if (xBoundary !== undefined && zOverlapEnd - zOverlapStart >= 1.1) {
-        doorways.push({
-          orientation: "x",
-          boundary: xBoundary,
-          center: (zOverlapStart + zOverlapEnd) / 2,
-          width: Math.min(1.35, zOverlapEnd - zOverlapStart - .2),
-          roomIds: [first.id, second.id]
-        });
-      }
-
-      const xOverlapStart = Math.max(firstLeft, secondLeft);
-      const xOverlapEnd = Math.min(firstRight, secondRight);
-      const zBoundary = Math.abs(firstFront - secondBack) <= .3
-        ? (firstFront + secondBack) / 2
-        : Math.abs(secondFront - firstBack) <= .3
-          ? (secondFront + firstBack) / 2
-          : undefined;
-      if (zBoundary !== undefined && xOverlapEnd - xOverlapStart >= 1.1) {
-        doorways.push({
-          orientation: "z",
-          boundary: zBoundary,
-          center: (xOverlapStart + xOverlapEnd) / 2,
-          width: Math.min(1.35, xOverlapEnd - xOverlapStart - .2),
-          roomIds: [first.id, second.id]
-        });
-      }
-    }
-  }
-  return doorways;
+  if (home.doors !== undefined) return home.doors.map(door => ({
+    id: door.id,
+    orientation: door.orientation,
+    boundary: door.boundary,
+    center: door.center,
+    width: door.width,
+    roomIds: door.roomIds
+  }));
+  return homeSharedWallSegments(home).map(wall => ({
+    orientation: wall.orientation,
+    boundary: wall.boundary,
+    center: (wall.start + wall.end) / 2,
+    width: Math.min(1.35, wall.end - wall.start - .2),
+    roomIds: wall.roomIds
+  }));
 }
 
 export function interiorExteriorDoorway(home: Home, preferred: Point2): InteriorExteriorDoorway | undefined {

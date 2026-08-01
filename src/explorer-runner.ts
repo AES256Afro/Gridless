@@ -1379,6 +1379,43 @@ check(Boolean(interiorEntry), "Interior entry did not find a clear floor positio
 check(isInteriorPositionValid(interiorHome, interiorEntry!), "Interior entry landed inside a wall or furnishing.");
 check(interiorRoomAt(interiorHome, interiorEntry!)?.id === "living-room", "Interior entry selected the wrong room.");
 check(interiorDoorways(interiorHome).length === 1, "Adjacent rooms did not create one connecting doorway.");
+const authoredDoorWorld = new World();
+authoredDoorWorld.homes = [structuredClone(interiorHome)];
+const authoredDoorHome = authoredDoorWorld.homes[0];
+const authoredDoorBudget = authoredDoorWorld.homeRemainingBudget(authoredDoorHome);
+check(
+  authoredDoorWorld.addHomeDoor(authoredDoorHome.id, { x: 4, z: 0 }, 0, "wide"),
+  "Home Simulator rejected a wide doorway snapped between adjacent rooms."
+);
+const authoredDoor = authoredDoorHome.doors?.[0];
+check(
+  authoredDoorHome.doors?.length === 1
+    && authoredDoor?.width === 1.35
+    && authoredDoor?.widthKind === "wide"
+    && authoredDoorWorld.homeRemainingBudget(authoredDoorHome) === authoredDoorBudget - HOME_BUILD_COSTS.door - HOME_BUILD_COSTS.wideDoor,
+  "An authored wide doorway did not persist with its exact clear width and cost."
+);
+check(
+  !authoredDoorWorld.addHomeDoor(authoredDoorHome.id, { x: 4, z: .2 }, 0, "standard"),
+  "Home Simulator allowed authored doorways to overlap."
+);
+check(
+  interiorDoorways(authoredDoorHome).length === 1
+    && isInteriorPositionValid(authoredDoorHome, { x: 4, z: 0 }),
+  "An authored doorway did not open a traversable shared wall segment."
+);
+const restoredDoorWorld = new World();
+check(
+  restoredDoorWorld.restore(authoredDoorWorld.serialize())
+    && restoredDoorWorld.homes[0].doors?.[0].widthKind === "wide",
+  "Authored doorway width did not survive save and restore."
+);
+check(
+  Boolean(authoredDoor)
+    && authoredDoorWorld.removeHomeDoor(authoredDoorHome.id, authoredDoor!.id)
+    && !isInteriorPositionValid(authoredDoorHome, { x: 4, z: 0 }),
+  "Removing an authored doorway did not close traversal through the shared wall."
+);
 check(
   interiorExteriorDoorway(interiorHome, { x: -12, z: 0 })?.roomId === "living-room",
   "The street-facing opening was not assigned to the nearest exterior room wall."
@@ -3911,6 +3948,8 @@ console.log(JSON.stringify({
   waterBoundary: waterMove.blocked,
   interiorEntry: interiorEntry,
   interiorDoorways: interiorDoorways(interiorHome).length,
+  authoredDoorWidth: restoredDoorWorld.homes[0].doors?.[0].width,
+  authoredDoorTraversal: isInteriorPositionValid(restoredDoorWorld.homes[0], { x: 4, z: 0 }),
   homeExteriorWalls: interiorExteriorWalls.length,
   homeDaylight: furniturePlacementWorld.homeDaylight(furniturePlacementWorld.homes[0]),
   authoredWindows: authoredWindowHome.windows?.length ?? 0,

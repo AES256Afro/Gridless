@@ -52,6 +52,7 @@ import {
   type DistrictPolicy,
   type Home,
   type HomeFloorFinish,
+  type HomeDoorWidth,
   type HomeFurnitureStyle,
   type HomeFurnitureVariant,
   type HomeRoomKind,
@@ -140,7 +141,7 @@ import {
 
 type Mode = "city" | "explore" | "home";
 type HomeFurnitureKind = Home["furniture"][number]["kind"];
-type HomeTool = "select" | "room" | "stairs" | "window" | HomeFurnitureKind;
+type HomeTool = "select" | "room" | "stairs" | "window" | "door" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
 type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment" | "pollution" | "voices";
@@ -457,6 +458,12 @@ app.innerHTML = `
         <option value="privacy">Privacy glass · +$200</option>
       </select>
       <button id="remove-home-window" type="button" disabled>Remove window</button>
+      <button data-home-tool="door">Place doorway · $1.4k</button>
+      <select id="home-door-width" aria-label="Interior doorway width">
+        <option value="standard">Standard · 0.95m</option>
+        <option value="wide">Wide access · 1.35m · +$400</option>
+      </select>
+      <button id="remove-home-door" type="button" disabled>Remove doorway</button>
       <div class="tool-divider"></div>
       <select id="home-catalog" aria-label="Home object catalog">
         <optgroup label="Living">
@@ -771,6 +778,7 @@ let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
 let selectedRoomId: string | null = null;
 let selectedHomeWindowId: string | null = null;
+let selectedHomeDoorId: string | null = null;
 let movingFurnitureId: string | null = null;
 let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
@@ -3865,7 +3873,26 @@ function renderDraft() {
     const home = currentHome();
     const movingItem = home?.furniture.find(item => item.id === movingFurnitureId);
     const kind = movingItem?.kind ?? (isHomeFurnitureKind(homeTool) ? homeTool : null);
-    if (home && homeTool === "window") {
+    if (home && homeTool === "door") {
+      const widthKind = (document.querySelector("#home-door-width") as HTMLSelectElement).value as HomeDoorWidth;
+      const placement = world.previewHomeDoor(home, homePreviewPoint, homeFloor, widthKind);
+      const cost = world.homeDoorCost(widthKind);
+      const valid = Boolean(placement) && world.homeRemainingBudget(home) >= cost;
+      const localPosition = placement
+        ? {
+            x: placement.orientation === "z" ? placement.center : placement.boundary,
+            z: placement.orientation === "z" ? placement.boundary : placement.center
+          }
+        : homePreviewPoint;
+      const preview = new THREE.Mesh(
+        new THREE.BoxGeometry(placement?.width ?? (widthKind === "wide" ? 1.35 : .95), 2.18, .1),
+        new THREE.MeshBasicMaterial({ color: valid ? 0x73c68b : 0xd96c5f, transparent: true, opacity: .5, depthWrite: false })
+      );
+      const worldPosition = localToWorld(localPosition, selectedLot);
+      preview.position.set(worldPosition.x, 1.31, worldPosition.z);
+      preview.rotation.y = selectedLot.rotation + (placement?.orientation === "x" ? Math.PI / 2 : 0);
+      previewGroup.add(preview);
+    } else if (home && homeTool === "window") {
       const glazing = (document.querySelector("#home-window-glazing") as HTMLSelectElement).value as HomeWindowGlazing;
       const placement = world.previewHomeWindow(home, homePreviewPoint, homeFloor, glazing);
       const cost = world.homeWindowCost(glazing);
@@ -4707,6 +4734,9 @@ function renderHome() {
   if (selectedHomeWindowId && !floorHome.windows?.some(window => window.id === selectedHomeWindowId)) {
     selectedHomeWindowId = null;
   }
+  if (selectedHomeDoorId && !floorHome.doors?.some(door => door.id === selectedHomeDoorId)) {
+    selectedHomeDoorId = null;
+  }
   lastHomeActionSignature = home.residents.map(resident =>
     `${resident.id}:${resident.homeFloor ?? 0}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
   ).join("|");
@@ -5115,6 +5145,7 @@ function addSegmentedHomeWall(
   fixed: number,
   rotation: number,
   doorway?: {
+    id?: string;
     orientation: "x" | "z";
     boundary: number;
     center: number;
@@ -5149,7 +5180,10 @@ function addSegmentedHomeWall(
   }
   const header = new THREE.Mesh(
     new THREE.BoxGeometry(doorway.width, .7, .18),
-    new THREE.MeshStandardMaterial({ color: wallColor, roughness: .82 })
+    new THREE.MeshStandardMaterial({
+      color: mode === "home" && doorway.id === selectedHomeDoorId ? 0xf0d980 : wallColor,
+      roughness: .82
+    })
   );
   header.position.set(
     rotation ? fixed : doorway.center,
@@ -5158,7 +5192,18 @@ function addSegmentedHomeWall(
   );
   header.rotation.y = rotation;
   header.castShadow = header.receiveShadow = true;
+  if (doorway.id) header.userData.homeDoorId = doorway.id;
   homeGroup.add(header);
+  if (doorway.id) {
+    const threshold = new THREE.Mesh(
+      new THREE.BoxGeometry(doorway.width, .05, .34),
+      new THREE.MeshStandardMaterial({ color: doorway.id === selectedHomeDoorId ? 0xf0d980 : 0x9d815e, roughness: .74 })
+    );
+    threshold.position.set(rotation ? fixed : doorway.center, .24, rotation ? doorway.center : fixed);
+    threshold.rotation.y = rotation;
+    threshold.userData.homeDoorId = doorway.id;
+    homeGroup.add(threshold);
+  }
 }
 
 function addWall(group: THREE.Group, x: number, z: number, length: number, thickness: number, rotation: number, color = 0xf2eee3) {
@@ -5469,6 +5514,7 @@ function closeResidentCreator() {
 function updateHomeBuildControls(home: Home | null) {
   const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
   const selectedWindow = home?.windows?.find(item => item.id === selectedHomeWindowId) ?? null;
+  const selectedDoor = home?.doors?.find(item => item.id === selectedHomeDoorId) ?? null;
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
   const style = document.querySelector<HTMLSelectElement>("#furniture-style")!;
@@ -5484,6 +5530,8 @@ function updateHomeBuildControls(home: Home | null) {
   const removeFloor = document.querySelector<HTMLButtonElement>("#remove-home-floor")!;
   const removeWindow = document.querySelector<HTMLButtonElement>("#remove-home-window")!;
   const windowGlazing = document.querySelector<HTMLSelectElement>("#home-window-glazing")!;
+  const removeDoor = document.querySelector<HTMLButtonElement>("#remove-home-door")!;
+  const doorWidth = document.querySelector<HTMLSelectElement>("#home-door-width")!;
   floorSelect.replaceChildren(...Array.from({ length: home?.floors ?? 1 }, (_, floor) => new Option(`Floor ${floor + 1}`, String(floor))));
   if (home) homeFloor = Math.max(0, Math.min(home.floors - 1, homeFloor));
   floorSelect.value = String(homeFloor);
@@ -5496,6 +5544,11 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Remove ${selectedWindow.glazing} window · ${formatHomeCurrency(world.homeWindowCost(selectedWindow.glazing) * .5)}`
     : "Remove window";
   windowGlazing.disabled = !home;
+  removeDoor.disabled = !selectedDoor;
+  removeDoor.textContent = selectedDoor
+    ? `Remove ${selectedDoor.widthKind} doorway · ${formatHomeCurrency(world.homeDoorCost(selectedDoor.widthKind) * .5)}`
+    : "Remove doorway";
+  doorWidth.disabled = !home;
   move.disabled = !selected;
   rotate.disabled = !selected;
   style.disabled = !selected;
@@ -6081,6 +6134,7 @@ function setMode(next: Mode) {
     selectedFurnitureId = null;
     selectedRoomId = null;
     selectedHomeWindowId = null;
+    selectedHomeDoorId = null;
     movingFurnitureId = null;
     homePreviewPoint = null;
   }
@@ -6965,11 +7019,25 @@ renderer.domElement.addEventListener("pointerdown", event => {
   raycaster.setFromCamera(pointer, camera);
   if (mode === "home") {
     const home = currentHome();
+    const homeDoorHit = raycaster
+      .intersectObjects(homeGroup.children, true)
+      .find(item => item.object.userData.homeDoorId);
+    if (homeTool === "select" && !movingFurnitureId && home && homeDoorHit) {
+      selectedHomeDoorId = homeDoorHit.object.userData.homeDoorId as string;
+      selectedHomeWindowId = null;
+      selectedFurnitureId = null;
+      selectedRoomId = null;
+      renderHome();
+      const selected = home.doors?.find(item => item.id === selectedHomeDoorId);
+      if (selected) notice(`${selected.widthKind === "wide" ? "Wide access" : "Standard"} doorway selected · ${selected.width.toFixed(2)}m clear width`);
+      return;
+    }
     const homeWindowHit = raycaster
       .intersectObjects(homeGroup.children, true)
       .find(item => item.object.userData.homeWindowId);
     if (homeTool === "select" && !movingFurnitureId && home && homeWindowHit) {
       selectedHomeWindowId = homeWindowHit.object.userData.homeWindowId as string;
+      selectedHomeDoorId = null;
       selectedFurnitureId = null;
       selectedRoomId = null;
       renderHome();
@@ -6984,6 +7052,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedFurnitureId = furnitureHit.object.userData.furnitureId as string;
       selectedRoomId = null;
       selectedHomeWindowId = null;
+      selectedHomeDoorId = null;
       renderHome();
       const selected = home.furniture.find(item => item.id === selectedFurnitureId);
       if (selected) {
@@ -6999,6 +7068,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedRoomId = roomHit.object.userData.roomId as string;
       selectedFurnitureId = null;
       selectedHomeWindowId = null;
+      selectedHomeDoorId = null;
       renderHome();
       const room = home.rooms.find(item => item.id === selectedRoomId);
       if (room) notice(`${room.kind} selected. Choose its floor and wall finishes.`);
@@ -7039,6 +7109,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedFurnitureId = null;
       selectedRoomId = null;
       selectedHomeWindowId = null;
+      selectedHomeDoorId = null;
       renderHome();
       notice("Selection cleared");
       return;
@@ -7073,6 +7144,17 @@ renderer.domElement.addEventListener("pointerdown", event => {
         notice("Add an upper floor before placing stairs");
       } else {
         notice("Stairs need overlapping rooms on this floor and the floor above");
+      }
+    } else if (homeTool === "door") {
+      const widthKind = (document.querySelector("#home-door-width") as HTMLSelectElement).value as HomeDoorWidth;
+      const cost = world.homeDoorCost(widthKind);
+      if (world.addHomeDoor(home.id, point, homeFloor, widthKind)) {
+        renderWorld();
+        notice(`${widthKind === "wide" ? "Wide access" : "Standard"} doorway placed for ${formatHomeCurrency(cost)}`);
+      } else {
+        notice(world.homeRemainingBudget(home) < cost
+          ? `${formatHomeCurrency(cost)} needed. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+          : "Doorways snap between adjacent rooms and cannot overlap");
       }
     } else if (homeTool === "window") {
       const glazing = (document.querySelector("#home-window-glazing") as HTMLSelectElement).value as HomeWindowGlazing;
@@ -8117,6 +8199,7 @@ function activateHomeTool(next: HomeTool) {
   if (homeTool !== "select") selectedFurnitureId = null;
   if (homeTool !== "select") selectedRoomId = null;
   if (homeTool !== "select") selectedHomeWindowId = null;
+  if (homeTool !== "select") selectedHomeDoorId = null;
   renderDraft();
   renderHome();
   document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item.dataset.homeTool === homeTool));
@@ -8127,6 +8210,8 @@ function activateHomeTool(next: HomeTool) {
       ? `Place stairs in overlapping rooms on Floor ${homeFloor + 1} and Floor ${homeFloor + 2}`
     : homeTool === "window"
       ? "Move along an exterior wall, then click to place a window"
+    : homeTool === "door"
+      ? "Move along a shared wall, then click to place a doorway"
     : homeTool === "select"
       ? "Inspect mode"
       : `Click inside the home to place a ${homeFurnitureLabel(homeTool)}`);
@@ -8142,6 +8227,7 @@ document.querySelector("#home-floor")!.addEventListener("change", event => {
   selectedFurnitureId = null;
   selectedRoomId = null;
   selectedHomeWindowId = null;
+  selectedHomeDoorId = null;
   movingFurnitureId = null;
   homeDraft = null;
   renderHome();
@@ -8171,6 +8257,7 @@ document.querySelector("#remove-home-floor")!.addEventListener("click", () => {
   selectedFurnitureId = null;
   selectedRoomId = null;
   selectedHomeWindowId = null;
+  selectedHomeDoorId = null;
   activateHomeTool("select");
   renderWorld();
   notice(`Top floor removed. This home now has ${home.floors} floor${home.floors === 1 ? "" : "s"}.`);
@@ -8199,6 +8286,22 @@ document.querySelector("#remove-home-window")!.addEventListener("click", () => {
   selectedHomeWindowId = null;
   renderWorld();
   notice(`Window removed · ${formatHomeCurrency(refund)} returned · home daylight ${world.homeDaylight(home)}%`);
+});
+document.querySelector("#home-door-width")!.addEventListener("change", event => {
+  const widthKind = (event.currentTarget as HTMLSelectElement).value as HomeDoorWidth;
+  const button = document.querySelector<HTMLButtonElement>('[data-home-tool="door"]')!;
+  button.textContent = `Place ${widthKind === "wide" ? "wide " : ""}doorway · ${formatHomeCurrency(world.homeDoorCost(widthKind))}`;
+  renderDraft();
+  if (homeTool === "door") notice(widthKind === "wide" ? "Wide access supports more comfortable circulation" : "Standard doorway selected");
+});
+document.querySelector("#remove-home-door")!.addEventListener("click", () => {
+  const home = currentHome();
+  const door = home?.doors?.find(candidate => candidate.id === selectedHomeDoorId);
+  if (!home || !door || !world.removeHomeDoor(home.id, door.id)) return;
+  const refund = world.homeDoorCost(door.widthKind) * .5;
+  selectedHomeDoorId = null;
+  renderWorld();
+  notice(`Doorway removed · ${formatHomeCurrency(refund)} returned. Room traversal updates immediately.`);
 });
 document.querySelector("#move-furniture")!.addEventListener("click", () => {
   const home = currentHome();
@@ -8349,6 +8452,7 @@ document.querySelector("#delete-room")!.addEventListener("click", () => {
   selectedRoomId = null;
   selectedFurnitureId = null;
   selectedHomeWindowId = null;
+  selectedHomeDoorId = null;
   movingFurnitureId = null;
   renderWorld();
   notice(`${room.kind} removed. Exclusive furnishings were sold automatically.`);
