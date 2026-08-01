@@ -403,7 +403,8 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] One-click room duplication finds the nearest valid adjacent footprint, preserves purpose, size, finishes, and furnishings, clears resident claims and ownership, charges the exact shell-plus-furnishing cost, and reverts as one Undo operation.
 - [Complete] Rooms support safe custom names that persist through saves and Undo or Redo, then replace generic purpose labels in Home Simulator selection, resident claims, circulation and safety evidence, and City Explorer wayfinding.
 - [Complete] One-click furnishing duplication preserves the selected object's visual design and floor, clears personal ownership, finds the nearest collision-free placement, charges exact catalog cost, selects the copy, and reverts as one Undo operation.
-- Add multi-select, eyedropper, search, and favorites. Recolors and object variants are already live.
+- [Complete] The furnishing catalog supports live search across names, categories, and lifestyle tags plus persistent favorites promoted to the top, exact prices, and safe empty-result handling.
+- Add multi-select and eyedropper. Recolors and object variants are already live.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 
 Exit gate: a player can build a distinctive two-story home, furnish it efficiently, and traverse every finished space from its actual city entrance.

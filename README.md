@@ -146,6 +146,7 @@ The current vertical slice proves:
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots
 - Floor-aware room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, persistent Natural, Light, Dark, or Colorful furniture styles, resident ownership, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
+- Searchable furnishing catalog with category and lifestyle tags, persistent player favorites promoted to the top, live no-result handling, exact prices, and immediate placement without weakening room, collision, or budget rules
 - A focused household creator for resident name, seven life stages, career direction, aspiration, favorite home style, pastime, daily role, caregivers, inherited personality, and exactly two behavior-shaping traits, with an eight-person household limit and immediate profile preview
 - A contextual Home Advisor that turns resident needs, bed and room capacity, missing functional objects, creative traits, relationship tension, and finances into three prioritized household wants with direct build actions
 
