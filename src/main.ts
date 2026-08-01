@@ -4985,6 +4985,7 @@ function updateHouseholdSummary(home: Home) {
       highestTension: Math.max(0, ...home.relationships.map(relationship => relationship.tension ?? 0))
     });
     const homeFunctionality = world.homeFunctionality(home);
+    const destinationHomes = world.homes.filter(candidate => candidate.id !== home.id);
     details.innerHTML = `
       <div class="home-wellbeing-overview">
         <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
@@ -5160,6 +5161,14 @@ function updateHouseholdSummary(home: Home) {
                 data-control-resident="${resident.id}"
                 ${canControl ? "" : "disabled"}
               >${status !== "Home" ? status : canEnterHome ? "Control in home" : "Upgrade entrance first"}</button>
+              <div class="resident-move">
+                ${destinationHomes.length ? `
+                  <select data-resident-move-destination="${resident.id}" aria-label="Move ${resident.name} to household">
+                    ${destinationHomes.map(destinationHome => `<option value="${destinationHome.id}">${destinationHome.name}</option>`).join("")}
+                  </select>
+                  <button type="button" data-move-resident="${resident.id}">Move household</button>
+                ` : `<small>Open another residential lot in Home Simulator to create a move destination.</small>`}
+              </div>
             </div>
           `;
         }).join("") : `<div class="resident-empty">Add a resident to start needs, schedules, health, and household wellbeing.</div>`}
@@ -5240,6 +5249,21 @@ function updateHouseholdSummary(home: Home) {
           const changedResident = home.residents.find(resident => resident.id === residentId);
           notice(`${changedResident?.name ?? "Resident"} now follows ${RESIDENT_ROUTINE_DEFINITIONS[profile].label.toLowerCase()}`);
         }
+      });
+    });
+    details.querySelectorAll<HTMLButtonElement>("[data-move-resident]").forEach(button => {
+      button.addEventListener("click", () => {
+        const residentId = button.dataset.moveResident;
+        const destinationId = residentId
+          ? details.querySelector<HTMLSelectElement>(`[data-resident-move-destination="${residentId}"]`)?.value
+          : undefined;
+        if (!residentId || !destinationId) return;
+        const result = world.moveResidentToHome(home.id, residentId, destinationId);
+        if (result.ok) {
+          if (controlledResidentId === residentId) controlledResidentId = null;
+          renderWorld();
+        }
+        notice(result.reason);
       });
     });
     details.querySelectorAll<HTMLButtonElement>("[data-home-advisor-action]").forEach(button => {

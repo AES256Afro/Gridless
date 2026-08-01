@@ -2378,6 +2378,86 @@ check(
     && migratedPreferenceWorld.residentActivityPreferences(migratedPreferenceWorld.homes[0].residents[0])[0].lastAt === migratedPreferenceWorld.clock.elapsedMinutes,
   "Legacy activity preferences did not receive bounded duplicate-safe migration."
 );
+const movingResident = recurringPreferenceHome.residents[0];
+movingResident.outfitStyle = "formal";
+movingResident.outfitPalette = "sunset";
+movingResident.routineProfile = "night-owl";
+movingResident.inventory = [{ id: "moving-books", kind: "book-set", acquiredAt: 0 }];
+movingResident.skills = { communication: 12, creativity: 18, wellness: 6, practical: 9 };
+const ownedMovingFurniture = recurringPreferenceHome.furniture[0];
+ownedMovingFurniture.ownerResidentId = movingResident.id;
+recurringPreferenceHome.householdFunds = 12_000;
+const moveDestination: Home = {
+  ...structuredClone(recurringPreferenceHome),
+  id: "move-destination-home",
+  lotId: "move-destination-lot",
+  name: "River House",
+  furniture: [],
+  residents: [],
+  relationships: [],
+  gatherings: [],
+  householdFunds: 1_000
+};
+recurringPreferenceWorld.homes.push(moveDestination);
+const dependentMoveProbe = recurringPreferenceHome.residents[1];
+const dependentOriginalStage = dependentMoveProbe.lifeStage;
+const dependentOriginalCaregivers = dependentMoveProbe.caregiverIds;
+dependentMoveProbe.lifeStage = "child";
+dependentMoveProbe.caregiverIds = [movingResident.id];
+check(
+  !recurringPreferenceWorld.moveResidentToHome(recurringPreferenceHome.id, movingResident.id, moveDestination.id).ok
+    && recurringPreferenceHome.residents.includes(movingResident)
+    && !moveDestination.residents.length,
+  "A caregiver moved away while an active dependent remained in the old household."
+);
+dependentMoveProbe.lifeStage = dependentOriginalStage;
+dependentMoveProbe.caregiverIds = dependentOriginalCaregivers;
+const movingIdentity = JSON.stringify({
+  id: movingResident.id,
+  skills: movingResident.skills,
+  inventory: movingResident.inventory,
+  outfitStyle: movingResident.outfitStyle,
+  outfitPalette: movingResident.outfitPalette,
+  routineProfile: movingResident.routineProfile,
+  activityPreferences: movingResident.activityPreferences
+});
+const moveResult = recurringPreferenceWorld.moveResidentToHome(
+  recurringPreferenceHome.id,
+  movingResident.id,
+  moveDestination.id
+);
+const movedResident = moveDestination.residents.find(resident => resident.id === movingResident.id)!;
+check(
+  moveResult.ok
+    && moveResult.transferred === 6_000
+    && recurringPreferenceHome.householdFunds === 6_000
+    && moveDestination.householdFunds === 7_000
+    && !recurringPreferenceHome.residents.some(resident => resident.id === movingResident.id)
+    && !recurringPreferenceHome.relationships.some(relationship => relationship.residentIds.includes(movingResident.id))
+    && ownedMovingFurniture.ownerResidentId === undefined
+    && JSON.stringify({
+      id: movedResident.id,
+      skills: movedResident.skills,
+      inventory: movedResident.inventory,
+      outfitStyle: movedResident.outfitStyle,
+      outfitPalette: movedResident.outfitPalette,
+      routineProfile: movedResident.routineProfile,
+      activityPreferences: movedResident.activityPreferences
+    }) === movingIdentity
+    && recurringPreferenceWorld.residentMilestones(movedResident)[0]?.kind === "move",
+  "Household move did not conserve funds, release the old room, or preserve the resident's identity and history."
+);
+const restoredMoveWorld = new World();
+check(
+  restoredMoveWorld.restore(recurringPreferenceWorld.serialize())
+    && restoredMoveWorld.homes.find(home => home.id === moveDestination.id)?.residents[0]?.id === movingResident.id
+    && restoredMoveWorld.residentMilestones(restoredMoveWorld.homes.find(home => home.id === moveDestination.id)!.residents[0])[0]?.kind === "move",
+  "A moved resident or their new household chapter did not survive save and restore."
+);
+check(
+  !recurringPreferenceWorld.moveResidentToHome(recurringPreferenceHome.id, "missing-resident", moveDestination.id).ok,
+  "Household move accepted a resident who was not in the source home."
+);
 
 function runConversationIntentProbe(intent: ConversationIntent, initialTension = 0) {
   const world = new World();
@@ -3235,6 +3315,9 @@ console.log(JSON.stringify({
   learnedActivityRepeats: mealPreference?.repetitions,
   learnedActivityBias: recurringPreferenceWorld.residentActivityPreferenceBias(recurringResident, "eat"),
   avoidedActivity: confrontActivityPreference?.action,
+  movedResidentHome: moveDestination.name,
+  movedResidentFunds: moveResult.transferred,
+  movedResidentMilestone: recurringPreferenceWorld.residentMilestones(movedResident)[0]?.kind,
   lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
   latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),

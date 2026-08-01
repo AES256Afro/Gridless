@@ -558,6 +558,7 @@ function integrityFailures(world: World) {
       failures.push(`Lot ${lot.id} has invalid land value.`);
     }
   }
+  const residentHomeIds = new Set<string>();
   for (const home of world.homes) {
     if (!lotIds.has(home.lotId)) failures.push(`Home ${home.id} points to a missing lot.`);
     if (home.name.length < 2 || home.name.length > 40 || !/^[\p{L}\p{N} .'-]+$/u.test(home.name)) {
@@ -568,6 +569,10 @@ function integrityFailures(world: World) {
       failures.push(`Home ${home.id} has an invalid floor count.`);
     }
     const residentIds = new Set(home.residents.map(resident => resident.id));
+    for (const residentId of residentIds) {
+      if (residentHomeIds.has(residentId)) failures.push(`Resident ${residentId} appears in multiple households.`);
+      residentHomeIds.add(residentId);
+    }
     const gatherings = home.gatherings ?? [];
     if (
       gatherings.length > MAX_HOUSEHOLD_GATHERINGS
