@@ -237,6 +237,9 @@ export type LotActivity = {
 };
 
 export type ResidentRole = "office" | "service" | "student" | "home";
+export type ResidentLifeStage = "infant" | "toddler" | "child" | "teen" | "young-adult" | "adult" | "elder";
+export type ResidentAspiration = "family" | "mastery" | "community" | "prosperity" | "creative";
+export type ResidentCareerTrack = "civic" | "enterprise" | "hospitality" | "care" | "creative";
 
 export type ResidentTrait =
   | "outgoing"
@@ -292,7 +295,17 @@ export type Resident = {
   id: string;
   name: string;
   age: "adult" | "child";
+  lifeStage?: ResidentLifeStage;
+  lifeStageDays?: number;
+  lifetimeDays?: number;
+  lastLifeStageChangeAt?: number;
   role: ResidentRole;
+  aspiration?: ResidentAspiration;
+  aspirationProgress?: number;
+  careerTrack?: ResidentCareerTrack;
+  careerBranch?: string;
+  generation?: number;
+  caregiverIds?: string[];
   destinationLotId?: string;
   energy: number;
   social: number;
@@ -314,6 +327,60 @@ export type Resident = {
 
 export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits"> & {
   personality?: ResidentPersonality;
+  lifeStage?: ResidentLifeStage;
+  aspiration?: ResidentAspiration;
+  careerTrack?: ResidentCareerTrack;
+  caregiverIds?: string[];
+  inheritPersonality?: boolean;
+};
+
+export const RESIDENT_LIFE_STAGES: ResidentLifeStage[] = [
+  "infant", "toddler", "child", "teen", "young-adult", "adult", "elder"
+];
+
+export const RESIDENT_LIFE_STAGE_DEFINITIONS: Record<ResidentLifeStage, {
+  label: string;
+  durationDays?: number;
+  summary: string;
+}> = {
+  infant: { label: "Infant", durationDays: 60, summary: "needs constant household care" },
+  toddler: { label: "Toddler", durationDays: 180, summary: "learns through play and supervision" },
+  child: { label: "Child", durationDays: 720, summary: "builds friendships, skills, and interests" },
+  teen: { label: "Teen", durationDays: 540, summary: "forms identity and prepares for work" },
+  "young-adult": { label: "Young adult", durationDays: 1_440, summary: "establishes an independent path" },
+  adult: { label: "Adult", durationDays: 3_600, summary: "balances work, family, and long-term goals" },
+  elder: { label: "Elder", summary: "carries experience and mentors the household" }
+};
+
+export const RESIDENT_ASPIRATION_DEFINITIONS: Record<ResidentAspiration, { label: string; summary: string }> = {
+  family: { label: "Family legacy", summary: "build close bonds and guide the next generation" },
+  mastery: { label: "Master a craft", summary: "grow skills and reach the top of a chosen path" },
+  community: { label: "Community pillar", summary: "support others and strengthen neighborhood ties" },
+  prosperity: { label: "Household prosperity", summary: "build lasting financial security" },
+  creative: { label: "Creative life", summary: "turn imagination into a practiced vocation" }
+};
+
+export const RESIDENT_CAREER_TRACK_DEFINITIONS: Record<ResidentCareerTrack, {
+  label: string;
+  role: ResidentRole;
+  primarySkills: [ResidentSkill, ResidentSkill];
+  baseWage: number;
+  wageStep: number;
+  branches: [string, string];
+}> = {
+  civic: { label: "Civic planning", role: "office", primarySkills: ["communication", "practical"], baseWage: 185, wageStep: 45, branches: ["Urban systems", "Community design"] },
+  enterprise: { label: "Enterprise", role: "office", primarySkills: ["communication", "creativity"], baseWage: 205, wageStep: 48, branches: ["Operations", "Strategy"] },
+  hospitality: { label: "Hospitality", role: "service", primarySkills: ["practical", "communication"], baseWage: 145, wageStep: 34, branches: ["Culinary", "Guest experience"] },
+  care: { label: "Care services", role: "service", primarySkills: ["wellness", "communication"], baseWage: 165, wageStep: 38, branches: ["Clinical care", "Community wellness"] },
+  creative: { label: "Creative practice", role: "home", primarySkills: ["creativity", "communication"], baseWage: 110, wageStep: 31, branches: ["Studio artist", "Independent media"] }
+};
+
+const CAREER_TRACK_PERSONALITY_TARGETS: Record<ResidentCareerTrack, ResidentPersonality> = {
+  civic: { cleanliness: 72, spontaneity: 42, sociability: 62, emotionality: 38, activity: 48 },
+  enterprise: { cleanliness: 68, spontaneity: 58, sociability: 72, emotionality: 46, activity: 58 },
+  hospitality: { cleanliness: 58, spontaneity: 72, sociability: 78, emotionality: 54, activity: 76 },
+  care: { cleanliness: 66, spontaneity: 48, sociability: 72, emotionality: 62, activity: 60 },
+  creative: { cleanliness: 42, spontaneity: 78, sociability: 48, emotionality: 68, activity: 52 }
 };
 
 export type ResidentRelationship = {
@@ -2371,14 +2438,51 @@ export class World {
 
   residentCareerFit(resident: Resident) {
     const personality = this.residentPersonality(resident);
-    const score = resident.role === "office"
-      ? personality.cleanliness * .42 + (100 - Math.abs(personality.spontaneity - 42)) * .3 + personality.sociability * .18 + (100 - personality.emotionality) * .1
-      : resident.role === "service"
-        ? personality.activity * .34 + personality.sociability * .34 + personality.spontaneity * .2 + (100 - personality.emotionality) * .12
-        : resident.role === "student"
-          ? personality.cleanliness * .28 + personality.activity * .2 + personality.sociability * .18 + (100 - Math.abs(personality.spontaneity - 55)) * .22 + (100 - personality.emotionality) * .12
-          : personality.cleanliness * .3 + personality.spontaneity * .24 + personality.activity * .18 + (100 - personality.emotionality) * .16 + (100 - Math.abs(personality.sociability - 50)) * .12;
-    return Math.round(clamp(score, 0, 100));
+    const target = CAREER_TRACK_PERSONALITY_TARGETS[this.residentCareerTrack(resident)];
+    const fit = RESIDENT_PERSONALITY_AXES.reduce(
+      (total, axis) => total + 100 - Math.abs(personality[axis] - target[axis]),
+      0
+    ) / RESIDENT_PERSONALITY_AXES.length;
+    return Math.round(clamp(fit, 0, 100));
+  }
+
+  residentLifeStage(resident: Resident) {
+    return normalizeResidentLifeStage(resident.lifeStage, resident.age);
+  }
+
+  residentLifeStageLabel(resident: Resident) {
+    return RESIDENT_LIFE_STAGE_DEFINITIONS[this.residentLifeStage(resident)].label;
+  }
+
+  residentLifeStageProgress(resident: Resident) {
+    const definition = RESIDENT_LIFE_STAGE_DEFINITIONS[this.residentLifeStage(resident)];
+    return definition.durationDays
+      ? clamp((resident.lifeStageDays ?? 0) / definition.durationDays, 0, 1)
+      : 1;
+  }
+
+  residentAspiration(resident: Resident) {
+    return normalizeResidentAspiration(resident.aspiration, resident);
+  }
+
+  residentAspirationLabel(resident: Resident) {
+    return RESIDENT_ASPIRATION_DEFINITIONS[this.residentAspiration(resident)].label;
+  }
+
+  residentAspirationProgress(resident: Resident) {
+    return Math.round(clamp(resident.aspirationProgress ?? 0, 0, 100));
+  }
+
+  residentCareerTrack(resident: Resident) {
+    return normalizeResidentCareerTrack(resident.careerTrack, resident);
+  }
+
+  residentCareerTrackLabel(resident: Resident) {
+    return RESIDENT_CAREER_TRACK_DEFINITIONS[this.residentCareerTrack(resident)].label;
+  }
+
+  residentCareerBranchLabel(resident: Resident) {
+    return resident.careerBranch ?? (this.residentCareerLevel(resident) >= 4 ? "Branch pending" : "Foundation path");
   }
 
   residentActionPersonalityInfluence(resident: Resident, action: ResidentActionKind) {
@@ -2408,24 +2512,26 @@ export class World {
 
   residentCareerTitle(resident: Resident) {
     const level = this.residentCareerLevel(resident);
-    if (resident.role === "home") return "Household coordinator";
-    if (resident.role === "student") return `Student · Level ${level}`;
-    const titles = resident.role === "office"
-      ? ["Assistant", "Associate", "Coordinator", "Specialist", "Senior specialist", "Lead", "Manager", "Senior manager", "Director", "Executive"]
-      : ["Trainee", "Crew member", "Qualified worker", "Specialist", "Senior worker", "Lead", "Supervisor", "Manager", "Area manager", "Operations chief"];
-    return titles[level - 1];
+    const stage = this.residentLifeStage(resident);
+    if (stage === "infant" || stage === "toddler") return RESIDENT_LIFE_STAGE_DEFINITIONS[stage].label;
+    if (resident.role === "student") return `${stage === "teen" ? "Secondary" : "Primary"} student · Level ${level}`;
+    if (stage === "elder" && resident.role === "home") return "Household mentor";
+    const track = RESIDENT_CAREER_TRACK_DEFINITIONS[this.residentCareerTrack(resident)];
+    const rank = level <= 2 ? "Apprentice" : level <= 3 ? "Practitioner" : level <= 5 ? "Specialist" : level <= 7 ? "Lead" : level <= 9 ? "Director" : "Master";
+    return `${rank} · ${resident.careerBranch ?? track.label}`;
   }
 
   residentCareerProgress(resident: Resident) {
-    if (resident.role === "home" || this.residentCareerLevel(resident) >= 10) return 1;
+    if (["infant", "toddler"].includes(this.residentLifeStage(resident)) || resident.role === "student" || this.residentCareerLevel(resident) >= 10) return this.residentCareerLevel(resident) >= 10 ? 1 : 0;
     return clamp((resident.careerXp ?? 0) / (this.residentCareerLevel(resident) * 40), 0, 1);
   }
 
   residentDailyWage(resident: Resident) {
+    const stage = this.residentLifeStage(resident);
+    if (resident.role === "student" || stage === "infant" || stage === "toddler" || stage === "child" || stage === "teen" || stage === "elder") return 0;
     const level = this.residentCareerLevel(resident);
-    if (resident.role === "office") return 190 + level * 45;
-    if (resident.role === "service") return 150 + level * 32;
-    return 0;
+    const track = RESIDENT_CAREER_TRACK_DEFINITIONS[this.residentCareerTrack(resident)];
+    return track.baseWage + level * track.wageStep;
   }
 
   residentTopSkill(resident: Resident) {
@@ -2801,13 +2907,18 @@ export class World {
     const neighborhoodSupport = lot ? this.lotNeighborhoodSupport(lot, totalPopulation, effectiveStaffing) : 50;
     const commuteBurden = this.residentCommuteBurden(resident);
     const financialSecurity = home ? this.homeFinancialSecurity(home) : 50;
+    const aspirationProgress = this.residentAspirationProgress(resident);
+    const dependent = ["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(resident));
+    const hasCaregiver = !dependent || Boolean(home && (resident.caregiverIds ?? []).some(id => home.residents.some(candidate => candidate.id === id)));
     const score = Math.round(clamp(
       resident.energy * .15
       + resident.social * .14
       + resident.comfort * .17
       + resident.health * .22
-      + (100 - resident.stress) * .22
-      + financialSecurity * .1,
+      + (100 - resident.stress) * .16
+      + financialSecurity * .1
+      + aspirationProgress * .06
+      + (hasCaregiver ? 0 : -8),
       0,
       100
     ));
@@ -2818,6 +2929,8 @@ export class World {
       { value: 100 - homeQuality, text: "Crowded or under-furnished home" },
       { value: resident.stress, text: "High daily stress" },
       { value: 100 - financialSecurity, text: "Household financial pressure" },
+      { value: hasCaregiver ? 0 : 78, text: "Needs a household caregiver" },
+      { value: (100 - aspirationProgress) * .48, text: `${this.residentAspirationLabel(resident)} needs progress` },
       { value: 100 - resident.social, text: "Social isolation" },
       { value: 100 - neighborhoodSupport, text: "Limited neighborhood support" }
     ].sort((a, b) => b.value - a.value);
@@ -3587,24 +3700,53 @@ export class World {
       )
     ) return false;
     if (profile?.personality && !isValidResidentPersonality(profile.personality)) return false;
+    if (profile?.lifeStage && !RESIDENT_LIFE_STAGES.includes(profile.lifeStage)) return false;
+    if (profile?.aspiration && !RESIDENT_ASPIRATION_DEFINITIONS[profile.aspiration]) return false;
+    if (profile?.careerTrack && !RESIDENT_CAREER_TRACK_DEFINITIONS[profile.careerTrack]) return false;
+    const caregiverIds = [...new Set(profile?.caregiverIds ?? [])];
+    if (caregiverIds.length > 2) return false;
+    const caregivers = caregiverIds.map(id => home.residents.find(resident => resident.id === id)).filter((resident): resident is Resident => Boolean(resident));
+    if (caregiverIds.length !== caregivers.length || caregivers.some(caregiver => ["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(caregiver)))) return false;
     this.checkpoint();
     const roles: ResidentRole[] = ["office", "service", "home"];
-    const age = profile?.age ?? "adult";
-    const role = age === "child" ? "student" : profile?.role ?? roles[home.residents.length % roles.length];
+    const lifeStage = normalizeResidentLifeStage(profile?.lifeStage, profile?.age ?? "adult");
+    const age = lifeStageAge(lifeStage);
+    const role = lifeStage === "infant" || lifeStage === "toddler" || lifeStage === "elder"
+      ? "home"
+      : lifeStage === "child" || lifeStage === "teen"
+        ? "student"
+        : profile?.careerTrack
+          ? RESIDENT_CAREER_TRACK_DEFINITIONS[profile.careerTrack].role
+          : profile?.role ?? roles[home.residents.length % roles.length];
+    const residentTraits = authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`);
+    const inheritedPersonality = profile?.inheritPersonality
+      ? blendCaregiverPersonality(caregivers, `${home.id}-${name}-${home.residents.length}`)
+      : undefined;
+    const generation = caregivers.length
+      ? Math.max(...caregivers.map(caregiver => caregiver.generation ?? 1)) + 1
+      : 1;
     const resident: Resident = {
       id: crypto.randomUUID(),
       name,
       age,
+      lifeStage,
+      lifeStageDays: 0,
+      lifetimeDays: 0,
       role,
+      aspiration: profile?.aspiration,
+      aspirationProgress: 0,
+      careerTrack: profile?.careerTrack,
+      generation,
+      caregiverIds,
       energy: 82,
       social: 68,
       comfort: 74,
       health: 84,
       stress: 24,
-      traits: authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
+      traits: residentTraits,
       personality: normalizeResidentPersonality(
-        profile?.personality,
-        authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
+        inheritedPersonality ?? profile?.personality,
+        residentTraits,
         `${home.id}-${name}-${home.residents.length}`
       ),
       completedActions: 0,
@@ -3612,10 +3754,12 @@ export class World {
       careerLevel: 1,
       careerXp: 0
     };
+    resident.aspiration = normalizeResidentAspiration(resident.aspiration, resident);
+    resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
     for (const existing of home.residents) {
       home.relationships.push({
         residentIds: orderedResidentIds(existing.id, resident.id),
-        score: initialRelationshipScore(existing.id, resident.id),
+        score: caregiverIds.includes(existing.id) ? 78 : initialRelationshipScore(existing.id, resident.id),
         conversations: 0
       });
     }
@@ -3631,6 +3775,7 @@ export class World {
   }
 
   private apply(snapshot: WorldSnapshot) {
+    const savedElapsedMinutes = Math.max(0, Math.round(snapshot.clock?.elapsedMinutes ?? 0));
     const savedCityName = snapshot.cityName?.trim().replace(/\s+/g, " ") ?? "New Gridless City";
     this.cityName = savedCityName.length >= 2
       && savedCityName.length <= 40
@@ -3662,16 +3807,31 @@ export class World {
       const residents = (home.residents ?? []).map((resident, index) => {
         const seed = `${home.id}-${resident.id}-${resident.name}-${index}`;
         const traits = normalizeResidentTraits(resident.traits, seed);
-        return {
+        const lifeStage = normalizeResidentLifeStage(resident.lifeStage, resident.age);
+        const lifeStageDuration = RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].durationDays;
+        const role = lifeStage === "infant" || lifeStage === "toddler" || lifeStage === "elder"
+          ? "home"
+          : lifeStage === "child" || lifeStage === "teen"
+            ? "student"
+            : resident.role ?? (index % 2 === 0 ? "office" : "service");
+        const personality = normalizeResidentPersonality(resident.personality, traits, seed);
+        const normalizedResident: Resident = {
           ...resident,
-          role: resident.role ?? (resident.age === "child" ? "student" : index % 2 === 0 ? "office" : "service"),
+          age: lifeStageAge(lifeStage),
+          lifeStage,
+          lifeStageDays: Math.round(clamp(resident.lifeStageDays ?? 0, 0, lifeStageDuration ? lifeStageDuration - 1 : 10_000_000)),
+          lifetimeDays: Math.max(0, Math.round(resident.lifetimeDays ?? 0)),
+          lastLifeStageChangeAt: resident.lastLifeStageChangeAt === undefined
+            ? undefined
+            : Math.round(clamp(resident.lastLifeStageChangeAt, 0, savedElapsedMinutes)),
+          role,
           energy: clamp(resident.energy ?? 82, 0, 100),
           social: clamp(resident.social ?? 68, 0, 100),
           comfort: clamp(resident.comfort ?? 74, 0, 100),
           health: clamp(resident.health ?? 84, 0, 100),
           stress: clamp(resident.stress ?? 24, 0, 100),
           traits,
-          personality: normalizeResidentPersonality(resident.personality, traits, seed),
+          personality,
           currentAction: resident.currentAction
             ? {
                 ...resident.currentAction,
@@ -3684,9 +3844,50 @@ export class World {
           skills: normalizeResidentSkills(resident.skills),
           careerLevel: Math.round(clamp(resident.careerLevel ?? 1, 1, 10)),
           careerXp: Math.max(0, Math.round(resident.careerXp ?? 0)),
+          generation: Math.round(clamp(resident.generation ?? 1, 1, 100)),
+          caregiverIds: [...new Set(resident.caregiverIds ?? [])].slice(0, 2),
           homeFloor: Math.round(clamp(resident.homeFloor ?? 0, 0, normalizedFloors - 1))
         };
+        normalizedResident.aspiration = normalizeResidentAspiration(resident.aspiration, normalizedResident);
+        normalizedResident.aspirationProgress = Math.round(clamp(resident.aspirationProgress ?? 0, 0, 100));
+        normalizedResident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, normalizedResident);
+        if (lifeStage === "young-adult" || lifeStage === "adult") {
+          normalizedResident.role = RESIDENT_CAREER_TRACK_DEFINITIONS[normalizedResident.careerTrack].role;
+        }
+        const availableBranches = RESIDENT_CAREER_TRACK_DEFINITIONS[normalizedResident.careerTrack].branches;
+        normalizedResident.careerBranch = resident.careerBranch && availableBranches.includes(resident.careerBranch)
+          ? resident.careerBranch
+          : undefined;
+        return normalizedResident;
       });
+      const residentIds = new Set(residents.map(resident => resident.id));
+      residents.forEach(resident => {
+        resident.caregiverIds = (resident.caregiverIds ?? []).filter(id => {
+          const caregiver = residents.find(candidate => candidate.id === id);
+          return id !== resident.id
+            && Boolean(caregiver)
+            && ["young-adult", "adult", "elder"].includes(normalizeResidentLifeStage(caregiver!.lifeStage, caregiver!.age));
+        });
+        if (
+          !resident.caregiverIds.length
+          && ["infant", "toddler", "child", "teen"].includes(normalizeResidentLifeStage(resident.lifeStage, resident.age))
+        ) {
+          resident.caregiverIds = residents
+            .filter(candidate => candidate.id !== resident.id && ["young-adult", "adult", "elder"].includes(normalizeResidentLifeStage(candidate.lifeStage, candidate.age)))
+            .slice(0, 2)
+            .map(candidate => candidate.id);
+          if (resident.caregiverIds.length) {
+            resident.generation = Math.max(...resident.caregiverIds.map(id => residents.find(candidate => candidate.id === id)?.generation ?? 1)) + 1;
+          }
+        }
+      });
+      const relationships = normalizeRelationships(residents, home.relationships ?? []);
+      for (const resident of residents) {
+        for (const caregiverId of resident.caregiverIds ?? []) {
+          const relationship = relationships.find(candidate => candidate.residentIds.includes(resident.id) && candidate.residentIds.includes(caregiverId));
+          if (relationship) relationship.score = Math.max(78, relationship.score);
+        }
+      }
       return {
         ...home,
         name: savedHomeName.length >= 2
@@ -3732,7 +3933,7 @@ export class World {
             }
           : undefined,
         residents,
-        relationships: normalizeRelationships(residents, home.relationships ?? [])
+        relationships
       };
     });
     this.services = clone(snapshot.services ?? []).map(service => ({
@@ -3747,7 +3948,7 @@ export class World {
       condition: clamp(utility.condition ?? 100, 0, 100)
     }));
     this.clock = clone(snapshot.clock ?? { year: 1, month: 1, day: 1, minute: 8 * 60, treasury: 25_000_000, elapsedMinutes: 0 });
-    this.clock.elapsedMinutes ??= 0;
+    this.clock.elapsedMinutes = savedElapsedMinutes;
     this.serviceFunding = snapshot.serviceFunding ?? .85;
     this.taxPolicy = {
       residential: normalizeTaxRate(snapshot.taxPolicy?.residential ?? 10),
@@ -4094,26 +4295,62 @@ export class World {
           : createAnchorBusiness(lot.id, lot.zone, lot.businesses)
         : undefined;
     }
+    this.advanceResidentLives();
     this.advanceResidentCareers();
     this.settleHouseholdFinances(totalPopulation, effectiveStaffing);
     this.lastDailyActivity = activity;
     this.rebuildCommutes();
   }
 
+  private advanceResidentLives() {
+    for (const home of this.homes) {
+      for (const resident of home.residents) {
+        let stage = this.residentLifeStage(resident);
+        resident.lifeStage = stage;
+        resident.lifeStageDays = Math.max(0, Math.round(resident.lifeStageDays ?? 0)) + 1;
+        resident.lifetimeDays = Math.max(0, Math.round(resident.lifetimeDays ?? 0)) + 1;
+        const duration = RESIDENT_LIFE_STAGE_DEFINITIONS[stage].durationDays;
+        if (!duration || resident.lifeStageDays < duration) continue;
+        const nextStage = nextResidentLifeStage(stage);
+        if (!nextStage) continue;
+        resident.lifeStageDays -= duration;
+        resident.lifeStage = nextStage;
+        resident.age = lifeStageAge(nextStage);
+        resident.lastLifeStageChangeAt = this.clock.elapsedMinutes;
+        stage = nextStage;
+        if (stage === "toddler") resident.role = "home";
+        if (stage === "child" || stage === "teen") resident.role = "student";
+        if (stage === "young-adult") {
+          resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
+          resident.role = RESIDENT_CAREER_TRACK_DEFINITIONS[resident.careerTrack].role;
+          resident.careerLevel = Math.max(1, resident.careerLevel ?? 1);
+          resident.careerXp = Math.max(0, resident.careerXp ?? 0);
+        }
+        if (stage === "elder") {
+          resident.role = "home";
+          resident.currentAction = undefined;
+        }
+        if (this.residentAspiration(resident) === "family") {
+          resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 10);
+        }
+      }
+    }
+  }
+
   private advanceResidentCareers() {
     for (const home of this.homes) {
       for (const resident of home.residents) {
-        if (resident.role === "home") continue;
+        const stage = this.residentLifeStage(resident);
+        if (resident.role === "student" || stage === "infant" || stage === "toddler" || stage === "child" || stage === "teen" || stage === "elder") continue;
         resident.skills = normalizeResidentSkills(resident.skills);
-        const primarySkills: ResidentSkill[] = resident.role === "office"
-          ? ["communication", "creativity"]
-          : resident.role === "service"
-            ? ["practical", "communication"]
-            : ["creativity", "communication"];
+        resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
+        const career = RESIDENT_CAREER_TRACK_DEFINITIONS[resident.careerTrack];
+        const primarySkills: ResidentSkill[] = [...career.primarySkills];
         for (const skill of primarySkills) {
           resident.skills[skill] = clamp(resident.skills[skill] + 1, 0, 100);
         }
-        let level = this.residentCareerLevel(resident);
+        const startingLevel = this.residentCareerLevel(resident);
+        let level = startingLevel;
         const skillAverage = primarySkills.reduce((total, skill) => total + resident.skills![skill], 0) / primarySkills.length;
         let xp = Math.max(0, resident.careerXp ?? 0) + 4 + Math.floor(skillAverage / 25);
         while (level < 10 && xp >= level * 40) {
@@ -4122,6 +4359,17 @@ export class World {
         }
         resident.careerLevel = level;
         resident.careerXp = level >= 10 ? 0 : xp;
+        if (level >= 4 && !resident.careerBranch) {
+          const personality = this.residentPersonality(resident);
+          const branchIndex = (resident.skills[career.primarySkills[1]] + personality.spontaneity + hashString(resident.id)) % 2;
+          resident.careerBranch = career.branches[branchIndex < 1 ? 0 : 1];
+        }
+        if (level > startingLevel) {
+          const aspiration = this.residentAspiration(resident);
+          if (aspiration === "mastery" || aspiration === "prosperity" || (aspiration === "creative" && resident.careerTrack === "creative")) {
+            resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + (level - startingLevel) * 10);
+          }
+        }
       }
     }
   }
@@ -4142,6 +4390,18 @@ export class World {
       home.lastDailyIncome = income;
       home.lastDailyExpenses = expenses;
       home.householdFunds = Math.round(clamp(this.homeHouseholdFunds(home) + income - expenses, -100_000, 10_000_000));
+      for (const resident of home.residents) {
+        if ((resident.lifetimeDays ?? 0) % 7 !== 0) continue;
+        const aspiration = this.residentAspiration(resident);
+        if (aspiration === "prosperity" && income > expenses) {
+          resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 2);
+        }
+        const mentoring = this.residentLifeStage(resident) === "elder"
+          && home.residents.some(candidate => ["toddler", "child", "teen", "young-adult"].includes(this.residentLifeStage(candidate)));
+        if (mentoring && (aspiration === "family" || aspiration === "community")) {
+          resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 2);
+        }
+      }
     }
   }
 
@@ -4578,6 +4838,19 @@ export class World {
     for (const [skill, gain] of Object.entries(residentActionSkillGains(action)) as Array<[ResidentSkill, number]>) {
       resident.skills[skill] = clamp(resident.skills[skill] + gain, 0, 100);
     }
+    const aspiration = this.residentAspiration(resident);
+    const aspirationGain = aspiration === "family" && action.kind === "socialize"
+      ? 4
+      : aspiration === "community" && (action.kind === "socialize" || action.kind === "tend-plants")
+        ? 3
+        : aspiration === "mastery" && action.kind === "study"
+          ? 4
+          : aspiration === "creative" && (action.kind === "study" || action.kind === "tend-plants")
+            ? 4
+            : 0;
+    if (aspirationGain) {
+      resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + aspirationGain);
+    }
     resident.lastActionKind = action.kind;
     resident.lastActionAt = action.endsAt;
     resident.completedActions = (resident.completedActions ?? 0) + 1;
@@ -4915,6 +5188,49 @@ function normalizeConversationIntent(intent: ConversationIntent | undefined): Co
 
 function normalizeHomeFurnitureStyle(style: HomeFurnitureStyle | undefined): HomeFurnitureStyle {
   return style === "light" || style === "dark" || style === "colorful" ? style : "natural";
+}
+
+function normalizeResidentLifeStage(stage: ResidentLifeStage | undefined, age: Resident["age"]): ResidentLifeStage {
+  return stage && RESIDENT_LIFE_STAGES.includes(stage) ? stage : age === "child" ? "child" : "adult";
+}
+
+function lifeStageAge(stage: ResidentLifeStage): Resident["age"] {
+  return stage === "infant" || stage === "toddler" || stage === "child" || stage === "teen" ? "child" : "adult";
+}
+
+function normalizeResidentAspiration(aspiration: ResidentAspiration | undefined, resident: Pick<Resident, "id" | "traits" | "personality">): ResidentAspiration {
+  if (aspiration && RESIDENT_ASPIRATION_DEFINITIONS[aspiration]) return aspiration;
+  const traits = new Set(resident.traits);
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (traits.has("creative") || personality.spontaneity >= 72) return "creative";
+  if (traits.has("empathetic") || personality.sociability >= 72) return "community";
+  if (traits.has("organized") || personality.cleanliness >= 72) return "mastery";
+  if (traits.has("homebody")) return "family";
+  return hashString(`${resident.id}:aspiration`) % 2 ? "prosperity" : "family";
+}
+
+function normalizeResidentCareerTrack(track: ResidentCareerTrack | undefined, resident: Pick<Resident, "id" | "role" | "traits" | "personality">): ResidentCareerTrack {
+  if (track && RESIDENT_CAREER_TRACK_DEFINITIONS[track]) return track;
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (resident.role === "service") return personality.emotionality >= 58 ? "care" : "hospitality";
+  if (resident.role === "home") return "creative";
+  if (resident.role === "office") return personality.spontaneity >= 58 ? "enterprise" : "civic";
+  return resident.traits.includes("creative") && personality.spontaneity >= 65 ? "creative" : "civic";
+}
+
+function nextResidentLifeStage(stage: ResidentLifeStage): ResidentLifeStage | undefined {
+  const index = RESIDENT_LIFE_STAGES.indexOf(stage);
+  return index >= 0 && index < RESIDENT_LIFE_STAGES.length - 1 ? RESIDENT_LIFE_STAGES[index + 1] : undefined;
+}
+
+function blendCaregiverPersonality(caregivers: Resident[], seed: string): ResidentPersonality | undefined {
+  if (!caregivers.length) return undefined;
+  const blended = Object.fromEntries(RESIDENT_PERSONALITY_AXES.map(axis => {
+    const average = caregivers.reduce((total, caregiver) => total + normalizeResidentPersonality(caregiver.personality, caregiver.traits, caregiver.id)[axis], 0) / caregivers.length;
+    const variation = hashString(`${seed}:${axis}`) % 15 - 7;
+    return [axis, Math.round(clamp(average + variation, 0, 100))];
+  })) as ResidentPersonality;
+  return blended;
 }
 
 function normalizeRelationships(

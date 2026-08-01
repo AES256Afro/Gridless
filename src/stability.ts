@@ -1,4 +1,8 @@
 import {
+  RESIDENT_ASPIRATION_DEFINITIONS,
+  RESIDENT_CAREER_TRACK_DEFINITIONS,
+  RESIDENT_LIFE_STAGE_DEFINITIONS,
+  RESIDENT_LIFE_STAGES,
   RESIDENT_PURCHASES,
   RESIDENT_PERSONALITY_AXES,
   MAX_HOME_FLOORS,
@@ -607,6 +611,52 @@ function integrityFailures(world: World) {
       if (RESIDENT_PERSONALITY_AXES.some(axis =>
         !Number.isInteger(personality[axis]) || personality[axis] < 0 || personality[axis] > 100
       )) failures.push(`Resident ${resident.id} has an invalid personality matrix.`);
+      const lifeStage = world.residentLifeStage(resident);
+      const stageDuration = RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].durationDays;
+      if (
+        !RESIDENT_LIFE_STAGES.includes(lifeStage)
+        || !Number.isInteger(resident.lifeStageDays ?? 0)
+        || (resident.lifeStageDays ?? 0) < 0
+        || (stageDuration !== undefined && (resident.lifeStageDays ?? 0) >= stageDuration)
+        || !Number.isInteger(resident.lifetimeDays ?? 0)
+        || (resident.lifetimeDays ?? 0) < 0
+        || (resident.lastLifeStageChangeAt !== undefined && (
+          resident.lastLifeStageChangeAt < 0
+          || resident.lastLifeStageChangeAt > world.clock.elapsedMinutes
+        ))
+      ) failures.push(`Resident ${resident.id} has invalid life-stage progress.`);
+      const aspiration = world.residentAspiration(resident);
+      if (
+        !RESIDENT_ASPIRATION_DEFINITIONS[aspiration]
+        || !Number.isInteger(resident.aspirationProgress ?? 0)
+        || (resident.aspirationProgress ?? 0) < 0
+        || (resident.aspirationProgress ?? 0) > 100
+      ) failures.push(`Resident ${resident.id} has invalid aspiration progress.`);
+      const careerTrack = world.residentCareerTrack(resident);
+      const careerBranches = RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].branches as readonly string[];
+      if (
+        !RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack]
+        || (resident.careerBranch !== undefined && !careerBranches.includes(resident.careerBranch))
+      ) failures.push(`Resident ${resident.id} has an invalid career path.`);
+      const stageRoleIsValid = lifeStage === "infant" || lifeStage === "toddler" || lifeStage === "elder"
+        ? resident.role === "home"
+        : lifeStage === "child" || lifeStage === "teen"
+          ? resident.role === "student"
+          : resident.role === RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].role;
+      if (!stageRoleIsValid) failures.push(`Resident ${resident.id} has a role that conflicts with life stage or career.`);
+      if (
+        !Number.isInteger(resident.generation ?? 1)
+        || (resident.generation ?? 1) < 1
+        || (resident.generation ?? 1) > 100
+        || (resident.caregiverIds ?? []).length > 2
+        || new Set(resident.caregiverIds ?? []).size !== (resident.caregiverIds ?? []).length
+        || (resident.caregiverIds ?? []).some(id => {
+          const caregiver = home.residents.find(candidate => candidate.id === id);
+          return id === resident.id
+            || !caregiver
+            || !["young-adult", "adult", "elder"].includes(world.residentLifeStage(caregiver));
+        })
+      ) failures.push(`Resident ${resident.id} has invalid household lineage.`);
       if (resident.currentAction && !VALID_RESIDENT_ACTIONS.has(resident.currentAction.kind)) {
         failures.push(`Resident ${resident.id} has an invalid current action.`);
       }
