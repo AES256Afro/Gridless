@@ -1215,6 +1215,26 @@ kbd {
 .household-shop .personal-collection-row { display: grid; grid-template-columns: .8fr 1.5fr auto; gap: 5px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,.07); }
 .household-shop select, .household-shop button { min-width: 0; padding: 7px 8px; }
 .household-shop small { color: #91a198; font-size: 9px; line-height: 1.3; }
+.household-gatherings {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(181,155,233,.2);
+  border-radius: 9px;
+  margin-top: 8px;
+  background: rgba(118,90,161,.08);
+}
+.gathering-planner { display: grid; grid-template-columns: .8fr 1.35fr .75fr auto; gap: 5px; }
+.gathering-planner select, .gathering-planner button { min-width: 0; padding: 7px 8px; }
+.household-gatherings > small { color: #988eaa; font-size: 8px; line-height: 1.3; }
+.gathering-list { display: grid; gap: 4px; }
+.gathering-list > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 7px; border-radius: 6px; background: rgba(255,255,255,.035); }
+.gathering-list span { display: grid; min-width: 0; gap: 1px; }
+.gathering-list strong, .gathering-list b { color: #d4c5eb; font-size: 8px; }
+.gathering-list small { overflow: hidden; color: #8f849d; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.gathering-list b { color: #a99bbd; white-space: nowrap; }
+.gathering-list .active { box-shadow: inset 3px 0 #f0d980; background: rgba(240,217,128,.08); }
+.gathering-list .complete { opacity: .72; }
 .relationship-list {
   padding: 9px;
   border: 1px solid rgba(240,217,128,.18);

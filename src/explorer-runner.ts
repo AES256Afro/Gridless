@@ -1627,6 +1627,57 @@ check(
     && restoredPersonalWorld.residentMilestones(restoredPersonalWorld.homes[0].residents[0])[0]?.kind === "collection",
   "Personal preferences, inventory, milestone, or furniture ownership was lost during persistence."
 );
+const gatheringWorld = new World();
+const gatheringHome = structuredClone(interiorHome);
+gatheringHome.id = "gathering-home";
+gatheringHome.name = "Gathering household";
+gatheringHome.residents = [];
+gatheringHome.relationships = [];
+gatheringHome.gatherings = [];
+gatheringHome.householdFunds = 1_000;
+gatheringHome.discretionarySpent = 0;
+gatheringWorld.homes = [gatheringHome];
+check(
+  gatheringWorld.addResident(gatheringHome.id, { name: "Host", age: "adult", role: "home", traits: ["outgoing", "empathetic"] })
+    && gatheringWorld.addResident(gatheringHome.id, { name: "Friend", age: "adult", role: "home", traits: ["creative", "homebody"] }),
+  "Household gathering fixture could not create its host household."
+);
+const gatheringRelationshipBefore = gatheringHome.relationships[0].score;
+const gatheringSocialBefore = gatheringHome.residents[0].social;
+const scheduledDinner = gatheringWorld.scheduleHouseholdGathering(gatheringHome.id, gatheringHome.residents[0].id, "dinner", 60);
+check(
+  scheduledDinner.ok
+    && scheduledDinner.gathering?.guestCount !== undefined
+    && scheduledDinner.gathering.guestCount >= 2
+    && scheduledDinner.gathering.guestCount <= 14
+    && gatheringWorld.homeHouseholdFunds(gatheringHome) === 860
+    && !gatheringWorld.scheduleHouseholdGathering(gatheringHome.id, gatheringHome.residents[0].id, "game-night", 90).ok,
+  "Gathering invitations did not debit funds, bound guest count, or prevent overlapping plans."
+);
+gatheringWorld.advanceMinutes(90, 0);
+check(
+  gatheringWorld.activeHouseholdGathering(gatheringHome)?.kind === "dinner"
+    && gatheringWorld.householdGatheringStatus(scheduledDinner.gathering!).includes("In progress"),
+  "Scheduled visitors did not become active during the gathering window."
+);
+gatheringWorld.advanceMinutes(100, 0);
+check(
+  scheduledDinner.gathering?.completedAt !== undefined
+    && scheduledDinner.gathering.attendance === scheduledDinner.gathering.guestCount + gatheringHome.residents.length
+    && gatheringHome.relationships[0].score >= Math.min(100, gatheringRelationshipBefore + 5)
+    && gatheringHome.residents[0].social > gatheringSocialBefore
+    && gatheringWorld.residentSkills(gatheringHome.residents[0]).communication >= 3,
+  "A completed household gathering did not preserve attendance, needs, relationships, and host growth."
+);
+const futureGathering = gatheringWorld.scheduleHouseholdGathering(gatheringHome.id, gatheringHome.residents[1].id, "game-night", 1_440);
+const restoredGatheringWorld = new World();
+check(
+  futureGathering.ok
+    && restoredGatheringWorld.restore(gatheringWorld.serialize())
+    && restoredGatheringWorld.householdGatherings(restoredGatheringWorld.homes[0]).length === 2
+    && restoredGatheringWorld.householdGatherings(restoredGatheringWorld.homes[0]).some(gathering => gathering.kind === "game-night" && gathering.completedAt === undefined),
+  "Completed and upcoming household gatherings did not survive persistence."
+);
 check(
   !residentCreatorWorld.addResident(residentCreatorHome.id, {
     name: "morgan lee",
@@ -2956,6 +3007,9 @@ console.log(JSON.stringify({
   ownedFurniture: personalWorld.residentOwnedFurniture(personalHome, personalResident).length,
   belongingSatisfaction: personalWorld.residentOwnershipSatisfaction(personalHome, personalResident),
   residentOutfit: personalWorld.residentOutfitLabel(personalResident),
+  householdGathering: gatheringWorld.householdGatheringLabel(scheduledDinner.gathering!),
+  gatheringVisitors: scheduledDinner.gathering?.guestCount,
+  gatheringAttendance: scheduledDinner.gathering?.attendance,
   directResidentAction: directControlHome.residents[0].lastActionKind,
   directedActionsCompleted: directControlHome.residents[0].completedActions,
   controlledResidentEnergy: directControlHome.residents[0].energy,
