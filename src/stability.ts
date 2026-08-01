@@ -10,6 +10,7 @@ import {
   RESIDENT_PASTIME_DEFINITIONS,
   RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
+  RESIDENT_ROUTINE_DEFINITIONS,
   RESIDENT_WORK_TASK_DEFINITIONS,
   RESIDENT_MILESTONE_KINDS,
   MAX_RESIDENT_MILESTONES,
@@ -702,12 +703,27 @@ function integrityFailures(world: World) {
       const pastime = world.residentFavoritePastime(resident);
       const outfitStyle = world.residentOutfitStyle(resident);
       const outfitPalette = world.residentOutfitPalette(resident);
+      const routineProfile = world.residentRoutineProfile(resident);
+      const routine = world.residentDailySchedule(resident);
       const personalItems = world.residentPersonalItems(resident);
       if (!VALID_HOME_FURNITURE_STYLES.has(decorPreference)) failures.push(`Resident ${resident.id} has an invalid decor preference.`);
       if (!RESIDENT_PASTIME_DEFINITIONS[pastime]) failures.push(`Resident ${resident.id} has an invalid favorite pastime.`);
       if (!RESIDENT_OUTFIT_DEFINITIONS[outfitStyle] || !RESIDENT_OUTFIT_PALETTES[outfitPalette]) {
         failures.push(`Resident ${resident.id} has an invalid outfit profile.`);
       }
+      if (
+        !RESIDENT_ROUTINE_DEFINITIONS[routineProfile]
+        || routine.dayIndex < 0
+        || routine.dayIndex > 6
+        || routine.workWindows.length > 2
+        || [...routine.workWindows, ...routine.outingWindows].some(window =>
+          !Number.isInteger(window.start)
+          || !Number.isInteger(window.end)
+          || window.start < 0
+          || window.end > 23 * 60 + 59
+          || window.end <= window.start
+        )
+      ) failures.push(`Resident ${resident.id} has an invalid recurring routine.`);
       if (
         personalItems.length > Object.keys(RESIDENT_PERSONAL_ITEM_DEFINITIONS).length
         || new Set(personalItems.map(item => item.id)).size !== personalItems.length
