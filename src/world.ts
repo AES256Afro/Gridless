@@ -5304,6 +5304,49 @@ export class World {
     return home.rooms.find(room => (room.assignedResidentIds ?? []).includes(residentId));
   }
 
+  residentRoomFurniture(home: Home, residentId: string) {
+    const room = this.residentRoom(home, residentId);
+    if (!room) return [];
+    return home.furniture.filter(item =>
+      homeEntityFloor(item) === homeEntityFloor(room)
+      && Math.abs(item.x - room.x) <= room.width / 2
+      && Math.abs(item.z - room.z) <= room.depth / 2
+    );
+  }
+
+  residentRoomPersonalizationCost(home: Home, residentId: string) {
+    const resident = home.residents.find(item => item.id === residentId);
+    if (!resident) return 0;
+    const preference = this.residentDecorPreference(resident);
+    const changed = this.residentRoomFurniture(home, residentId).filter(item =>
+      item.ownerResidentId !== residentId || (item.style ?? "natural") !== preference || item.tint !== undefined
+    ).length;
+    return changed ? 45 + changed * 35 : 0;
+  }
+
+  personalizeResidentRoom(homeId: string, residentId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    const room = home && this.residentRoom(home, residentId);
+    if (!home || !resident || !room) return { ok: false, cost: 0, changed: 0, score: 0, reason: "Assign this resident a personal room first." };
+    const furniture = this.residentRoomFurniture(home, residentId);
+    if (!furniture.length) return { ok: false, cost: 0, changed: 0, score: this.residentRoomFit(home, resident).score, reason: "Furnish the claimed room before personalizing it." };
+    const preference = this.residentDecorPreference(resident);
+    const changed = furniture.filter(item => item.ownerResidentId !== residentId || (item.style ?? "natural") !== preference || item.tint !== undefined);
+    const cost = changed.length ? 45 + changed.length * 35 : 0;
+    if (!changed.length) return { ok: false, cost: 0, changed: 0, score: this.residentRoomFit(home, resident).score, reason: `${resident.name}'s room already reflects their style.` };
+    if (this.homeHouseholdFunds(home) < cost) return { ok: false, cost, changed: changed.length, score: this.residentRoomFit(home, resident).score, reason: `Personalizing this room needs $${cost}. The household has $${this.homeHouseholdFunds(home)}.` };
+    this.checkpoint();
+    for (const item of changed) {
+      item.style = preference;
+      item.ownerResidentId = resident.id;
+      item.tint = undefined;
+    }
+    home.householdFunds = this.homeHouseholdFunds(home) - cost;
+    const score = this.residentRoomFit(home, resident).score;
+    return { ok: true, cost, changed: changed.length, score, reason: `${resident.name} personalized ${changed.length} furnishing${changed.length === 1 ? "" : "s"} for $${cost}. Room fit is now ${score}%.` };
+  }
+
   homePrivacy(home: Home) {
     if (!home.residents.length) return 100;
     return Math.round(average(home.residents.map(resident => {

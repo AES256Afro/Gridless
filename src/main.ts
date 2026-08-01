@@ -6032,6 +6032,7 @@ function updateHouseholdSummary(home: Home) {
                 <span><strong>${personalRoom.room ? `${personalRoom.room.kind} · Floor ${homeEntityFloor(personalRoom.room) + 1}` : "No personal room"}</strong><small>${personalRoom.factors.join(" · ")}</small></span>
                 <b>${personalRoom.score}% room fit</b>
               </div>
+              <button type="button" class="resident-control" data-personalize-room="${resident.id}" ${personalRoom.room && world.residentRoomFurniture(home, resident.id).length ? "" : "disabled"}>Make room mine${world.residentRoomPersonalizationCost(home, resident.id) ? ` · ${formatHomeCurrency(world.residentRoomPersonalizationCost(home, resident.id))}` : ""}</button>
               <div class="resident-growth">
                 <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · career fit ${careerFit}%${resident.role === "student" ? "" : `<br>${world.residentWorkTaskLabel(resident)} · workplace fit ${workplaceFit}% · performance ${workPerformance}% · ${resident.workDaysCompleted ?? 0} shifts${workplaceActivity ? `<br>${workplaceActivity.label} workplace · ${workplaceActivity.coworkersOnShift} coworkers · ${workplaceActivity.customersPresent} customers present` : ""}`}</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
@@ -6167,6 +6168,15 @@ function updateHouseholdSummary(home: Home) {
           const changedResident = home.residents.find(resident => resident.id === residentId);
           notice(`${changedResident?.name ?? "Resident"} now follows ${RESIDENT_ROUTINE_DEFINITIONS[profile].label.toLowerCase()}`);
         }
+      });
+    });
+    details.querySelectorAll<HTMLButtonElement>("[data-personalize-room]").forEach(button => {
+      button.addEventListener("click", () => {
+        const residentId = button.dataset.personalizeRoom;
+        if (!residentId) return;
+        const result = world.personalizeResidentRoom(home.id, residentId);
+        if (result.ok) renderWorld();
+        notice(result.reason);
       });
     });
     details.querySelectorAll<HTMLButtonElement>("[data-move-resident]").forEach(button => {
