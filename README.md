@@ -67,7 +67,7 @@ The current vertical slice proves:
 - Degrading utility infrastructure with deterministic local outages, street-routed repair crews, traffic-sensitive restoration, affected-parcel consequences, and persistent recovery state
 - Persistent autonomous household actions chosen from resident needs, schedules, available furniture, and who is home, with visible 3D behavior, progress, completed-action history, and direct need effects
 - A repeatable ten-year NYC reference-city stability gate with yearly economy and wellbeing checkpoints, bounded incident histories, save-size limits, integrity checks, and a second full run that must produce the same signature
-- Procedural city massing
+- Region-aware procedural city massing with deterministic local proportions, facade palettes, podiums, cornices, crowns, mechanical caps, pitched roofs, and green roofs for NYC, Chicago, Houston, Seattle, and Portland
 - One-key transition between planning and first-person exploration, with continuous spline-generated curbs, sidewalks, road markings, and intersection-aware sidewalk entry
 - Scale-aware street rendering: true intersections receive clean layered junction caps, while dense crosswalk, signal, window, and building-shadow detail is reserved for Explorer so the planning view remains legible without depth-fighting artifacts
 - Authoritative road build-impact previews with live cost, frontage yield, network connections, crossings, parcel clearance, water exposure, accessibility, funding state, and commit-time protection against parcel or surface-water conflicts

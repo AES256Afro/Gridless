@@ -20,6 +20,7 @@ import {
 } from "./interiors";
 import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { soundscapeProfile } from "./soundscape";
+import { buildingArchitecture } from "./architecture";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity } from "./activity";
@@ -68,6 +69,42 @@ import {
   type ParkingFacility,
   type Road
 } from "./world";
+
+const architectureTemplates = ["nyc", "chicago", "houston", "seattle", "portland"] as const;
+const architectureProfiles = architectureTemplates.map((templateId, index) => ({
+  templateId,
+  profile: buildingArchitecture(templateId, "commercial", 431 + index * 97)
+}));
+const matchingArchitecture = buildingArchitecture("nyc", "commercial", 431);
+check(
+  JSON.stringify(architectureProfiles[0].profile) === JSON.stringify(matchingArchitecture),
+  "Regional building architecture was not deterministic."
+);
+check(
+  buildingArchitecture("nyc", "commercial", 431).heightScale
+    > buildingArchitecture("portland", "commercial", 431).heightScale
+    && buildingArchitecture("houston", "commercial", 431).widthScale
+      > buildingArchitecture("seattle", "commercial", 431).widthScale,
+  "Regional building proportions did not distinguish New York, Portland, Houston, and Seattle."
+);
+const regionalRoofStyles = new Set(
+  architectureTemplates.flatMap(templateId =>
+    Array.from({ length: 24 }, (_, seed) => buildingArchitecture(templateId, "mixed", seed * 173).roofStyle)
+  )
+);
+check(
+  regionalRoofStyles.size >= 6
+    && new Set(architectureProfiles.map(item => item.profile.regionLabel)).size === architectureTemplates.length
+    && architectureProfiles.every(({ profile }) =>
+      profile.widthScale >= .45
+      && profile.widthScale <= .85
+      && profile.depthScale >= .5
+      && profile.depthScale <= .8
+      && profile.heightScale >= .65
+      && profile.heightScale <= 1.55
+    ),
+  "Regional architecture kits did not retain distinct, bounded massing and roof options."
+);
 
 let activityHistory: ReturnType<typeof recordActivity> = [];
 for (let index = 0; index < 35; index++) {
@@ -3556,6 +3593,14 @@ check(garageMove.blocked, "Garage collision did not block the player.");
 
 console.log("Gridless Explorer movement checks: PASS");
 console.log(JSON.stringify({
+  architectureProfiles: architectureProfiles.map(({ templateId, profile }) => ({
+    templateId,
+    label: profile.regionLabel,
+    roof: profile.roofStyle,
+    widthScale: Number(profile.widthScale.toFixed(2)),
+    heightScale: Number(profile.heightScale.toFixed(2))
+  })),
+  architectureRoofStyles: [...regionalRoofStyles].sort(),
   localizedSoundCue: emergencyStreetSound.focus,
   shelteredEmergencyLevel: shelteredEmergencySound.emergency,
   roadSamples: paths[0].points.length,

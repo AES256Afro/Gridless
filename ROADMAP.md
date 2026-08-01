@@ -405,6 +405,7 @@ Exit gate: one household can be followed for a full in-game year with understand
 ### P1: A city with visual identity
 
 - Build region-aware architectural kits, procedural facades, storefronts, street furniture, landscaping, terrain, shoreline, and seasonal material variation.
+- Regional architectural kits are live for NYC, Chicago, Houston, Seattle, and Portland. Deterministic parcel massing now varies footprint, height, facade and trim palette, podium proportion, and roof language by foundation while retaining one instanced city mesh; nearby Explorer buildings add their regional cornices, crowns, mechanical caps, pitched roofs, or green roofs at street scale.
 - Give districts readable design rules without forcing identical buildings or sacrificing player overrides.
 - Keep Builder colors diagnostic, Explorer materials grounded, and Home details warm and tactile.
 

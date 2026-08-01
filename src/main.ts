@@ -2,6 +2,7 @@ import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
+import { buildingArchitecture, type BuildingArchitecture } from "./architecture";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity, type ActivityEntry } from "./activity";
@@ -2476,7 +2477,7 @@ function renderWorld() {
   for (const chunk of aggregateChunks) {
     worldGroup.add(createAggregateChunkMassing(chunk, activeCityView));
   }
-  const cityBuildingInstances: Array<{ lot: Lot; height: number; color: number }> = [];
+  const cityBuildingInstances: Array<{ lot: Lot; height: number; width: number; depth: number; color: number }> = [];
   for (const lot of world.lots) {
     if (!detailedLotIds.has(lot.id)) continue;
     const planningValue = lotPlanningValue(lot, activeCityView, totalPopulation, effectiveStaffing, roadTraffic);
@@ -2501,7 +2502,12 @@ function renderWorld() {
     if (lot.zone === "unassigned") continue;
     const seed = hash(lot.id);
     const lotHome = lot.homeId ? world.homes.find(home => home.id === lot.homeId) : undefined;
-    const fullHeight = lotHome ? Math.max(3.6, lotHome.floors * 3.2 + .4) : zoneBuildingHeight(lot.zone, seed);
+    const architecture = buildingArchitecture(world.templateId, lot.zone, seed);
+    const buildingWidth = lot.width * (lotHome ? .62 : architecture.widthScale);
+    const buildingDepth = lot.depth * (lotHome ? .58 : architecture.depthScale);
+    const fullHeight = lotHome
+      ? Math.max(3.6, lotHome.floors * 3.2 + .4)
+      : zoneBuildingHeight(lot.zone, seed) * architecture.heightScale;
     const progress = world.constructionProgress(lot);
     const height = fullHeight * (.12 + progress * .88);
     if (mode === "home" && lot.id === selectedLot?.id) continue;
@@ -2512,12 +2518,14 @@ function renderWorld() {
     const occupiedShare = lot.zone === "residential" || lot.zone === "mixed"
       ? activity.atHome / Math.max(1, activity.population)
       : activity.openBusinesses / Math.max(1, lot.businesses);
-    const shellColor = activeCityView === "normal" ? progress < 1 ? 0xc5a25f : zoneBuildingColors[lot.zone] : planningColor;
+    const shellColor = activeCityView === "normal"
+      ? progress < 1 ? 0xc5a25f : lotHome ? zoneBuildingColors[lot.zone] : architecture.facadeColor
+      : planningColor;
     if (mode === "city" && progress >= 1) {
-      cityBuildingInstances.push({ lot, height, color: shellColor });
+      cityBuildingInstances.push({ lot, height, width: buildingWidth, depth: buildingDepth, color: shellColor });
     } else {
       const shell = new THREE.Mesh(
-        new THREE.BoxGeometry(lot.width * .62, height, lot.depth * .58),
+        new THREE.BoxGeometry(buildingWidth, height, buildingDepth),
         new THREE.MeshStandardMaterial({
           color: shellColor,
           emissive: activeCityView === "normal"
@@ -2532,7 +2540,8 @@ function renderWorld() {
       shell.castShadow = shell.receiveShadow = mode !== "city";
       worldGroup.add(shell);
       if (progress >= 1 && mode !== "city" && agentLotIds.has(lot.id)) {
-        addBuildingWindows(lot, height, darkness, occupiedShare);
+        addBuildingWindows(lot, height, buildingWidth, buildingDepth, darkness, occupiedShare);
+        if (!lotHome) worldGroup.add(createArchitectureDetails(lot, height, buildingWidth, buildingDepth, architecture));
       }
       if (lotHome && progress >= 1 && mode === "explore") {
         const roof = createHomeRoof(lot.width * .68, lot.depth * .64, shellColor);
@@ -2576,7 +2585,7 @@ function renderWorld() {
   if (currentExplorerInterior()) setInteriorSceneVisibility(true);
 }
 
-function addBuildingWindows(lot: Lot, height: number, darkness: number, occupiedShare: number) {
+function addBuildingWindows(lot: Lot, height: number, buildingWidth: number, buildingDepth: number, darkness: number, occupiedShare: number) {
   if (height < 4 || darkness < .05 || occupiedShare <= 0) return;
   const material = new THREE.MeshBasicMaterial({
     map: windowTexture,
@@ -2587,17 +2596,68 @@ function addBuildingWindows(lot: Lot, height: number, darkness: number, occupied
     side: THREE.DoubleSide
   });
   const facadeHeight = Math.max(2, height * .7);
-  const frontPosition = localToWorld({ x: 0, z: lot.depth * .3 + .03 }, lot);
-  const front = new THREE.Mesh(new THREE.PlaneGeometry(lot.width * .5, facadeHeight), material);
+  const frontPosition = localToWorld({ x: 0, z: buildingDepth / 2 + .03 }, lot);
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(buildingWidth * .82, facadeHeight), material);
   front.position.set(frontPosition.x, height * .52, frontPosition.z);
   front.rotation.y = lot.rotation;
   worldGroup.add(front);
 
-  const sidePosition = localToWorld({ x: lot.width * .31 + .03, z: 0 }, lot);
-  const side = new THREE.Mesh(new THREE.PlaneGeometry(lot.depth * .47, facadeHeight), material);
+  const sidePosition = localToWorld({ x: buildingWidth / 2 + .03, z: 0 }, lot);
+  const side = new THREE.Mesh(new THREE.PlaneGeometry(buildingDepth * .8, facadeHeight), material);
   side.position.set(sidePosition.x, height * .52, sidePosition.z);
   side.rotation.y = lot.rotation + Math.PI / 2;
   worldGroup.add(side);
+}
+
+function createArchitectureDetails(
+  lot: Lot,
+  height: number,
+  buildingWidth: number,
+  buildingDepth: number,
+  architecture: BuildingArchitecture
+) {
+  const group = new THREE.Group();
+  group.position.set(lot.center.x, 0, lot.center.z);
+  group.rotation.y = lot.rotation;
+  group.userData.architectureRegion = architecture.regionLabel;
+  group.userData.roofStyle = architecture.roofStyle;
+  const trimMaterial = new THREE.MeshStandardMaterial({ color: architecture.trimColor, roughness: .78 });
+  const roofMaterial = new THREE.MeshStandardMaterial({
+    color: architecture.roofStyle === "green" ? 0x60795a : architecture.trimColor,
+    roughness: .86
+  });
+  const podiumHeight = Math.min(2.2, Math.max(.7, height * .12));
+  const podium = new THREE.Mesh(
+    new THREE.BoxGeometry(buildingWidth * architecture.podiumScale, podiumHeight, buildingDepth * architecture.podiumScale),
+    trimMaterial
+  );
+  podium.position.y = podiumHeight / 2;
+  group.add(podium);
+
+  if (architecture.roofStyle === "cornice" || architecture.roofStyle === "crown") {
+    const cornice = new THREE.Mesh(
+      new THREE.BoxGeometry(buildingWidth * 1.06, .3, buildingDepth * 1.06),
+      trimMaterial
+    );
+    cornice.position.y = height - .12;
+    group.add(cornice);
+  }
+  if (architecture.roofStyle === "pitched") {
+    const roof = createHomeRoof(buildingWidth * .98, buildingDepth * .98, architecture.trimColor);
+    roof.position.y = height + architecture.roofHeight * .45;
+    roof.rotation.y = Math.PI / 4;
+    roof.scale.y = Math.max(.5, architecture.roofHeight * .72);
+    group.add(roof);
+  } else {
+    const roofScale = architecture.roofStyle === "crown" ? .58 : architecture.roofStyle === "mechanical" ? .42 : .86;
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(buildingWidth * roofScale, architecture.roofHeight, buildingDepth * roofScale),
+      roofMaterial
+    );
+    roof.position.y = height + architecture.roofHeight / 2;
+    group.add(roof);
+  }
+  return group;
 }
 
 function serviceColor(kind: ServiceKind) {
@@ -2941,7 +3001,7 @@ function createAggregateChunkMassing(chunk: SpatialChunk, view: CityView) {
   return group;
 }
 
-function createCityBuildingBatch(records: Array<{ lot: Lot; height: number; color: number }>) {
+function createCityBuildingBatch(records: Array<{ lot: Lot; height: number; width: number; depth: number; color: number }>) {
   if (!records.length) return undefined;
   const batch = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
@@ -2952,7 +3012,7 @@ function createCityBuildingBatch(records: Array<{ lot: Lot; height: number; colo
   records.forEach((record, index) => {
     transform.position.set(record.lot.center.x, record.height / 2, record.lot.center.z);
     transform.rotation.set(0, record.lot.rotation, 0);
-    transform.scale.set(record.lot.width * .62, record.height, record.lot.depth * .58);
+    transform.scale.set(record.width, record.height, record.depth);
     transform.updateMatrix();
     batch.setMatrixAt(index, transform.matrix);
     batch.setColorAt(index, new THREE.Color(record.color));
