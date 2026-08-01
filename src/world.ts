@@ -5663,12 +5663,32 @@ export class World {
     return true;
   }
 
-  addFurniture(homeId: string, kind: Home["furniture"][number]["kind"], x: number, z: number, floor = 0) {
+  addFurniture(
+    homeId: string,
+    kind: Home["furniture"][number]["kind"],
+    x: number,
+    z: number,
+    floor = 0,
+    design?: { style?: HomeFurnitureStyle; variant?: HomeFurnitureVariant; tint?: string }
+  ) {
     const home = this.homes.find(item => item.id === homeId);
     const cost = HOME_BUILD_COSTS[kind];
-    if (!home || !Number.isInteger(floor) || floor < 0 || floor >= home.floors || !this.canPlaceFurniture(home, kind, x, z, 0, undefined, floor) || this.homeRemainingBudget(home) < cost) return false;
+    const style = design?.style ?? "natural";
+    const variant = design?.variant ?? "classic";
+    const tint = design?.tint === undefined ? undefined : normalizeFurnitureTint(design.tint);
+    if (
+      !home
+      || !(["natural", "light", "dark", "colorful"] as HomeFurnitureStyle[]).includes(style)
+      || !HOME_FURNITURE_VARIANTS.includes(variant)
+      || (design?.tint !== undefined && !tint)
+      || !Number.isInteger(floor)
+      || floor < 0
+      || floor >= home.floors
+      || !this.canPlaceFurniture(home, kind, x, z, 0, undefined, floor)
+      || this.homeRemainingBudget(home) < cost
+    ) return false;
     this.checkpoint();
-    home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0, style: "natural", floor, condition: 100 });
+    home.furniture.push({ id: crypto.randomUUID(), kind, x, z, rotation: 0, style, variant, tint, floor, condition: 100 });
     home.designSpent += cost;
     return true;
   }

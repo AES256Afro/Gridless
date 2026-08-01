@@ -1841,13 +1841,19 @@ check(
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
-  furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
+  furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1, 0, { style: "dark", variant: "soft", tint: "#123abc" }),
   "Home Simulator rejected furniture placed inside a room."
 );
 const placedPlant = furniturePlacementWorld.homes[0].furniture.find(item =>
   item.kind === "plant" && item.x === -2 && item.z === 1
 );
-check(Boolean(placedPlant), "Home Simulator did not persist newly placed furniture.");
+check(
+  Boolean(placedPlant)
+    && placedPlant?.style === "dark"
+    && placedPlant.variant === "soft"
+    && placedPlant.tint === "#123abc",
+  "Home Simulator did not apply the sampled furnishing design during placement."
+);
 check(
   !furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
   "Home Simulator allowed furnishings to overlap."
