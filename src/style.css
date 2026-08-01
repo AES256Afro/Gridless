@@ -1573,6 +1573,23 @@ kbd {
 .city-view-legend.traffic i { background: linear-gradient(90deg, #68b77c, #e8c96a, #d95f52); }
 .city-view-legend.land-value i { background: linear-gradient(90deg, #d95f52, #e8c96a, #68b77c); }
 .city-view-legend.development i { background: linear-gradient(90deg, #66716a, #d7a956, #70b4d0); }
+.city-view-legend.voices i { background: linear-gradient(90deg, #d36d62, #e1b866, #71b889); }
+.panel.voices-open { width: 350px; }
+.panel.voices-open .demand, .panel.voices-open .city-advisor { display: none; }
+.neighborhood-voices { display: grid; gap: 6px; margin-top: 12px; }
+.neighborhood-voices[hidden] { display: none; }
+.neighborhood-voices-heading { color: #8fa096; font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.neighborhood-voices button { display: grid; gap: 3px; width: 100%; padding: 8px 9px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; color: #dce7df; background: rgba(255,255,255,.035); text-align: left; cursor: pointer; }
+.neighborhood-voices button:hover { border-color: rgba(240,217,128,.4); background: rgba(240,217,128,.07); }
+.neighborhood-voices button.critical { border-left: 3px solid #d96c5f; }
+.neighborhood-voices button.watch { border-left: 3px solid #dfb75f; }
+.neighborhood-voices button.positive { border-left: 3px solid #70b985; }
+.neighborhood-voices span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.neighborhood-voices b { color: #f0d980; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.neighborhood-voices i { color: #9caca1; font-size: 10px; font-style: normal; }
+.neighborhood-voices strong { font: 650 11px "Manrope", sans-serif; }
+.neighborhood-voices small { color: #9caba1; font-size: 9px; line-height: 1.3; }
+.neighborhood-voices em { color: #d8e3da; font-size: 9px; font-style: normal; font-weight: 700; }
 
 .explorer-status {
   display: none;

@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
 import { buildingArchitecture, type BuildingArchitecture } from "./architecture";
+import { neighborhoodPulse, type NeighborhoodPulse } from "./neighborhood";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity, type ActivityEntry } from "./activity";
@@ -139,7 +140,7 @@ type HomeFurnitureKind = Home["furniture"][number]["kind"];
 type HomeTool = "select" | "room" | "stairs" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
-type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment";
+type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment" | "voices";
 const HOME_FURNITURE_KINDS: HomeFurnitureKind[] = ["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"];
 const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_FURNITURE_KINDS.includes(value as HomeFurnitureKind);
@@ -200,6 +201,7 @@ app.innerHTML = `
         <div class="eyebrow">CITY ADVISOR · NEXT ACTIONS</div>
         <div id="city-advisor-actions"></div>
       </section>
+      <section class="neighborhood-voices" id="neighborhood-voices" aria-label="Neighborhood voices" hidden></section>
     </div>
     <div class="actionbar">
       <button id="undo">Undo</button><button id="redo">Redo</button><button id="save">Save city</button><button id="load">Load city</button><button id="recover-autosave" disabled>Recover autosave</button>
@@ -429,6 +431,7 @@ app.innerHTML = `
         <button data-city-view="land-value">Land value</button>
         <button data-city-view="environment">Environment</button>
         <button data-city-view="development">Development</button>
+        <button data-city-view="voices">Voices</button>
         <div class="city-view-legend" id="city-view-legend"><i></i><span>Natural city colors</span></div>
       </div>
     </div>
@@ -2185,6 +2188,7 @@ function lotPlanningValue(
   }
   if (view === "utilities") return world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "wellbeing") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
+  if (view === "voices") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "land-value") return world.lotLandValue(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "environment") return 1 - world.lotEnvironmentalConstraintScore(lot);
   if (view === "development") return lot.zone === "unassigned" ? 0 : world.constructionProgress(lot);
@@ -6271,7 +6275,8 @@ function updateExplorerContext() {
 }
 
 function setPanel(kicker: string, title: string, copy: string, controls: string) {
-  document.querySelector(".panel")!.classList.remove("inspecting");
+  document.querySelector(".panel")!.classList.remove("inspecting", "voices-open");
+  document.querySelector<HTMLElement>("#neighborhood-voices")!.hidden = true;
   const parcelDetails = document.querySelector("#parcel-details")!;
   parcelDetails.classList.remove("visible");
   parcelDetails.innerHTML = "";
@@ -6282,6 +6287,88 @@ function setPanel(kicker: string, title: string, copy: string, controls: string)
     const [key, value] = row.split("|");
     return `<kbd>${key}</kbd><span>${value}</span>`;
   }).join("");
+}
+
+function areaCenter(points: Point2[]) {
+  return points.reduce(
+    (center, point) => ({ x: center.x + point.x / points.length, z: center.z + point.z / points.length }),
+    { x: 0, z: 0 }
+  );
+}
+
+function neighborhoodPulses() {
+  const totalPopulation = Math.max(1, world.cityEconomy().population);
+  const effectiveStaffing = world.effectiveStaffing();
+  const parkCenters = world.areas.filter(area => area.kind === "park").map(area => areaCenter(area.points));
+  return world.areas
+    .filter(area => area.kind === "district")
+    .map(district => {
+      const lots = world.lots.filter(lot => pointInPolygon(lot.center, district.points) && lot.zone !== "unassigned");
+      if (!lots.length) return undefined;
+      const average = (values: number[]) => values.reduce((total, value) => total + value, 0) / Math.max(1, values.length);
+      const roadIds = new Set(lots.map(lot => lot.roadId));
+      const localRoads = world.roads.filter(road => roadIds.has(road.id));
+      const constrained = lots.filter(lot => world.lotEnvironmentalConstraintScore(lot) > 0).length;
+      const parkServed = lots.filter(lot => parkCenters.some(park => Math.hypot(lot.center.x - park.x, lot.center.z - park.z) <= 320)).length;
+      const pulse = neighborhoodPulse({
+        districtId: district.id,
+        districtName: district.name,
+        population: lots.reduce((total, lot) => total + world.lotPopulation(lot), 0),
+        jobs: lots.reduce((total, lot) => total + world.lotJobs(lot), 0),
+        wellbeing: average(lots.map(lot => world.lotWellbeing(lot, totalPopulation, effectiveStaffing))),
+        utilityReliability: average(lots.map(lot => world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing))),
+        trafficPressure: average(localRoads.map(road => world.roadTrafficPressure(road))),
+        landValue: average(lots.map(lot => world.lotLandValue(lot, totalPopulation, effectiveStaffing))),
+        parkAccess: parkServed / lots.length * 100,
+        environmentalExposure: constrained / lots.length * 100,
+        activeOutages: lots.reduce((total, lot) => total + world.utilityFailuresForLot(lot).length, 0),
+        policyCount: world.districtPolicies[district.id]?.length ?? 0
+      });
+      return { pulse, center: areaCenter(district.points) };
+    })
+    .filter((item): item is { pulse: NeighborhoodPulse; center: Point2 } => Boolean(item))
+    .sort((first, second) => second.pulse.priority - first.pulse.priority || first.pulse.districtName.localeCompare(second.pulse.districtName));
+}
+
+function renderNeighborhoodVoices() {
+  const panel = document.querySelector(".panel")!;
+  const container = document.querySelector<HTMLElement>("#neighborhood-voices")!;
+  panel.classList.add("voices-open");
+  container.hidden = false;
+  const entries = neighborhoodPulses().slice(0, 4);
+  const heading = document.createElement("div");
+  heading.className = "neighborhood-voices-heading";
+  heading.textContent = "Representative feedback from live district conditions";
+  const cards = entries.map(({ pulse, center }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = pulse.status;
+    button.dataset.voiceDistrict = pulse.districtId;
+    button.dataset.voiceView = pulse.focusView;
+    button.dataset.voiceX = String(center.x);
+    button.dataset.voiceZ = String(center.z);
+    const header = document.createElement("span");
+    const district = document.createElement("b");
+    district.textContent = pulse.districtName;
+    const score = document.createElement("i");
+    score.textContent = `${pulse.score}%`;
+    header.append(district, score);
+    const title = document.createElement("strong");
+    title.textContent = pulse.headline;
+    const message = document.createElement("small");
+    message.textContent = `${pulse.voice}: “${pulse.message}”`;
+    const action = document.createElement("em");
+    action.textContent = `${pulse.actionLabel} →`;
+    button.append(header, title, message, action);
+    return button;
+  });
+  if (!cards.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "Zone parcels inside a district to begin neighborhood feedback.";
+    container.replaceChildren(heading, empty);
+  } else {
+    container.replaceChildren(heading, ...cards);
+  }
 }
 
 function renderParcelDetails(lot: Lot) {
@@ -6567,7 +6654,18 @@ function updateCityViewPanel() {
   const legend = document.querySelector("#city-view-legend")!;
   legend.className = `city-view-legend ${cityView}`;
   const legendCopy = legend.querySelector("span")!;
-  if (cityView === "traffic") {
+  if (cityView === "voices") {
+    const pulses = neighborhoodPulses();
+    const urgent = pulses.filter(item => item.pulse.status === "critical").length;
+    legendCopy.textContent = "Listen · locate · respond";
+    setPanel(
+      "NEIGHBORHOOD VOICES",
+      urgent ? `${urgent} district${urgent === 1 ? " needs" : "s need"} attention` : "Residents feel supported",
+      "Each card translates real utility, wellbeing, traffic, land, parks, environmental, job, and policy conditions into a localized pulse. Select one to focus the district and open the evidence behind it.",
+      "Select a voice|Focus district;Card action|Open evidence;Views|Compare outcomes"
+    );
+    renderNeighborhoodVoices();
+  } else if (cityView === "traffic") {
     const roads = world.roads
       .map(road => ({ road, pressure: world.roadTrafficPressure(road) }))
       .sort((first, second) => second.pressure - first.pressure);
@@ -7486,6 +7584,21 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-view]").forEach(button 
   updateCityViewPanel();
   notice(`${button.textContent?.trim() ?? "City"} planning view active`);
 }));
+
+document.querySelector("#neighborhood-voices")!.addEventListener("click", event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-voice-district]");
+  if (!button || mode !== "city") return;
+  const x = Number(button.dataset.voiceX);
+  const z = Number(button.dataset.voiceZ);
+  if (Number.isFinite(x) && Number.isFinite(z)) {
+    orbit.target.set(x, 0, z);
+    camera.position.set(x + 170, 210, z + 250);
+    orbit.update();
+  }
+  const viewButton = document.querySelector<HTMLButtonElement>(`[data-city-view="${button.dataset.voiceView}"]`);
+  viewButton?.click();
+  notice(`Focused ${button.querySelector("b")?.textContent ?? "district"} resident feedback`);
+});
 
 document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button => button.addEventListener("click", () => {
   cityTool = button.dataset.cityTool as CityTool;
