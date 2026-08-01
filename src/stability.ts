@@ -17,6 +17,7 @@ import {
   RESIDENT_MILESTONE_KINDS,
   MAX_RESIDENT_MILESTONES,
   RESIDENT_PERSONALITY_AXES,
+  RESIDENT_ACTION_KINDS,
   MAX_HOME_FLOORS,
   World,
   homeEntityFloor,
@@ -132,7 +133,7 @@ const VALID_HOME_WALL_FINISHES = new Set(["warm-white", "sage", "clay", "slate"]
 const VALID_HOME_FURNITURE = new Set(["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"]);
 const VALID_HOME_FURNITURE_STYLES = new Set(["natural", "light", "dark", "colorful"]);
 const VALID_HOME_FURNITURE_VARIANTS = new Set(HOME_FURNITURE_VARIANTS);
-const VALID_RESIDENT_ACTIONS = new Set(["sleep", "eat", "relax", "study", "shower", "socialize", "tend-plants", "idle"]);
+const VALID_RESIDENT_ACTIONS = new Set(RESIDENT_ACTION_KINDS);
 
 export function createStabilityScenario() {
   const world = new World();
@@ -845,6 +846,14 @@ function integrityFailures(world: World) {
       ) failures.push(`Resident ${resident.id} has invalid household lineage.`);
       if (resident.currentAction && !VALID_RESIDENT_ACTIONS.has(resident.currentAction.kind)) {
         failures.push(`Resident ${resident.id} has an invalid current action.`);
+      }
+      if (resident.currentAction?.kind === "care") {
+        const dependent = home.residents.find(candidate => candidate.id === resident.currentAction?.partnerResidentId);
+        if (
+          !dependent
+          || !(dependent.caregiverIds ?? []).includes(resident.id)
+          || !["infant", "toddler", "child"].includes(world.residentLifeStage(dependent))
+        ) failures.push(`Resident ${resident.id} has an invalid active childcare relationship.`);
       }
       if (resident.lastActionKind && !VALID_RESIDENT_ACTIONS.has(resident.lastActionKind)) {
         failures.push(`Resident ${resident.id} has an invalid completed action.`);

@@ -52,6 +52,7 @@ The current vertical slice proves:
 - Five editable resident rhythms with recurring weekday, weekend, early, late, split-shift, flexible, outing, and sleep windows shared by home autonomy, workplace attendance, career credit, and household wages
 - Persistent two-trait resident identities plus editable Cleanliness, Spontaneity, Sociability, Emotional intensity, and Activity axes, with visible personality spectra, matrix-weighted autonomy, compatibility, career fit, and deterministic save migration
 - Seven persistent life stages from Infant through Elder with deterministic daily aging, stage-aware school and work roles, caregiver lineage, generation numbers, inherited personality blends, family bonds, and legacy-save migration
+- Directed and autonomous childcare that prioritizes linked dependents by need, visibly occupies the caregiver, restores dependent wellbeing, builds caregiver skills and family aspiration, and records supportive family memories
 - Bounded resident life stories that remember household arrivals, birthdays, career specializations, promotions, fulfilled aspirations, and personal collections with dated Home Simulator timelines and cross-scale context
 - Five long-term aspirations that progress through relationships, skill practice, career success, household prosperity, aging milestones, and elder mentorship
 - Five skill-linked career tracks with distinct roles and wages, deterministic specialization branches at level four, personality fit, ten career levels, and stage-aware retirement

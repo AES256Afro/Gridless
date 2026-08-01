@@ -2174,6 +2174,78 @@ check(
     ),
   "Caregiver lineage did not establish generation, bonds, or blended personality."
 );
+lifeCycleWorld.clock.minute = 20 * 60;
+kai.energy = 40;
+kai.social = 20;
+kai.comfort = 30;
+kai.health = 60;
+kai.stress = 60;
+kai.currentAction = { kind: "idle", startedAt: 0, endsAt: 120 };
+const caregiverRelationship = lifeCycleWorld.relationshipBetween(lifeCycleHome, samira.id, kai.id)!;
+const caregiverRelationshipBefore = caregiverRelationship.score;
+const carePriority = lifeCycleWorld.caregivingPriority(lifeCycleHome, samira);
+lifeCycleWorld.setControlledResident(samira.id);
+const directedCare = lifeCycleWorld.commandResidentCare(lifeCycleHome.id, samira.id, kai.id);
+check(
+  directedCare.ok
+    && carePriority?.resident.id === kai.id
+    && lifeCycleWorld.activeResidentAction(samira)?.kind === "care"
+    && lifeCycleWorld.activeResidentAction(samira)?.partnerResidentId === kai.id,
+  "A linked caregiver could not begin directed childcare for the highest-need dependent."
+);
+lifeCycleWorld.advanceMinutes(45, 0);
+lifeCycleWorld.setControlledResident();
+check(
+  samira.lastActionKind === "care"
+    && kai.energy > 40
+    && kai.social > 20
+    && kai.comfort > 30
+    && kai.health > 60
+    && kai.stress < 60
+    && caregiverRelationship.score > caregiverRelationshipBefore
+    && caregiverRelationship.memories?.[0].intent === "support"
+    && lifeCycleWorld.residentSkills(samira).communication === 2
+    && lifeCycleWorld.residentSkills(samira).wellness === 2
+    && lifeCycleWorld.residentSkills(samira).practical === 2,
+  "Completed childcare did not restore dependent needs, build caregiver skills, and strengthen the family bond."
+);
+kai.currentAction = undefined;
+const directedChildcare = samira.lastActionKind;
+check(
+  !lifeCycleWorld.commandResidentCare(lifeCycleHome.id, lifeCycleHome.residents[3].id, kai.id).ok,
+  "An unlinked household member was allowed to perform a caregiver-only action."
+);
+const autonomousCareWorld = new World();
+const autonomousCareHome = structuredClone(lifeCycleHome);
+autonomousCareHome.id = "autonomous-care-home";
+autonomousCareHome.residents = autonomousCareHome.residents.filter(resident => resident.id === samira.id || resident.id === kai.id);
+autonomousCareHome.relationships = autonomousCareHome.relationships.filter(relationship =>
+  relationship.residentIds.includes(samira.id) && relationship.residentIds.includes(kai.id)
+);
+const autonomousCaregiver = autonomousCareHome.residents.find(resident => resident.id === samira.id)!;
+const autonomousDependent = autonomousCareHome.residents.find(resident => resident.id === kai.id)!;
+autonomousCaregiver.currentAction = undefined;
+autonomousCaregiver.lastActionKind = undefined;
+autonomousCaregiver.lastActionAt = undefined;
+autonomousCaregiver.energy = 95;
+autonomousCaregiver.social = 95;
+autonomousCaregiver.comfort = 95;
+autonomousCaregiver.health = 95;
+autonomousCaregiver.stress = 5;
+autonomousDependent.currentAction = undefined;
+autonomousDependent.energy = 5;
+autonomousDependent.social = 5;
+autonomousDependent.comfort = 5;
+autonomousDependent.health = 20;
+autonomousDependent.stress = 90;
+autonomousCareWorld.homes = [autonomousCareHome];
+autonomousCareWorld.clock.minute = 20 * 60;
+autonomousCareWorld.advanceMinutes(1, 0);
+check(
+  autonomousCareWorld.activeResidentAction(autonomousCaregiver)?.kind === "care"
+    && autonomousCareWorld.activeResidentAction(autonomousCaregiver)?.partnerResidentId === autonomousDependent.id,
+  "A present caregiver did not autonomously prioritize a dependent with critical needs."
+);
 samira.careerLevel = 3;
 samira.careerXp = 119;
 samira.aspirationProgress = 96;
@@ -3562,6 +3634,8 @@ console.log(JSON.stringify({
   lifeStageTransition: lifeCycleWorld.residentLifeStage(kai),
   householdGeneration: kai.generation,
   caregiverCount: kai.caregiverIds?.length,
+  directedChildcare,
+  autonomousChildcare: autonomousCareWorld.activeResidentAction(autonomousCaregiver)?.kind,
   inheritedPersonality: inheritedPersonality.cleanliness,
   careerBranch: samira.careerBranch,
   careerWorkplace: samiraWorkplace?.anchorBusiness?.name,
