@@ -284,6 +284,8 @@ export type ResidentMilestone = {
   occurredAt: number;
 };
 export type ResidentPastime = "reading" | "gardening" | "cooking" | "socializing" | "relaxing";
+export type ResidentOutfitStyle = "casual" | "smart" | "formal" | "active" | "cozy";
+export type ResidentOutfitPalette = "earth" | "ocean" | "sunset" | "mono" | "bright";
 export type ResidentPersonalItemKind = "book-set" | "garden-kit" | "recipe-box" | "game-set" | "comfort-kit";
 
 export type ResidentTrait =
@@ -359,6 +361,8 @@ export type Resident = {
   caregiverIds?: string[];
   decorPreference?: HomeFurnitureStyle;
   favoritePastime?: ResidentPastime;
+  outfitStyle?: ResidentOutfitStyle;
+  outfitPalette?: ResidentOutfitPalette;
   inventory?: ResidentPersonalItem[];
   destinationLotId?: string;
   energy: number;
@@ -393,6 +397,8 @@ export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits">
   inheritPersonality?: boolean;
   decorPreference?: HomeFurnitureStyle;
   favoritePastime?: ResidentPastime;
+  outfitStyle?: ResidentOutfitStyle;
+  outfitPalette?: ResidentOutfitPalette;
 };
 
 export const RESIDENT_LIFE_STAGES: ResidentLifeStage[] = [
@@ -488,6 +494,30 @@ export const RESIDENT_PASTIME_DEFINITIONS: Record<ResidentPastime, {
   cooking: { label: "Cooking", summary: "turns meals into a practiced household ritual", action: "eat" },
   socializing: { label: "Social time", summary: "seeks shared conversation and games", action: "socialize" },
   relaxing: { label: "Quiet comfort", summary: "values a calm place to decompress", action: "relax" }
+};
+
+export const RESIDENT_OUTFIT_DEFINITIONS: Record<ResidentOutfitStyle, {
+  label: string;
+  summary: string;
+}> = {
+  casual: { label: "Everyday casual", summary: "layered basics for ordinary city life" },
+  smart: { label: "Smart tailored", summary: "clean lines that move between home and work" },
+  formal: { label: "Formal", summary: "structured pieces for occasions and leadership" },
+  active: { label: "Active", summary: "sporty layers built for constant motion" },
+  cozy: { label: "Cozy", summary: "soft relaxed layers for comfort at home" }
+};
+
+export const RESIDENT_OUTFIT_PALETTES: Record<ResidentOutfitPalette, {
+  label: string;
+  primary: number;
+  secondary: number;
+  accent: number;
+}> = {
+  earth: { label: "Earth", primary: 0x78906d, secondary: 0xc59a68, accent: 0xe4cf9d },
+  ocean: { label: "Ocean", primary: 0x4e7891, secondary: 0x89b4be, accent: 0xd7e8e5 },
+  sunset: { label: "Sunset", primary: 0xb86855, secondary: 0xd89a6a, accent: 0xf1d092 },
+  mono: { label: "Monochrome", primary: 0x4c5155, secondary: 0xaeb4b6, accent: 0xf0eee8 },
+  bright: { label: "Bright", primary: 0x7d62b0, secondary: 0xd77696, accent: 0xf2c95d }
 };
 
 export const RESIDENT_PERSONAL_ITEM_DEFINITIONS: Record<ResidentPersonalItemKind, {
@@ -2842,6 +2872,24 @@ export class World {
     return RESIDENT_PASTIME_DEFINITIONS[this.residentFavoritePastime(resident)].label;
   }
 
+  residentOutfitStyle(resident: Resident) {
+    return normalizeResidentOutfitStyle(resident.outfitStyle, resident);
+  }
+
+  residentOutfitPalette(resident: Resident) {
+    return normalizeResidentOutfitPalette(resident.outfitPalette, resident);
+  }
+
+  residentOutfitLabel(resident: Resident) {
+    const style = RESIDENT_OUTFIT_DEFINITIONS[this.residentOutfitStyle(resident)].label;
+    const palette = RESIDENT_OUTFIT_PALETTES[this.residentOutfitPalette(resident)].label;
+    return `${style} · ${palette}`;
+  }
+
+  residentOutfitColors(resident: Resident) {
+    return RESIDENT_OUTFIT_PALETTES[this.residentOutfitPalette(resident)];
+  }
+
   residentPersonalItems(resident: Resident) {
     return resident.inventory ?? [];
   }
@@ -3960,6 +4008,22 @@ export class World {
     return true;
   }
 
+  setResidentOutfit(
+    homeId: string,
+    residentId: string,
+    style: ResidentOutfitStyle,
+    palette: ResidentOutfitPalette
+  ) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    if (!home || !resident || !RESIDENT_OUTFIT_DEFINITIONS[style] || !RESIDENT_OUTFIT_PALETTES[palette]) return false;
+    if (this.residentOutfitStyle(resident) === style && this.residentOutfitPalette(resident) === palette) return false;
+    this.checkpoint();
+    resident.outfitStyle = style;
+    resident.outfitPalette = palette;
+    return true;
+  }
+
   canPlaceFurniture(
     home: Home,
     kind: Home["furniture"][number]["kind"],
@@ -4134,6 +4198,8 @@ export class World {
     if (profile?.careerTrack && !RESIDENT_CAREER_TRACK_DEFINITIONS[profile.careerTrack]) return false;
     if (profile?.decorPreference && !(["natural", "light", "dark", "colorful"] as HomeFurnitureStyle[]).includes(profile.decorPreference)) return false;
     if (profile?.favoritePastime && !RESIDENT_PASTIME_DEFINITIONS[profile.favoritePastime]) return false;
+    if (profile?.outfitStyle && !RESIDENT_OUTFIT_DEFINITIONS[profile.outfitStyle]) return false;
+    if (profile?.outfitPalette && !RESIDENT_OUTFIT_PALETTES[profile.outfitPalette]) return false;
     const caregiverIds = [...new Set(profile?.caregiverIds ?? [])];
     if (caregiverIds.length > 2) return false;
     const caregivers = caregiverIds.map(id => home.residents.find(resident => resident.id === id)).filter((resident): resident is Resident => Boolean(resident));
@@ -4171,6 +4237,8 @@ export class World {
       caregiverIds,
       decorPreference: profile?.decorPreference,
       favoritePastime: profile?.favoritePastime,
+      outfitStyle: profile?.outfitStyle,
+      outfitPalette: profile?.outfitPalette,
       inventory: [],
       energy: 82,
       social: 68,
@@ -4192,6 +4260,8 @@ export class World {
     resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
     resident.decorPreference = normalizeResidentDecorPreference(resident.decorPreference, resident);
     resident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, resident);
+    resident.outfitStyle = normalizeResidentOutfitStyle(resident.outfitStyle, resident);
+    resident.outfitPalette = normalizeResidentOutfitPalette(resident.outfitPalette, resident);
     this.recordResidentMilestone(
       resident,
       "arrival",
@@ -4300,6 +4370,8 @@ export class World {
         normalizedResident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, normalizedResident);
         normalizedResident.decorPreference = normalizeResidentDecorPreference(resident.decorPreference, normalizedResident);
         normalizedResident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, normalizedResident);
+        normalizedResident.outfitStyle = normalizeResidentOutfitStyle(resident.outfitStyle, normalizedResident);
+        normalizedResident.outfitPalette = normalizeResidentOutfitPalette(resident.outfitPalette, normalizedResident);
         if (lifeStage === "young-adult" || lifeStage === "adult") {
           normalizedResident.role = RESIDENT_CAREER_TRACK_DEFINITIONS[normalizedResident.careerTrack].role;
         }
@@ -5743,6 +5815,32 @@ function normalizeResidentPastime(pastime: ResidentPastime | undefined, resident
   if (resident.traits.includes("organized") || personality.cleanliness >= 72) return "cooking";
   if (resident.traits.includes("homebody") || personality.emotionality >= 72) return "relaxing";
   return hashString(`${resident.id}:pastime`) % 2 ? "reading" : "gardening";
+}
+
+function normalizeResidentOutfitStyle(
+  style: ResidentOutfitStyle | undefined,
+  resident: Pick<Resident, "id" | "traits" | "personality" | "role" | "careerTrack" | "lifeStage" | "age">
+): ResidentOutfitStyle {
+  if (style && RESIDENT_OUTFIT_DEFINITIONS[style]) return style;
+  const stage = normalizeResidentLifeStage(resident.lifeStage, resident.age);
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (stage === "infant" || stage === "toddler" || resident.traits.includes("homebody")) return "cozy";
+  if (resident.traits.includes("active") || personality.activity >= 72) return "active";
+  if (resident.role === "office" || resident.careerTrack === "enterprise" || resident.careerTrack === "civic") return "smart";
+  if (resident.traits.includes("organized") && personality.cleanliness >= 76) return "formal";
+  return "casual";
+}
+
+function normalizeResidentOutfitPalette(
+  palette: ResidentOutfitPalette | undefined,
+  resident: Pick<Resident, "id" | "traits" | "personality" | "decorPreference">
+): ResidentOutfitPalette {
+  if (palette && RESIDENT_OUTFIT_PALETTES[palette]) return palette;
+  const preference = normalizeResidentDecorPreference(resident.decorPreference, resident);
+  if (preference === "natural") return "earth";
+  if (preference === "dark") return "mono";
+  if (preference === "colorful") return "bright";
+  return hashString(`${resident.id}:outfit-palette`) % 2 ? "ocean" : "sunset";
 }
 
 function normalizeResidentInventory(
