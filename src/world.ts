@@ -11,6 +11,7 @@ import {
 export type Point2 = { x: number; z: number };
 
 export type RoadClass = "street" | "avenue" | "arterial";
+export type RoadStructure = "surface" | "bridge" | "tunnel";
 
 export type RoadProfile = {
   travelLanes: number;
@@ -30,6 +31,8 @@ export type Road = {
   name?: string;
   class?: RoadClass;
   profile?: RoadProfile;
+  structure?: RoadStructure;
+  elevationMeters?: number;
   developable?: boolean;
 };
 
@@ -101,7 +104,22 @@ export function roadCapacityForProfile(profile: RoadProfile, roadClass: RoadClas
   ));
 }
 
-export function roadConstructionCost(points: Point2[], profile: RoadProfile) {
+export function normalizeRoadStructure(structure: RoadStructure | undefined, elevationMeters: number | undefined) {
+  const kind: RoadStructure = structure === "bridge" || structure === "tunnel" ? structure : "surface";
+  const elevation = kind === "bridge"
+    ? Math.round(clamp(elevationMeters ?? 8, 4, 16))
+    : kind === "tunnel"
+      ? Math.round(clamp(elevationMeters ?? -8, -16, -4))
+      : 0;
+  return { structure: kind, elevationMeters: elevation };
+}
+
+export function roadConstructionCost(
+  points: Point2[],
+  profile: RoadProfile,
+  structure: RoadStructure = "surface",
+  elevationMeters = 0
+) {
   const length = routeLength(points);
   const featureCost = length * (
     (profile.bikeLanes ? 520 : 0)
@@ -109,7 +127,13 @@ export function roadConstructionCost(points: Point2[], profile: RoadProfile) {
     + (profile.median ? 760 : 0)
     + (profile.streetTrees ? 240 : 0)
   );
-  return Math.max(25_000, Math.round((length * roadWidthForProfile(profile) * 1_350 + featureCost) / 1_000) * 1_000);
+  const normalizedStructure = normalizeRoadStructure(structure, elevationMeters);
+  const structureCost = normalizedStructure.structure === "bridge"
+    ? length * roadWidthForProfile(profile) * (3_100 + normalizedStructure.elevationMeters * 90)
+    : normalizedStructure.structure === "tunnel"
+      ? length * roadWidthForProfile(profile) * (6_400 + Math.abs(normalizedStructure.elevationMeters) * 120)
+      : 0;
+  return Math.max(25_000, Math.round((length * roadWidthForProfile(profile) * 1_350 + featureCost + structureCost) / 1_000) * 1_000);
 }
 
 export type RoadDrawingSnap = {
@@ -258,8 +282,11 @@ export function snapRoadDrawingPoint(
 function normalizeRoadRecord(road: Road): Road {
   const roadClass: RoadClass = road.class
     ?? (road.width >= 15 ? "arterial" : road.width >= 11 ? "avenue" : "street");
+  const structure = normalizeRoadStructure(road.structure, road.elevationMeters);
   return {
     ...road,
+    ...structure,
+    developable: road.developable ?? (structure.structure === "surface" ? undefined : false),
     class: roadClass,
     width: Number.isFinite(road.width) && road.width >= 4 ? road.width : roadWidthForProfile(ROAD_PROFILE_PRESETS[roadClass]),
     profile: normalizeRoadProfile(road.profile, roadClass)
@@ -1543,10 +1570,22 @@ export class World {
     return roadCapacityForProfile(this.roadProfile(road), road.class ?? "street");
   }
 
-  addRoad(points: Point2[], width = 10, roadClass: RoadClass = "street", authoredProfile?: Partial<RoadProfile>) {
+  roadStructure(road: Road) {
+    return normalizeRoadStructure(road.structure, road.elevationMeters);
+  }
+
+  addRoad(
+    points: Point2[],
+    width = 10,
+    roadClass: RoadClass = "street",
+    authoredProfile?: Partial<RoadProfile>,
+    authoredStructure: RoadStructure = "surface",
+    authoredElevationMeters = 0
+  ) {
     if (points.length < 2) return false;
     const profile = normalizeRoadProfile(authoredProfile, roadClass);
-    const constructionCost = roadConstructionCost(points, profile);
+    const structure = normalizeRoadStructure(authoredStructure, authoredElevationMeters);
+    const constructionCost = roadConstructionCost(points, profile, structure.structure, structure.elevationMeters);
     if (this.clock.treasury < constructionCost) return false;
     this.checkpoint();
     this.clock.treasury -= constructionCost;
@@ -1556,6 +1595,8 @@ export class World {
       width: authoredProfile ? roadWidthForProfile(profile) : width,
       class: roadClass,
       profile,
+      ...structure,
+      developable: structure.structure === "surface",
       name: `New ${roadClass}`
     });
     this.rebuildLots();
@@ -1564,15 +1605,25 @@ export class World {
     return true;
   }
 
-  updateRoadProfile(roadId: string, authoredProfile: Partial<RoadProfile>, authoredClass?: RoadClass) {
+  updateRoadProfile(
+    roadId: string,
+    authoredProfile: Partial<RoadProfile>,
+    authoredClass?: RoadClass,
+    authoredStructure?: RoadStructure,
+    authoredElevationMeters?: number
+  ) {
     const road = this.roads.find(candidate => candidate.id === roadId);
     if (!road) return { ok: false, cost: 0, reason: "Choose a road to update" };
     const roadClass = authoredClass ?? road.class ?? "street";
     const profile = normalizeRoadProfile(authoredProfile, roadClass);
+    const structure = normalizeRoadStructure(authoredStructure ?? road.structure, authoredElevationMeters ?? road.elevationMeters);
+    const currentStructure = this.roadStructure(road);
     const unchanged = roadClass === (road.class ?? "street")
-      && JSON.stringify(profile) === JSON.stringify(this.roadProfile(road));
+      && JSON.stringify(profile) === JSON.stringify(this.roadProfile(road))
+      && structure.structure === currentStructure.structure
+      && structure.elevationMeters === currentStructure.elevationMeters;
     if (unchanged) return { ok: false, cost: 0, reason: "That road already uses this profile" };
-    const upgradeCost = Math.max(25_000, Math.round(roadConstructionCost(road.points, profile) * .35 / 1_000) * 1_000);
+    const upgradeCost = Math.max(25_000, Math.round(roadConstructionCost(road.points, profile, structure.structure, structure.elevationMeters) * .35 / 1_000) * 1_000);
     if (this.clock.treasury < upgradeCost) {
       return { ok: false, cost: upgradeCost, reason: `This retrofit needs $${upgradeCost.toLocaleString()}` };
     }
@@ -1580,7 +1631,14 @@ export class World {
     this.clock.treasury -= upgradeCost;
     road.class = roadClass;
     road.profile = profile;
+    road.structure = structure.structure;
+    road.elevationMeters = structure.elevationMeters;
     road.width = roadWidthForProfile(profile);
+    const hasExistingFrontage = this.lots.some(lot => lot.roadId === road.id);
+    const wasDevelopable = road.developable !== false;
+    if (structure.structure === "surface") road.developable = true;
+    else if (!hasExistingFrontage) road.developable = false;
+    if (wasDevelopable !== (road.developable !== false)) this.rebuildLots();
     this.rebuildAccessibilityEntrances();
     return { ok: true, cost: upgradeCost, reason: `${road.name ?? "Road"} profile updated` };
   }

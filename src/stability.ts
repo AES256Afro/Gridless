@@ -476,6 +476,7 @@ function integrityFailures(world: World) {
   for (const road of world.roads) {
     const pressure = world.roadTrafficPressure(road);
     const profile = world.roadProfile(road);
+    const structure = world.roadStructure(road);
     if (!Number.isFinite(pressure) || pressure < 0 || pressure > 1) {
       failures.push(`Road ${road.id} has invalid planning-view traffic pressure.`);
     }
@@ -492,6 +493,9 @@ function integrityFailures(world: World) {
       || profile.sidewalkWidth > 6
       || !Number.isFinite(world.roadCapacity(road))
       || world.roadCapacity(road) < 90
+      || (structure.structure === "surface" && structure.elevationMeters !== 0)
+      || (structure.structure === "bridge" && (structure.elevationMeters < 4 || structure.elevationMeters > 16))
+      || (structure.structure === "tunnel" && (structure.elevationMeters > -4 || structure.elevationMeters < -16))
     ) {
       failures.push(`Road ${road.id} has an invalid persistent road profile.`);
     }
