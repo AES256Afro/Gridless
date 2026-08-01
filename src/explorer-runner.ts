@@ -129,6 +129,11 @@ const rainyStreetSound = soundscapeProfile(
   .65
 );
 const nightStreetSound = soundscapeProfile("explore", clearWeather, 2, .65);
+const eventStreetSound = soundscapeProfile("explore", clearWeather, 12, .65, { crowd: .9 });
+const drivingStreetSound = soundscapeProfile("explore", clearWeather, 12, .65, { vehicle: .75 });
+const transitStreetSound = soundscapeProfile("explore", clearWeather, 12, .65, { transit: .8 });
+const emergencyStreetSound = soundscapeProfile("explore", clearWeather, 12, .65, { emergency: 1 });
+const shelteredEmergencySound = soundscapeProfile("home", clearWeather, 12, .65, { emergency: 1 });
 check(
   builderSound.label === "Regional"
     && streetSound.label === "Street"
@@ -141,6 +146,17 @@ check(
   rainyStreetSound.rain > streetSound.rain
     && nightStreetSound.urban < streetSound.urban,
   "Soundscape profiles did not respond to weather and time of day."
+);
+check(
+  eventStreetSound.focus === "Event crowd"
+    && eventStreetSound.crowd > streetSound.crowd
+    && drivingStreetSound.focus === "Vehicle"
+    && drivingStreetSound.vehicle > streetSound.vehicle
+    && transitStreetSound.focus === "Transit"
+    && transitStreetSound.transit > streetSound.transit
+    && emergencyStreetSound.focus === "Emergency response"
+    && emergencyStreetSound.emergency > shelteredEmergencySound.emergency,
+  "Localized soundscape cues did not distinguish events, vehicles, transit, emergency response, and sheltered interiors."
 );
 const blankCityAdvice = cityAdvisorActions({
   roads: 0,
@@ -3306,6 +3322,8 @@ check(garageMove.blocked, "Garage collision did not block the player.");
 
 console.log("Gridless Explorer movement checks: PASS");
 console.log(JSON.stringify({
+  localizedSoundCue: emergencyStreetSound.focus,
+  shelteredEmergencyLevel: shelteredEmergencySound.emergency,
   roadSamples: paths[0].points.length,
   roadEndpointSnap: endpointSnap.targetRoadName,
   roadAngleSnap: angleSnap.angleDegrees,

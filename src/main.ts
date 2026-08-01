@@ -810,6 +810,7 @@ let activeTransitVehicle: TransitRide | null = null;
 let photoMode = false;
 let photoHudVisible = true;
 let photoFov = 55;
+let soundscapeSyncAccumulator = 0;
 
 const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x303533, roughness: .94 });
 const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b4aa, roughness: .98 });
@@ -2196,19 +2197,47 @@ function trafficPlanningMaterial(pressure: number) {
 }
 
 function syncSoundscape() {
-  const trafficPressure = world.roads.length
+  const focus = worldRenderFocus();
+  const averageTrafficPressure = world.roads.length
     ? world.roads.reduce((total, road) => total + world.roadTrafficPressure(road), 0) / world.roads.length
     : 0;
+  const nearestRoad = nearestRoadLocation(explorerRoadPaths, focus);
+  const localRoad = nearestRoad ? world.roads.find(road => road.id === nearestRoad.roadId) : undefined;
+  const trafficPressure = mode === "city" || !localRoad
+    ? averageTrafficPressure
+    : world.roadTrafficPressure(localRoad);
+  const sheltered = mode === "home" || Boolean(explorerInteriorHomeId);
+  const eventRange = mode === "city" ? 520 : sheltered ? 180 : 190;
+  const nearbyEvent = closestActiveCityEvent(focus, eventRange);
+  const crowd = nearbyEvent ? 1 - nearbyEvent.distance / eventRange : 0;
+  const transitPositions = [transitVehicleGroup, ...transitFleetGroup.children]
+    .filter(vehicle => vehicle.visible);
+  const transitDistance = transitPositions.length
+    ? Math.min(...transitPositions.map(vehicle => Math.hypot(vehicle.position.x - focus.x, vehicle.position.z - focus.z)))
+    : Number.POSITIVE_INFINITY;
+  const transit = transitRide ? 1 : Math.max(0, 1 - transitDistance / (mode === "city" ? 360 : 75));
+  const emergencyRange = mode === "city" ? 560 : sheltered ? 180 : 160;
+  const emergencyDistance = world.activeIncidents()
+    .map(incident => world.lots.find(lot => lot.id === incident.lotId))
+    .filter((lot): lot is Lot => Boolean(lot))
+    .reduce((nearest, lot) => Math.min(nearest, Math.hypot(lot.center.x - focus.x, lot.center.z - focus.z)), Number.POSITIVE_INFINITY);
+  const emergency = Math.max(0, 1 - emergencyDistance / emergencyRange);
   const profile = soundscapeProfile(
     explorerInteriorHomeId ? "home" : mode,
     world.weather(),
     world.clock.minute / 60,
-    trafficPressure
+    trafficPressure,
+    {
+      crowd,
+      vehicle: explorerDriving ? Math.min(1, Math.abs(explorerVehicleSpeed) * 3.6 / 80) : 0,
+      transit,
+      emergency
+    }
   );
   soundscape.update(profile);
   const button = document.querySelector<HTMLButtonElement>("#sound-toggle");
   if (button) {
-    button.textContent = soundscape.enabled ? `Sound on · ${profile.label}` : "Sound off";
+    button.textContent = soundscape.enabled ? `Sound on · ${profile.label}${profile.focus === "Ambient" ? "" : ` · ${profile.focus}`}` : "Sound off";
     button.setAttribute("aria-pressed", String(soundscape.enabled));
   }
   return profile;
@@ -7798,6 +7827,11 @@ function animate() {
     }
   }
   updateTransitVehicle(dt);
+  soundscapeSyncAccumulator += dt;
+  if (soundscape.enabled && soundscapeSyncAccumulator >= .25) {
+    soundscapeSyncAccumulator = 0;
+    syncSoundscape();
+  }
   if (mode === "explore") {
     if (transitRide) {
       updateExplorerMovementStatus(12);
