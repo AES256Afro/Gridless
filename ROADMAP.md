@@ -38,7 +38,7 @@ Every foundation must remain editable. Their value comes from distinct constrain
 
 ### Home Simulator build order
 
-- **Structure:** room drawing, eight persistent room purposes, selectable plans, persistent floor and wall finishes, and safe room deletion are live; multiple stories, manual doors, windows, roofs, stairs, and foundation choices remain ahead
+- **Structure:** room drawing, up to four persistent floor levels, floor-aware rooms and furnishings, paid floor shells, placeable stair links, Explorer stair navigation, eight room purposes, selectable plans, persistent floor and wall finishes, and safe top-floor removal are live; manual doors, windows, roofs, split levels, and foundation choices remain ahead
 - **Furnishing:** a categorized eight-object catalog, four persistent style swatches, purpose-aware one-click starter sets, priced placement, collision-aware rotation, selling, budget, and functional interactions are live; object variants, per-part recolors, free rotation, snapping choices, and inventories remain ahead
 - **Households:** resident creator, relationships, personalities, skills, needs, schedules, career progression, wages, daily expenses, household funds, and three discretionary purchases are live; deeper career branching, inventories, and recurring preferences remain ahead
 - **Guidance:** prioritized household wants are live for residents, beds, crowding, hygiene, meals, comfort, skill growth, relationship tension, and finances; longer-term aspirations and player-pinned goals remain ahead
@@ -165,6 +165,7 @@ Current vertical slice:
 - Office and service career levels determine daily wages. Every household settles resident living costs, room maintenance, furnishing upkeep, and utility inefficiency once per day into a persistent household balance that stays separate from the build-mode design budget. The last income, expenses, and net result remain inspectable, while serious debt becomes a resident wellbeing pressure.
 - Household funds can buy meal delivery, creative supplies, or wellness care for a selected resident. Each purchase has distinct bounded need and skill effects, remains separate from design funds, records lifetime extra spending plus the latest purchase, participates in Undo and Redo, and refuses unaffordable transactions cleanly.
 - Beds, tables, sofas, plants, desks, bookcases, fridges, and showers have functional simulation roles. Resident placement and poses in Home Simulator follow the active action and its target object.
+- Homes can grow from one to four persistent stories. Each floor owns its rooms and furnishings, floor shells and stairs use the design budget, residents remember their current level, the editor isolates the active floor, and City Explorer uses nearby stairs to move through the same saved structure.
 - Action scoring includes duration, need pressure, context, and a recency penalty so residents respond to their condition without repeating one activity forever.
 - Active household activity, remaining time, completion history, and resulting need changes are visible in Home Simulator, City Explorer, and the City Builder parcel inspector.
 - In-progress actions, targets, partners, timing, and completed-action counts persist through save and reload.
@@ -239,7 +240,7 @@ Current vertical slice:
 - Complete-trip wayfinding reports connected sidewalk distance, ramped-crossing counts, final-entrance usability, and any remaining barrier instead of stopping its analysis at the curb.
 - Home Simulator and the parcel inspector expose the same entrance condition used by street-level routing.
 - City Explorer can enter a furnished home from its actual lot entrance with `F`. A stepped approach or doorway narrower than 0.9m blocks entry until City Builder funds the access upgrade.
-- Entered homes use the persistent Home Simulator floor plan. Exterior openings and doorways between adjacent rooms are generated from that plan.
+- Entered homes use the persistent Home Simulator floor plan. Exterior openings and doorways between adjacent rooms are generated per floor, while saved stair links provide explicit vertical navigation.
 - First-person interior movement stays inside room walls, slides along obstructions, collides with sofas, tables, beds, and plants, and reports the current room.
 - Household members who are home remain visible at their active furniture targets, while the interior panel reports live actions, utility disruptions, and entrance quality.
 - Home Simulator rejects furniture placed outside every room, and the Explorer regression gate verifies entry access, lot transforms, room transitions, wall containment, and furniture collision.

@@ -46,8 +46,12 @@ import {
 } from "./transit";
 import {
   DISTRICT_POLICY_DEFINITIONS,
+  HOME_BUILD_COSTS,
+  MAX_HOME_FLOORS,
   ROAD_PROFILE_PRESETS,
   World,
+  homeEntityFloor,
+  homeFloorView,
   roadConstructionCost,
   roadWidthForProfile,
   type AccessibilityEntrance,
@@ -841,6 +845,85 @@ finalRoomWorld.homes = [finalRoomHome];
 check(
   !finalRoomWorld.removeRoom(finalRoomHome.id, finalRoomHome.rooms[0].id),
   "Home Simulator allowed deletion of the final room."
+);
+const multiFloorWorld = new World();
+const multiFloorHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "multi-floor-home",
+  designSpent: 2_000,
+  stairs: []
+};
+multiFloorWorld.homes = [multiFloorHome];
+const beforeFloorShell = multiFloorWorld.homeRemainingBudget(multiFloorHome);
+check(
+  multiFloorWorld.addHomeFloor(multiFloorHome.id)
+    && multiFloorHome.floors === 2
+    && multiFloorWorld.homeRemainingBudget(multiFloorHome) === beforeFloorShell - HOME_BUILD_COSTS.floorShell,
+  "A second floor shell was not added at its exact persistent cost."
+);
+check(
+  multiFloorWorld.addRoom(multiFloorHome.id, {
+    kind: "Bedroom",
+    x: 0,
+    z: 0,
+    width: 8,
+    depth: 6,
+    floor: 1
+  }),
+  "Home Simulator rejected a valid upper-floor room."
+);
+check(
+  multiFloorWorld.addFurniture(multiFloorHome.id, "plant", -2, 1, 1)
+    && multiFloorWorld.addFurniture(multiFloorHome.id, "plant", -2, 1, 0),
+  "Floor-aware furnishing incorrectly treated matching coordinates on separate floors as overlap."
+);
+check(
+  multiFloorWorld.addStairs(multiFloorHome.id, 0, 2, 0)
+    && !multiFloorWorld.addStairs(multiFloorHome.id, 1, 2, 0)
+    && !multiFloorWorld.addStairs(multiFloorHome.id, 0, 2, 0),
+  "Stairs did not enforce one valid adjacent-floor connection."
+);
+const groundFloorView = homeFloorView(multiFloorHome, 0);
+const upperFloorView = homeFloorView(multiFloorHome, 1);
+check(
+  groundFloorView.rooms.length === 2
+    && upperFloorView.rooms.length === 1
+    && groundFloorView.furniture.every(item => homeEntityFloor(item) === 0)
+    && upperFloorView.furniture.every(item => homeEntityFloor(item) === 1)
+    && groundFloorView.stairs?.length === 1
+    && upperFloorView.stairs?.length === 1,
+  "Per-floor home views leaked rooms, furnishings, or stair links between levels."
+);
+const restoredMultiFloorWorld = new World();
+check(
+  restoredMultiFloorWorld.restore(multiFloorWorld.serialize())
+    && restoredMultiFloorWorld.homes[0].floors === 2
+    && restoredMultiFloorWorld.homes[0].stairs?.length === 1
+    && restoredMultiFloorWorld.homes[0].rooms.some(room => homeEntityFloor(room) === 1),
+  "Multi-floor home structure did not survive save and restore."
+);
+const legacyFloorSnapshot = JSON.parse(multiFloorWorld.serialize()) as ReturnType<World["snapshot"]>;
+legacyFloorSnapshot.homes[0].floors = undefined as unknown as number;
+legacyFloorSnapshot.homes[0].rooms.forEach(room => { delete room.floor; });
+legacyFloorSnapshot.homes[0].furniture.forEach(item => { delete item.floor; });
+delete legacyFloorSnapshot.homes[0].stairs;
+const legacyFloorWorld = new World();
+check(
+  legacyFloorWorld.restore(JSON.stringify(legacyFloorSnapshot))
+    && legacyFloorWorld.homes[0].floors === 1
+    && legacyFloorWorld.homes[0].rooms.every(room => homeEntityFloor(room) === 0)
+    && legacyFloorWorld.homes[0].furniture.every(item => homeEntityFloor(item) === 0),
+  "Legacy single-floor homes did not migrate safely to Floor 1."
+);
+check(
+  !Array.from({ length: MAX_HOME_FLOORS }, () => multiFloorWorld.addHomeFloor(multiFloorHome.id)).every(Boolean)
+    && multiFloorHome.floors === MAX_HOME_FLOORS,
+  "Home floor construction did not enforce the supported vertical limit."
+);
+check(
+  multiFloorWorld.removeTopHomeFloor(multiFloorHome.id)
+    && multiFloorHome.floors === MAX_HOME_FLOORS - 1,
+  "Top-floor removal did not reduce the persistent home structure."
 );
 furniturePlacementWorld.homes[0].designSpent = furniturePlacementWorld.homes[0].designBudget - 100;
 check(
@@ -2184,6 +2267,9 @@ console.log(JSON.stringify({
   interiorFurnitureCollision: furnitureMove.blocked,
   interiorWallCollision: wallMove.blocked,
   interiorAccessGate: entryStatus.allowed,
+  multiFloorHomeFloors: restoredMultiFloorWorld.homes[0].floors,
+  multiFloorStairs: restoredMultiFloorWorld.homes[0].stairs?.length,
+  legacyHomeFloorMigration: legacyFloorWorld.homes[0].floors,
   directResidentAction: directControlHome.residents[0].lastActionKind,
   directedActionsCompleted: directControlHome.residents[0].completedActions,
   controlledResidentEnergy: directControlHome.residents[0].energy,

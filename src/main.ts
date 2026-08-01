@@ -12,10 +12,13 @@ import {
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
   HOME_ROOM_KINDS,
+  MAX_HOME_FLOORS,
   ROAD_PROFILE_PRESETS,
   RESIDENT_PERSONALITY_AXES,
   RESIDENT_PURCHASES,
   normalizeRoadProfile,
+  homeEntityFloor,
+  homeFloorView,
   roadCapacityForProfile,
   roadConstructionCost,
   roadWidthForProfile,
@@ -104,7 +107,7 @@ import {
 
 type Mode = "city" | "explore" | "home";
 type HomeFurnitureKind = Home["furniture"][number]["kind"];
-type HomeTool = "select" | "room" | HomeFurnitureKind;
+type HomeTool = "select" | "room" | "stairs" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
 type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value";
@@ -387,6 +390,10 @@ app.innerHTML = `
     <div class="home-tools" aria-label="Home building tools">
       <button data-home-tool="select" class="active">Inspect</button>
       <button data-home-tool="room">Draw room</button>
+      <select id="home-floor" aria-label="Active home floor"><option value="0">Floor 1</option></select>
+      <button id="add-home-floor" type="button">+ Floor · $12k</button>
+      <button id="remove-home-floor" type="button" disabled>Remove top</button>
+      <button data-home-tool="stairs">Place stairs · $4.8k</button>
       <div class="tool-divider"></div>
       <select id="home-catalog" aria-label="Home object catalog">
         <optgroup label="Living">
@@ -656,6 +663,8 @@ let cityView: CityView = "normal";
 let roadTargetKey = "";
 let districtOptionKey = "";
 let homeTool: HomeTool = "select";
+let homeFloor = 0;
+let explorerInteriorFloor = 0;
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
 let selectedRoomId: string | null = null;
@@ -1513,6 +1522,7 @@ function toggleHomeInterior() {
     const fallback = entrance?.position ?? activeInterior.lot.center;
     const exit = explorerExteriorReturn?.position ?? findExplorerSpawn(fallback);
     explorerInteriorHomeId = null;
+    explorerInteriorFloor = 0;
     pendingConversationPartnerId = null;
     selectedLot = activeInterior.lot;
     world.setControlledResident();
@@ -1559,11 +1569,6 @@ function toggleHomeInterior() {
     return;
   }
   const preferred = worldToLotLocal(nearby.entrance.position, lot);
-  const entry = interiorEntryPoint(home, preferred);
-  if (!entry) {
-    notice("The furnished floor plan has no clear place to enter");
-    return;
-  }
   explorerExteriorReturn = {
     position: { x: camera.position.x, z: camera.position.z },
     yaw
@@ -1571,21 +1576,30 @@ function toggleHomeInterior() {
   explorerInteriorHomeId = home.id;
   pendingConversationPartnerId = null;
   selectedLot = lot;
-  const selectedResident = controlledResidentId
+  let selectedResident = controlledResidentId
     ? home.residents.find(resident => resident.id === controlledResidentId)
     : undefined;
   if (!selectedResident || world.residentStatus(selectedResident) !== "Home") {
     controlledResidentId = null;
+    selectedResident = undefined;
+  }
+  explorerInteriorFloor = selectedResident ? Math.max(0, Math.min(home.floors - 1, Math.round(selectedResident.homeFloor ?? 0))) : 0;
+  const floorHome = homeFloorView(home, explorerInteriorFloor);
+  const entry = interiorEntryPoint(floorHome, explorerInteriorFloor === 0 ? preferred : undefined);
+  if (!entry) {
+    explorerInteriorHomeId = null;
+    notice(`Floor ${explorerInteriorFloor + 1} has no clear place to enter`);
+    return;
   }
   world.setControlledResident(controlledResidentId ?? undefined);
   clearAccessibleRoute();
   setInteriorSceneVisibility(true);
   renderHome();
   const controlledPosition = selectedResident && controlledResidentId
-    ? residentInteriorPosition(home, selectedResident, home.residents.indexOf(selectedResident))
+    ? residentInteriorPosition(floorHome, selectedResident, home.residents.indexOf(selectedResident))
     : entry;
   if (selectedResident && controlledResidentId) {
-    world.setResidentHomePosition(home.id, selectedResident.id, controlledPosition);
+    world.setResidentHomePosition(home.id, selectedResident.id, controlledPosition, explorerInteriorFloor);
   }
   const worldEntry = lotLocalToWorld(controlledPosition, lot);
   camera.position.set(worldEntry.x, 2.02, worldEntry.z);
@@ -1888,11 +1902,12 @@ function updateExplorerMovementStatus(speed: number) {
   if (mode !== "explore") return;
   const interior = currentExplorerInterior();
   if (interior) {
+    const floorHome = homeFloorView(interior.home, explorerInteriorFloor);
     const local = worldToLotLocal(
       { x: camera.position.x, z: camera.position.z },
       interior.lot
     );
-    const room = interiorRoomAt(interior.home, local);
+    const room = interiorRoomAt(floorHome, local);
     const pace = explorerBlocked && speed < .4
       ? "Blocked"
       : speed < .35
@@ -1901,8 +1916,8 @@ function updateExplorerMovementStatus(speed: number) {
           ? "Walking"
           : "Moving quickly";
     const controlled = controlledInteriorResident();
-    document.querySelector("#explorer-location")!.textContent = controlled?.resident.name ?? interior.home.name;
-    document.querySelector("#explorer-surface")!.textContent = room?.kind ?? "Interior doorway";
+    document.querySelector("#explorer-location")!.textContent = `${controlled?.resident.name ?? interior.home.name} · Floor ${explorerInteriorFloor + 1}`;
+    document.querySelector("#explorer-surface")!.textContent = room?.kind ?? `Floor ${explorerInteriorFloor + 1} landing`;
     document.querySelector("#explorer-pace")!.textContent = pace;
     updateInteriorInteractionPrompt();
     return;
@@ -2300,7 +2315,8 @@ function renderWorld() {
     }
     if (lot.zone === "unassigned") continue;
     const seed = hash(lot.id);
-    const fullHeight = lot.homeId ? 7 : zoneBuildingHeight(lot.zone, seed);
+    const lotHome = lot.homeId ? world.homes.find(home => home.id === lot.homeId) : undefined;
+    const fullHeight = lotHome ? Math.max(3.6, lotHome.floors * 3.2 + .4) : zoneBuildingHeight(lot.zone, seed);
     const progress = world.constructionProgress(lot);
     const height = fullHeight * (.12 + progress * .88);
     if (mode === "home" && lot.id === selectedLot?.id) continue;
@@ -3306,7 +3322,8 @@ function renderDraft() {
     const kind = movingItem?.kind ?? (isHomeFurnitureKind(homeTool) ? homeTool : null);
     if (home && kind) {
       const rotation = movingItem?.rotation ?? 0;
-      const valid = world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, rotation, movingItem?.id);
+      const activeFloor = movingItem ? homeEntityFloor(movingItem) : homeFloor;
+      const valid = world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, rotation, movingItem?.id, activeFloor);
       const size = HOME_FURNITURE_SIZE[kind];
       const footprint = new THREE.Mesh(
         new THREE.BoxGeometry(size.width, .06, size.depth),
@@ -3320,6 +3337,18 @@ function renderDraft() {
       const worldPosition = localToWorld(homePreviewPoint, selectedLot);
       footprint.position.set(worldPosition.x, .42, worldPosition.z);
       footprint.rotation.y = selectedLot.rotation + rotation;
+      previewGroup.add(footprint);
+    } else if (home && homeTool === "stairs") {
+      const valid = homeFloor < home.floors - 1
+        && homeFloorView(home, homeFloor).rooms.some(room => Math.abs(homePreviewPoint!.x - room.x) <= room.width / 2 - 1.1 && Math.abs(homePreviewPoint!.z - room.z) <= room.depth / 2 - 2.1)
+        && homeFloorView(home, homeFloor + 1).rooms.some(room => Math.abs(homePreviewPoint!.x - room.x) <= room.width / 2 - 1.1 && Math.abs(homePreviewPoint!.z - room.z) <= room.depth / 2 - 2.1);
+      const footprint = new THREE.Mesh(
+        new THREE.BoxGeometry(2, .08, 4),
+        new THREE.MeshBasicMaterial({ color: valid ? 0x73c68b : 0xd96c5f, transparent: true, opacity: .58, depthWrite: false })
+      );
+      const worldPosition = localToWorld(homePreviewPoint, selectedLot);
+      footprint.position.set(worldPosition.x, .42, worldPosition.z);
+      footprint.rotation.y = selectedLot.rotation;
       previewGroup.add(footprint);
     }
   }
@@ -3582,6 +3611,11 @@ function currentExplorerInterior() {
   return lot ? { home, lot } : null;
 }
 
+function currentExplorerFloorHome() {
+  const interior = currentExplorerInterior();
+  return interior ? homeFloorView(interior.home, explorerInteriorFloor) : null;
+}
+
 function controlledInteriorResident() {
   const interior = currentExplorerInterior();
   if (!interior || !controlledResidentId) return null;
@@ -3647,11 +3681,13 @@ function cycleControlledResident() {
       { x: camera.position.x, z: camera.position.z },
       interior.lot
     );
+    explorerInteriorFloor = Math.max(0, Math.min(interior.home.floors - 1, Math.round(next.homeFloor ?? explorerInteriorFloor)));
+    const floorHome = homeFloorView(interior.home, explorerInteriorFloor);
     const saved = next.homePosition;
-    const controlPosition = saved && isInteriorPositionValid(interior.home, saved)
+    const controlPosition = saved && isInteriorPositionValid(floorHome, saved)
       ? saved
-      : currentLocal;
-    world.setResidentHomePosition(interior.home.id, next.id, controlPosition);
+      : interiorEntryPoint(floorHome, currentLocal) ?? interiorEntryPoint(floorHome) ?? currentLocal;
+    world.setResidentHomePosition(interior.home.id, next.id, controlPosition, explorerInteriorFloor);
     const worldPosition = lotLocalToWorld(controlPosition, interior.lot);
     camera.position.x = worldPosition.x;
     camera.position.z = worldPosition.z;
@@ -3671,7 +3707,7 @@ function nearbyInteriorFurnitureInteraction() {
     { x: camera.position.x, z: camera.position.z },
     controlled.lot
   );
-  return nearestInteriorFurniture(controlled.home, local);
+  return nearestInteriorFurniture(homeFloorView(controlled.home, explorerInteriorFloor), local);
 }
 
 function nearbyInteriorResident() {
@@ -3684,11 +3720,12 @@ function nearbyInteriorResident() {
   return controlled.home.residents
     .map((resident, index) => ({
       resident,
-      position: residentInteriorPosition(controlled.home, resident, index)
+      position: residentInteriorPosition(homeFloorView(controlled.home, explorerInteriorFloor), resident, index)
     }))
     .filter(candidate =>
       candidate.resident.id !== controlled.resident.id
       && world.residentStatus(candidate.resident) === "Home"
+      && Math.max(0, Math.round(candidate.resident.homeFloor ?? 0)) === explorerInteriorFloor
     )
     .map(candidate => ({
       ...candidate,
@@ -3698,7 +3735,46 @@ function nearbyInteriorResident() {
     .sort((first, second) => first.distance - second.distance)[0] ?? null;
 }
 
+function nearbyInteriorStair() {
+  const interior = currentExplorerInterior();
+  if (!interior) return null;
+  const local = worldToLotLocal({ x: camera.position.x, z: camera.position.z }, interior.lot);
+  return (interior.home.stairs ?? [])
+    .filter(stair => stair.fromFloor === explorerInteriorFloor || stair.toFloor === explorerInteriorFloor)
+    .map(stair => ({ stair, distance: Math.hypot(stair.x - local.x, stair.z - local.z) }))
+    .filter(candidate => candidate.distance <= 2.8)
+    .sort((first, second) => first.distance - second.distance)[0] ?? null;
+}
+
+function useNearbyInteriorStair() {
+  const interior = currentExplorerInterior();
+  const nearby = nearbyInteriorStair();
+  if (!interior || !nearby) return false;
+  const targetFloor = nearby.stair.fromFloor === explorerInteriorFloor ? nearby.stair.toFloor : nearby.stair.fromFloor;
+  const floorHome = homeFloorView(interior.home, targetFloor);
+  const target = isInteriorPositionValid(floorHome, nearby.stair, .2)
+    ? { x: nearby.stair.x, z: nearby.stair.z }
+    : interiorEntryPoint(floorHome, nearby.stair);
+  if (!target) {
+    notice(`Floor ${targetFloor + 1} has no clear landing`);
+    return true;
+  }
+  explorerInteriorFloor = targetFloor;
+  const worldTarget = lotLocalToWorld(target, interior.lot);
+  camera.position.x = worldTarget.x;
+  camera.position.z = worldTarget.z;
+  const controlled = controlledInteriorResident();
+  if (controlled) world.setResidentHomePosition(interior.home.id, controlled.resident.id, target, targetFloor);
+  explorerVelocity.set(0, 0, 0);
+  renderHome();
+  updateExplorerContext();
+  updateExplorerMovementStatus(0);
+  notice(`Moved to Floor ${targetFloor + 1}`);
+  return true;
+}
+
 function useNearbyInteriorInteraction() {
+  if (useNearbyInteriorStair()) return;
   const controlled = controlledInteriorResident();
   if (!controlled) {
     notice("Press C to choose a resident first");
@@ -3781,6 +3857,12 @@ function updateInteriorInteractionPrompt() {
   }
   prompt.classList.add("visible");
   prompt.classList.toggle("conversation-menu", Boolean(pendingConversationPartnerId));
+  const nearbyStair = nearbyInteriorStair();
+  if (nearbyStair && !pendingConversationPartnerId) {
+    const targetFloor = nearbyStair.stair.fromFloor === explorerInteriorFloor ? nearbyStair.stair.toFloor : nearbyStair.stair.fromFloor;
+    prompt.innerHTML = `<kbd>E</kbd><span>Take stairs to Floor ${targetFloor + 1}<small>Persistent vertical navigation</small></span><kbd>F</kbd><span>Exit home</span>`;
+    return;
+  }
   const controlled = controlledInteriorResident();
   if (!controlled) {
     prompt.innerHTML = "<kbd>C</kbd><span>Choose a resident to control</span>";
@@ -3876,14 +3958,16 @@ function renderHome() {
     if (mode === "home") updateHomeBuildControls(null);
     return;
   }
-  if (selectedFurnitureId && !home.furniture.some(item => item.id === selectedFurnitureId)) {
+  const activeFloor = mode === "home" ? homeFloor : explorerInteriorFloor;
+  const floorHome = homeFloorView(home, activeFloor);
+  if (selectedFurnitureId && !floorHome.furniture.some(item => item.id === selectedFurnitureId)) {
     selectedFurnitureId = null;
   }
-  if (selectedRoomId && !home.rooms.some(room => room.id === selectedRoomId)) {
+  if (selectedRoomId && !floorHome.rooms.some(room => room.id === selectedRoomId)) {
     selectedRoomId = null;
   }
   lastHomeActionSignature = home.residents.map(resident =>
-    `${resident.id}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
+    `${resident.id}:${resident.homeFloor ?? 0}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
   ).join("|");
   homeGroup.position.set(lot.center.x, .2, lot.center.z);
   homeGroup.rotation.y = lot.rotation;
@@ -3900,10 +3984,10 @@ function renderHome() {
   const entrance = world.accessibilityEntrances.find(
     item => item.targetKind === "lot" && item.targetId === lot.id
   );
-  const exteriorDoorway = entrance
-    ? interiorExteriorDoorway(home, worldToLotLocal(entrance.position, lot))
+  const exteriorDoorway = entrance && activeFloor === 0
+    ? interiorExteriorDoorway(floorHome, worldToLotLocal(entrance.position, lot))
     : undefined;
-  for (const room of home.rooms) {
+  for (const room of floorHome.rooms) {
     const floorFinish = room.floorFinish ?? "oak";
     const wallFinish = room.wallFinish ?? "warm-white";
     const selected = mode === "home" && room.id === selectedRoomId;
@@ -3935,12 +4019,14 @@ function renderHome() {
       light.position.set(room.x, 2.55, room.z);
       homeGroup.add(light);
     }
-    addHomeRoomWalls(home, room, exteriorDoorway, homeWallColors[wallFinish]);
+    addHomeRoomWalls(floorHome, room, exteriorDoorway, homeWallColors[wallFinish]);
   }
 
-  for (const item of home.furniture) homeGroup.add(createFurniture(item));
+  for (const item of floorHome.furniture) homeGroup.add(createFurniture(item));
+  for (const stair of floorHome.stairs ?? []) homeGroup.add(createHomeStairs(stair, activeFloor));
   home.residents.forEach((resident, index) => {
     if (world.residentStatus(resident) !== "Home") return;
+    if (Math.max(0, Math.round(resident.homeFloor ?? 0)) !== activeFloor) return;
     if (explorerInterior && resident.id === controlledResidentId) return;
     const person = new THREE.Group();
     const action = world.activeResidentAction(resident);
@@ -3979,7 +4065,7 @@ function renderHome() {
         person.add(thought);
       }
     }
-    const position = residentInteriorPosition(home, resident, index);
+    const position = residentInteriorPosition(floorHome, resident, index);
     person.position.set(position.x, .2, position.z);
     homeGroup.add(person);
   });
@@ -3988,6 +4074,30 @@ function renderHome() {
     updateRoomEditor(home);
     updateHouseholdSummary(home);
   }
+}
+
+function createHomeStairs(stair: NonNullable<Home["stairs"]>[number], floor: number) {
+  const group = new THREE.Group();
+  group.userData.stairId = stair.id;
+  group.position.set(stair.x, .22, stair.z);
+  group.rotation.y = stair.rotation;
+  const upward = floor === stair.fromFloor;
+  const wood = new THREE.MeshStandardMaterial({ color: 0x9f7d55, roughness: .78 });
+  const rail = new THREE.MeshStandardMaterial({ color: 0x3f4943, metalness: .18, roughness: .58 });
+  for (let step = 0; step < 10; step += 1) {
+    const tread = new THREE.Mesh(new THREE.BoxGeometry(1.8, .18, .42), wood);
+    const progression = upward ? step : 9 - step;
+    tread.position.set(0, progression * .22, -1.8 + step * .4);
+    tread.castShadow = tread.receiveShadow = true;
+    group.add(tread);
+  }
+  for (const side of [-.98, .98]) {
+    const handrail = new THREE.Mesh(new THREE.BoxGeometry(.07, .07, 4.4), rail);
+    handrail.position.set(side, 1.45, 0);
+    handrail.rotation.x = upward ? -.47 : .47;
+    group.add(handrail);
+  }
+  return group;
 }
 
 function makeHomeLabel(text: string) {
@@ -4359,6 +4469,16 @@ function updateHomeBuildControls(home: Home | null) {
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
+  const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
+  const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
+  const removeFloor = document.querySelector<HTMLButtonElement>("#remove-home-floor")!;
+  floorSelect.replaceChildren(...Array.from({ length: home?.floors ?? 1 }, (_, floor) => new Option(`Floor ${floor + 1}`, String(floor))));
+  if (home) homeFloor = Math.max(0, Math.min(home.floors - 1, homeFloor));
+  floorSelect.value = String(homeFloor);
+  floorSelect.disabled = !home;
+  addFloor.disabled = !home || home.floors >= MAX_HOME_FLOORS || world.homeRemainingBudget(home) < HOME_BUILD_COSTS.floorShell;
+  addFloor.textContent = home && home.floors >= MAX_HOME_FLOORS ? `Max ${MAX_HOME_FLOORS} floors` : "+ Floor · $12k";
+  removeFloor.disabled = !home || home.floors <= 1;
   move.disabled = !selected;
   rotate.disabled = !selected;
   style.disabled = !selected;
@@ -4376,7 +4496,7 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Sell ${selected.kind} · ${formatHomeCurrency(HOME_BUILD_COSTS[selected.kind] * .5)}`
     : "Sell";
   document.querySelector("#home-budget")!.textContent = home
-    ? `${formatHomeCurrency(world.homeRemainingBudget(home))} left · ${formatHomeCurrency(home.designBudget)} budget`
+    ? `Floor ${homeFloor + 1} of ${home.floors} · ${formatHomeCurrency(world.homeRemainingBudget(home))} left`
     : "Design budget unavailable";
 }
 
@@ -4394,8 +4514,9 @@ function updateRoomEditor(home: Home | null) {
   document.querySelector<HTMLSelectElement>("#room-floor-finish")!.value = room.floorFinish ?? "oak";
   document.querySelector<HTMLSelectElement>("#room-wall-finish")!.value = room.wallFinish ?? "warm-white";
   const deleteButton = document.querySelector<HTMLButtonElement>("#delete-room")!;
-  deleteButton.disabled = home.rooms.length <= 1;
-  deleteButton.textContent = home.rooms.length <= 1 ? "Keep one room" : "Delete room · 25% refund";
+  const floorRoomCount = home.rooms.filter(candidate => homeEntityFloor(candidate) === homeEntityFloor(room)).length;
+  deleteButton.disabled = floorRoomCount <= 1;
+  deleteButton.textContent = floorRoomCount <= 1 ? "Keep one room on floor" : "Delete room · 25% refund";
 }
 
 function updateHouseholdSummary(home: Home) {
@@ -4424,7 +4545,7 @@ function updateHouseholdSummary(home: Home) {
       ? ` Right now, ${activeHouseholdActions.join(" and ")}.`
       : "";
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -4442,6 +4563,7 @@ function updateHouseholdSummary(home: Home) {
     const homeFunctionality = world.homeFunctionality(home);
     details.innerHTML = `
       <div class="home-wellbeing-overview">
+        <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Utilities</span><strong>${utility}%</strong></div>
         <div><span>Neighborhood</span><strong>${neighborhood}%</strong></div>
@@ -4840,9 +4962,10 @@ function setMode(next: Mode) {
     }
     selectedLot = lot;
     const home = world.ensureHome(lot);
+    homeFloor = Math.max(0, Math.min(home.floors - 1, homeFloor));
     camera.position.set(lot.center.x + 24, 22, lot.center.z + 28);
     orbit.target.set(lot.center.x, 0, lot.center.z);
-    setPanel("HOME SIMULATOR", home.name, "Draw connected rooms, furnish them, and create the household that will live here. Everything remains attached to this city lot.", "Tool bar|Choose build item;Click|Place or draw;⌘ Z|Undo");
+    setPanel("HOME SIMULATOR", home.name, "Draw rooms floor by floor, connect stories with stairs, furnish them, and create the household that will live here. Everything remains attached to this city lot.", "Floor menu|Change story;Tool bar|Choose build item;Click|Place or draw;⌘ Z|Undo");
     renderWorld();
   }
 }
@@ -4851,11 +4974,12 @@ function updateExplorerContext() {
   if (mode !== "explore") return;
   const interior = currentExplorerInterior();
   if (interior) {
+    const floorHome = homeFloorView(interior.home, explorerInteriorFloor);
     const local = worldToLotLocal(
       { x: camera.position.x, z: camera.position.z },
       interior.lot
     );
-    const room = interiorRoomAt(interior.home, local);
+    const room = interiorRoomAt(floorHome, local);
     const residentsAtHome = interior.home.residents.filter(
       resident => world.residentStatus(resident) === "Home"
     );
@@ -4896,10 +5020,10 @@ function updateExplorerContext() {
     document.querySelector("#panel-kicker")!.textContent = "HOME INTERIOR";
     document.querySelector("#panel-title")!.textContent =
       controlled
-        ? `${controlled.resident.name} · ${room?.kind ?? "Doorway"}`
-        : `${interior.home.name} · ${room?.kind ?? "Doorway"}`;
+        ? `${controlled.resident.name} · Floor ${explorerInteriorFloor + 1} · ${room?.kind ?? "Landing"}`
+        : `${interior.home.name} · Floor ${explorerInteriorFloor + 1} · ${room?.kind ?? "Landing"}`;
     document.querySelector("#panel-copy")!.textContent =
-      `${interior.home.rooms.length} rooms and ${interior.home.furniture.length} furnishings are part of the persistent Home Simulator plan.${controlCopy}${activityCopy}${outageCopy} ${entrance ? entranceAccessLabel(entrance) : "Entrance not connected"}. Press F to return to the street.`;
+      `${interior.home.floors} floor${interior.home.floors === 1 ? "" : "s"}, ${interior.home.rooms.length} rooms, and ${interior.home.furniture.length} furnishings are part of the persistent Home Simulator plan.${controlCopy}${activityCopy}${outageCopy} ${entrance ? entranceAccessLabel(entrance) : "Entrance not connected"}. Press F to return to the street.`;
     return;
   }
   if (transitRide) {
@@ -5485,7 +5609,8 @@ renderer.domElement.addEventListener("pointerdown", event => {
           x: (homeDraft.x + point.x) / 2,
           z: (homeDraft.z + point.z) / 2,
           width: Math.abs(point.x - homeDraft.x),
-          depth: Math.abs(point.z - homeDraft.z)
+          depth: Math.abs(point.z - homeDraft.z),
+          floor: homeFloor
         };
         const roomCost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
         if (world.addRoom(home.id, room)) notice(`${room.kind} built for ${formatHomeCurrency(roomCost)}`);
@@ -5495,8 +5620,17 @@ renderer.domElement.addEventListener("pointerdown", event => {
         renderDraft();
         renderWorld();
       }
+    } else if (homeTool === "stairs") {
+      if (world.addStairs(home.id, homeFloor, point.x, point.z)) {
+        renderWorld();
+        notice(`Stairs connect Floor ${homeFloor + 1} to Floor ${homeFloor + 2}`);
+      } else if (homeFloor >= home.floors - 1) {
+        notice("Add an upper floor before placing stairs");
+      } else {
+        notice("Stairs need overlapping rooms on this floor and the floor above");
+      }
     } else {
-      if (world.addFurniture(home.id, homeTool, point.x, point.z)) {
+      if (world.addFurniture(home.id, homeTool, point.x, point.z, homeFloor)) {
         renderWorld();
         notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed`);
       } else {
@@ -6422,6 +6556,8 @@ function activateHomeTool(next: HomeTool) {
   document.querySelector("#place-catalog-item")!.classList.toggle("active", isHomeFurnitureKind(homeTool));
   notice(homeTool === "room"
     ? "Click two corners to draw a room"
+    : homeTool === "stairs"
+      ? `Place stairs in overlapping rooms on Floor ${homeFloor + 1} and Floor ${homeFloor + 2}`
     : homeTool === "select"
       ? "Inspect mode"
       : `Click inside the home to place a ${homeFurnitureLabel(homeTool)}`);
@@ -6430,6 +6566,44 @@ function activateHomeTool(next: HomeTool) {
 document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(button => button.addEventListener("click", () => {
   activateHomeTool(button.dataset.homeTool as HomeTool);
 }));
+document.querySelector("#home-floor")!.addEventListener("change", event => {
+  const home = currentHome();
+  if (!home) return;
+  homeFloor = Math.max(0, Math.min(home.floors - 1, Number((event.currentTarget as HTMLSelectElement).value)));
+  selectedFurnitureId = null;
+  selectedRoomId = null;
+  movingFurnitureId = null;
+  homeDraft = null;
+  renderHome();
+  renderDraft();
+  notice(`Editing Floor ${homeFloor + 1} of ${home.floors}`);
+});
+document.querySelector("#add-home-floor")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home || !world.addHomeFloor(home.id)) {
+    notice(home && home.floors >= MAX_HOME_FLOORS
+      ? `Homes support up to ${MAX_HOME_FLOORS} floors`
+      : `${formatHomeCurrency(HOME_BUILD_COSTS.floorShell)} needed for a new floor shell`);
+    return;
+  }
+  homeFloor = home.floors - 1;
+  activateHomeTool("room");
+  renderWorld();
+  notice(`Floor ${homeFloor + 1} added. Draw its first room, then connect stairs below.`);
+});
+document.querySelector("#remove-home-floor")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home || !world.removeTopHomeFloor(home.id)) {
+    notice("A home must keep its ground floor");
+    return;
+  }
+  homeFloor = Math.min(homeFloor, home.floors - 1);
+  selectedFurnitureId = null;
+  selectedRoomId = null;
+  activateHomeTool("select");
+  renderWorld();
+  notice(`Top floor removed. This home now has ${home.floors} floor${home.floors === 1 ? "" : "s"}.`);
+});
 document.querySelector("#home-catalog")!.addEventListener("change", event => {
   const kind = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureKind;
   document.querySelector("#place-catalog-item")!.textContent = `Place ${homeFurnitureLabel(kind)}`;
@@ -6531,7 +6705,7 @@ document.querySelector("#delete-room")!.addEventListener("click", () => {
   const room = home?.rooms.find(item => item.id === selectedRoomId);
   if (!home || !room) return;
   if (!world.removeRoom(home.id, room.id)) {
-    notice("A home must keep at least one room");
+    notice("Each built floor must keep at least one room. Remove the top floor instead.");
     return;
   }
   selectedRoomId = null;
@@ -6755,7 +6929,7 @@ function animate() {
         ? (() => {
             const currentLocal = worldToLotLocal(current, interior.lot);
             const candidateLocal = worldToLotLocal(candidate, interior.lot);
-            const resolved = resolveInteriorMovement(interior.home, currentLocal, candidateLocal);
+            const resolved = resolveInteriorMovement(homeFloorView(interior.home, explorerInteriorFloor), currentLocal, candidateLocal);
             return {
               position: lotLocalToWorld(resolved.position, interior.lot),
               blocked: resolved.blocked
@@ -6774,7 +6948,8 @@ function animate() {
         world.setResidentHomePosition(
           interior.home.id,
           controlled.resident.id,
-          worldToLotLocal(movement.position, interior.lot)
+          worldToLotLocal(movement.position, interior.lot),
+          explorerInteriorFloor
         );
       }
 

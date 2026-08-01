@@ -1,5 +1,6 @@
 import {
   HOME_FURNITURE_SIZE,
+  homeFloorView,
   type AccessibilityEntrance,
   type Home,
   type Lot,
@@ -69,7 +70,7 @@ export function homeEntryStatus(home: Home | undefined, entrance: AccessibilityE
   if (!home) {
     return { allowed: false, reason: "Open this lot in Home Simulator to create an explorable home." };
   }
-  if (!home.rooms.length) {
+  if (!homeFloorView(home, 0).rooms.length) {
     return { allowed: false, reason: "Build at least one room in Home Simulator first." };
   }
   if (!entrance) {
