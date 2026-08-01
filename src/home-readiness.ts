@@ -173,6 +173,22 @@ export function inspectHome(world: World, home: Home): HomeInspection {
   return { score, result, readyRooms, totalRooms: rooms.length, unsafeRooms, corrections, priority, summary };
 }
 
+export function recordCurrentHomeInspection(world: World, home: Home) {
+  const inspection = inspectHome(world, home);
+  const ok = world.recordHomeInspection(home.id, {
+    score: inspection.score,
+    result: inspection.result,
+    readyRooms: inspection.readyRooms,
+    totalRooms: inspection.totalRooms,
+    corrections: inspection.corrections
+  });
+  return {
+    ok,
+    inspection,
+    reason: ok ? `${inspection.result} inspection recorded at ${inspection.score}%.` : "This inspection result is already recorded for the current time."
+  };
+}
+
 function safetyPriority(issue: HomeSafetyIssue): HomeReadinessPriority {
   return {
     kind: "safety",

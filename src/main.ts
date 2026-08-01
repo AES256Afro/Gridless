@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals, recordCurrentHomeInspection } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -524,6 +524,7 @@ app.innerHTML = `
       <button id="pin-home-move-in-goals" type="button" disabled>Track move-in goals</button>
       <button id="begin-home-first-night" type="button" disabled>Begin first night</button>
       <button id="next-room-issue" type="button" disabled>Next room issue</button>
+      <button id="record-home-inspection" type="button" disabled>Record inspection</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
@@ -5741,6 +5742,7 @@ function updateHomeBuildControls(home: Home | null) {
   const pinMoveInGoals = document.querySelector<HTMLButtonElement>("#pin-home-move-in-goals")!;
   const beginFirstNight = document.querySelector<HTMLButtonElement>("#begin-home-first-night")!;
   const nextRoomIssue = document.querySelector<HTMLButtonElement>("#next-room-issue")!;
+  const recordInspection = document.querySelector<HTMLButtonElement>("#record-home-inspection")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
@@ -5908,6 +5910,11 @@ function updateHomeBuildControls(home: Home | null) {
   const roomIssueCount = home?.rooms.filter(room => assessRoomReadiness(world, home, room).status !== "Ready").length ?? 0;
   nextRoomIssue.disabled = !roomIssueCount;
   nextRoomIssue.textContent = roomIssueCount ? `Next room issue · ${roomIssueCount}` : "All rooms ready";
+  const lastInspection = home?.inspections?.at(-1);
+  recordInspection.disabled = !home;
+  recordInspection.textContent = lastInspection
+    ? `Record inspection · last ${lastInspection.result} ${lastInspection.score}%`
+    : "Record inspection";
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -8991,6 +8998,13 @@ document.querySelector("#next-room-issue")!.addEventListener("click", () => {
   homeFloor = homeEntityFloor(next.room);
   renderWorld();
   notice(`${homeRoomLabel(next.room)} · ${next.readiness.status} at ${next.readiness.score}% · ${next.readiness.issues[0]}`);
+});
+document.querySelector("#record-home-inspection")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home) return;
+  const result = recordCurrentHomeInspection(world, home);
+  renderWorld();
+  notice(result.reason);
 });
 function applyRoomName() {
   const home = currentHome();
