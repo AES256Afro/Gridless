@@ -662,17 +662,17 @@ kbd {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 12px;
   background: rgba(9,14,11,.58);
   pointer-events: auto;
   backdrop-filter: blur(7px);
 }
 .resident-creator[hidden] { display: none; }
 .resident-creator form {
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 24px);
   overflow-y: auto;
-  padding: 22px;
+  padding: 18px;
   border: 1px solid rgba(240,217,128,.28);
   border-radius: 18px;
   color: #edf3eb;
@@ -685,7 +685,7 @@ kbd {
   justify-content: space-between;
   gap: 12px;
 }
-.resident-creator header { margin-bottom: 18px; }
+.resident-creator header { margin-bottom: 12px; }
 .resident-creator header span, .resident-profile-preview > span {
   color: #f0d980;
   font-size: 9px;
@@ -707,10 +707,10 @@ kbd {
   outline: none;
 }
 .resident-field input:focus, .resident-field select:focus { border-color: #f0d980; box-shadow: 0 0 0 2px rgba(240,217,128,.13); }
-.resident-field-row { margin-top: 12px; }
-.resident-creator fieldset { padding: 0; border: 0; margin: 18px 0 0; }
+.resident-field-row { margin-top: 8px; }
+.resident-creator fieldset { padding: 0; border: 0; margin: 12px 0 0; }
 .resident-creator legend { margin-bottom: 9px; color: #aebbb1; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.resident-trait-picker { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.resident-trait-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .resident-trait-picker label { position: relative; cursor: pointer; }
 .resident-trait-picker input { position: absolute; opacity: 0; }
 .resident-trait-picker span {
@@ -725,10 +725,32 @@ kbd {
 .resident-trait-picker small { margin-top: 2px; color: #829289; font-size: 10px; }
 .resident-trait-picker input:checked + span { border-color: #f0d980; color: #172019; background: #f0d980; }
 .resident-trait-picker input:checked + span small { color: #526057; }
-.resident-profile-preview { padding: 13px; border-radius: 10px; margin-top: 16px; background: rgba(109,169,200,.1); }
+.resident-personality-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  padding-top: 10px !important;
+  border-top: 1px solid rgba(255,255,255,.08) !important;
+}
+.resident-personality-editor legend { grid-column: 1 / -1; }
+.resident-personality-editor label {
+  display: grid;
+  grid-template-columns: 112px minmax(70px, 1fr) 28px 56px;
+  align-items: center;
+  gap: 9px;
+  color: #d7e1d9;
+  font-size: 10px;
+  font-weight: 700;
+}
+.resident-personality-editor label > span { display: grid; gap: 1px; }
+.resident-personality-editor label small { color: #75877c; font-size: 8px; font-weight: 600; }
+.resident-personality-editor label > small { text-align: right; }
+.resident-personality-editor input { width: 100%; accent-color: #f0d980; }
+.resident-personality-editor output { color: #f0d980; font-size: 10px; text-align: right; }
+.resident-profile-preview { padding: 12px; border-radius: 10px; margin-top: 12px; background: rgba(109,169,200,.1); }
 .resident-profile-preview strong { display: block; margin-top: 4px; font-size: 15px; }
 .resident-profile-preview p { margin: 3px 0 0; color: #aebbb1; font-size: 11px; }
-.resident-creator-actions { justify-content: flex-end; margin-top: 16px; }
+.resident-creator-actions { justify-content: flex-end; margin-top: 10px; }
 .resident-creator-actions button { padding: 10px 14px; }
 .resident-creator-actions .primary { color: #172019; background: #f0d980; }
 
@@ -934,6 +956,36 @@ kbd {
   flex-basis: 100%;
   color: #899a90;
   font-size: 8px;
+}
+.resident-personality {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 7px;
+}
+.resident-personality span {
+  position: relative;
+  overflow: hidden;
+  min-height: 18px;
+  border: 1px solid rgba(109,169,200,.18);
+  border-radius: 5px;
+  background: rgba(109,169,200,.06);
+}
+.resident-personality b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(109,169,200,.24);
+}
+.resident-personality small {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 4px 3px;
+  color: #b9d3df;
+  font-size: 7px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
 }
 .resident-preference {
   margin-top: 6px;
@@ -1499,6 +1551,9 @@ kbd {
 }
 
 @media (max-width: 720px) {
+  .resident-trait-picker { grid-template-columns: repeat(2, 1fr); }
+  .resident-personality-editor { grid-template-columns: 1fr; }
+  .resident-personality-editor label { grid-template-columns: 110px minmax(80px, 1fr) 26px 54px; }
   .stats { top: auto; right: 16px; bottom: 16px; display: flex; flex-direction: column; width: auto; }
   .panel { left: 16px; bottom: 16px; width: 240px; }
   .brand { left: 16px; top: 16px; }

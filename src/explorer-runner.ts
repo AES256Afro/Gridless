@@ -890,7 +890,14 @@ check(
     name: "Morgan Lee",
     age: "adult",
     role: "office",
-    traits: ["creative", "organized"]
+    traits: ["creative", "organized"],
+    personality: {
+      cleanliness: 88,
+      spontaneity: 34,
+      sociability: 62,
+      emotionality: 28,
+      activity: 57
+    }
   }),
   "Resident creator rejected a valid authored profile."
 );
@@ -898,6 +905,8 @@ check(
   residentCreatorHome.residents[0].name === "Morgan Lee"
     && residentCreatorHome.residents[0].role === "office"
     && residentCreatorHome.residents[0].traits.join(",") === "creative,organized"
+    && residentCreatorHome.residents[0].personality?.cleanliness === 88
+    && residentCreatorHome.residents[0].personality?.emotionality === 28
     && residentCreatorHome.name === "Morgan Lee's household",
   "Resident creator did not preserve the authored profile or household name."
 );
@@ -929,6 +938,22 @@ check(
   "Resident creator accepted a profile without exactly two traits."
 );
 check(
+  !residentCreatorWorld.addResident(residentCreatorHome.id, {
+    name: "Invalid Matrix",
+    age: "adult",
+    role: "home",
+    traits: ["active", "creative"],
+    personality: {
+      cleanliness: 50,
+      spontaneity: 50,
+      sociability: 101,
+      emotionality: 50,
+      activity: 50
+    }
+  }),
+  "Resident creator accepted a personality axis outside 0 to 100."
+);
+check(
   residentCreatorWorld.addResident(residentCreatorHome.id, {
     name: "Riley",
     age: "child",
@@ -942,6 +967,46 @@ check(
 check(
   residentCreatorWorld.snapshot().homes[0].residents[0].traits.join(",") === "creative,organized",
   "Authored resident profile was omitted from the world snapshot."
+);
+check(
+  residentCreatorWorld.snapshot().homes[0].residents[0].personality?.cleanliness === 88,
+  "Authored personality matrix was omitted from the world snapshot."
+);
+const personalityPeer = {
+  ...structuredClone(residentCreatorHome.residents[0]),
+  id: "personality-peer",
+  personality: { cleanliness: 82, spontaneity: 39, sociability: 65, emotionality: 33, activity: 53 }
+};
+const personalityOpposite = {
+  ...structuredClone(residentCreatorHome.residents[0]),
+  id: "personality-opposite",
+  personality: { cleanliness: 8, spontaneity: 94, sociability: 4, emotionality: 96, activity: 2 }
+};
+check(
+  residentCreatorWorld.relationshipCompatibility(residentCreatorHome.residents[0], personalityPeer)
+    > residentCreatorWorld.relationshipCompatibility(residentCreatorHome.residents[0], personalityOpposite),
+  "Personality-matrix similarity did not influence resident compatibility."
+);
+check(
+  residentCreatorWorld.residentActionPersonalityInfluence(personalityPeer, "socialize")
+    > residentCreatorWorld.residentActionPersonalityInfluence(personalityOpposite, "socialize"),
+  "Sociability did not influence autonomous social priority."
+);
+check(
+  residentCreatorWorld.residentCareerFit(residentCreatorHome.residents[0])
+    > residentCreatorWorld.residentCareerFit(personalityOpposite),
+  "The personality matrix did not influence career fit."
+);
+const legacyPersonalitySnapshot = residentCreatorWorld.snapshot();
+delete legacyPersonalitySnapshot.homes[0].residents[0].personality;
+const personalityMigrationWorld = new World();
+check(
+  personalityMigrationWorld.restore(JSON.stringify(legacyPersonalitySnapshot))
+    && personalityMigrationWorld.snapshot().homes[0].residents[0].personality !== undefined
+    && Object.values(personalityMigrationWorld.snapshot().homes[0].residents[0].personality!).every(value =>
+      Number.isInteger(value) && value >= 0 && value <= 100
+    ),
+  "A legacy resident did not receive a safe deterministic personality matrix."
 );
 residentCreatorHome.residents[0].careerXp = 38;
 residentCreatorWorld.advanceMinutes(24 * 60, 0);

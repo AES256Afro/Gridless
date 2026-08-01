@@ -11,6 +11,7 @@ import {
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
   HOME_ROOM_KINDS,
+  RESIDENT_PERSONALITY_AXES,
   RESIDENT_PURCHASES,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
@@ -32,6 +33,7 @@ import {
   type Point2,
   type Road,
   type ResidentRole,
+  type ResidentPersonality,
   type ResidentPurchaseKind,
   type ResidentTrait,
   type ServiceKind,
@@ -400,7 +402,15 @@ app.innerHTML = `
             <label><input type="checkbox" value="empathetic"><span><strong>Empathetic</strong><small>Builds bonds easily</small></span></label>
           </div>
         </fieldset>
-        <div class="resident-profile-preview"><span>PROFILE PREVIEW</span><strong id="resident-preview-name">New resident</strong><p id="resident-preview-copy">Adult · Office worker · Choose two traits</p></div>
+        <fieldset class="resident-personality-editor">
+          <legend>Shape their personality matrix</legend>
+          <label><span>Cleanliness<small>Cluttered</small></span><input type="range" min="0" max="100" value="50" data-personality-axis="cleanliness"><output>50</output><small>Orderly</small></label>
+          <label><span>Spontaneity<small>Planned</small></span><input type="range" min="0" max="100" value="50" data-personality-axis="spontaneity"><output>50</output><small>Spontaneous</small></label>
+          <label><span>Sociability<small>Reserved</small></span><input type="range" min="0" max="100" value="50" data-personality-axis="sociability"><output>50</output><small>Social</small></label>
+          <label><span>Emotional intensity<small>Steady</small></span><input type="range" min="0" max="100" value="50" data-personality-axis="emotionality"><output>50</output><small>Intense</small></label>
+          <label><span>Activity<small>Unhurried</small></span><input type="range" min="0" max="100" value="50" data-personality-axis="activity"><output>50</output><small>Energetic</small></label>
+        </fieldset>
+        <div class="resident-profile-preview"><span>PROFILE PREVIEW</span><strong id="resident-preview-name">New resident</strong><p id="resident-preview-copy">Adult · Office worker · Choose two traits</p><p id="resident-preview-personality">Balanced personality matrix</p></div>
         <div class="resident-creator-actions"><button type="button" id="resident-creator-cancel">Cancel</button><button type="submit" class="primary">Add to household</button></div>
       </form>
     </div>
@@ -3917,6 +3927,14 @@ function selectedCreatorTraits() {
     .map(input => input.value as ResidentTrait);
 }
 
+function creatorPersonality(): ResidentPersonality {
+  const values = Object.fromEntries(
+    [...document.querySelectorAll<HTMLInputElement>("[data-personality-axis]")]
+      .map(input => [input.dataset.personalityAxis!, Number(input.value)])
+  ) as ResidentPersonality;
+  return values;
+}
+
 function updateResidentCreatorPreview() {
   const name = (document.querySelector<HTMLInputElement>("#resident-name")!.value.trim() || "New resident").slice(0, 24);
   const age = document.querySelector<HTMLSelectElement>("#resident-age")!.value as "adult" | "child";
@@ -3930,8 +3948,21 @@ function updateResidentCreatorPreview() {
   }
   const role = roleSelect.value as ResidentRole;
   const traits = selectedCreatorTraits();
+  const personality = creatorPersonality();
+  document.querySelectorAll<HTMLInputElement>("[data-personality-axis]").forEach(input => {
+    const output = input.parentElement?.querySelector("output");
+    if (output) output.textContent = input.value;
+  });
   document.querySelector("#resident-preview-name")!.textContent = name;
   document.querySelector("#resident-preview-copy")!.textContent = `${age === "adult" ? "Adult" : "Child"} · ${residentRoleLabel(role)} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
+  const strongest = RESIDENT_PERSONALITY_AXES
+    .map(axis => ({ axis, value: personality[axis], distance: Math.abs(personality[axis] - 50) }))
+    .filter(entry => entry.distance > 0)
+    .sort((first, second) => second.distance - first.distance || first.axis.localeCompare(second.axis))
+    .slice(0, 2);
+  document.querySelector("#resident-preview-personality")!.textContent = strongest[0]?.distance
+    ? strongest.map(entry => `${world.residentPersonalityAxisLabel(entry.axis)} ${entry.value}`).join(" · ")
+    : "Balanced personality matrix";
 }
 
 function openResidentCreator() {
@@ -3950,7 +3981,18 @@ function openResidentCreator() {
   document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input").forEach(input => {
     input.checked = input.value === "outgoing" || input.value === "empathetic";
   });
+  const starterPersonality: ResidentPersonality = {
+    cleanliness: 52,
+    spontaneity: 62,
+    sociability: 82,
+    emotionality: 40,
+    activity: 54
+  };
+  document.querySelectorAll<HTMLInputElement>("[data-personality-axis]").forEach(input => {
+    input.value = String(starterPersonality[input.dataset.personalityAxis as keyof ResidentPersonality]);
+  });
   document.querySelector<HTMLElement>("#resident-creator")!.hidden = false;
+  form.scrollTop = 0;
   pauseForModal();
   updateResidentCreatorPreview();
   document.querySelector<HTMLInputElement>("#resident-name")!.focus();
@@ -4110,6 +4152,8 @@ function updateHouseholdSummary(home: Home) {
           const canControl = status === "Home" && canEnterHome;
           const topSkill = world.residentTopSkill(resident);
           const careerProgress = Math.round(world.residentCareerProgress(resident) * 100);
+          const personality = world.residentPersonality(resident);
+          const careerFit = world.residentCareerFit(resident);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
@@ -4120,9 +4164,12 @@ function updateHouseholdSummary(home: Home) {
                 ${resident.traits.map(trait => `<span>${world.residentTraitLabel(trait)}</span>`).join("")}
                 <small>${world.residentPersonalitySummary(resident)}</small>
               </div>
+              <div class="resident-personality" aria-label="Personality matrix">
+                ${RESIDENT_PERSONALITY_AXES.map(axis => `<span title="${world.residentPersonalityAxisLabel(axis)}"><b style="width:${personality[axis]}%"></b><small>${world.residentPersonalityAxisLabel(axis).slice(0, 3)} ${personality[axis]}</small></span>`).join("")}
+              </div>
               <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
               <div class="resident-growth">
-                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentSkillLabel(topSkill[0])} · skill ${world.residentSkillLevel(resident, topSkill[0])}</small></span>
+                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentSkillLabel(topSkill[0])} · skill ${world.residentSkillLevel(resident, topSkill[0])} · role fit ${careerFit}%</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
                 <em>${resident.role === "home" ? "Home" : `${careerProgress}%`}</em>
               </div>
@@ -6040,6 +6087,7 @@ document.querySelector("#resident-creator")!.addEventListener("click", event => 
 document.querySelector("#resident-name")!.addEventListener("input", updateResidentCreatorPreview);
 document.querySelector("#resident-age")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-role")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelectorAll<HTMLInputElement>("[data-personality-axis]").forEach(input => input.addEventListener("input", updateResidentCreatorPreview));
 document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input").forEach(input => input.addEventListener("change", () => {
   const traits = selectedCreatorTraits();
   if (traits.length > 2) {
@@ -6056,11 +6104,12 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
   const age = document.querySelector<HTMLSelectElement>("#resident-age")!.value as "adult" | "child";
   const role = document.querySelector<HTMLSelectElement>("#resident-role")!.value as ResidentRole;
   const traits = selectedCreatorTraits();
+  const personality = creatorPersonality();
   if (traits.length !== 2) {
     notice("Choose exactly two personality traits");
     return;
   }
-  if (!world.addResident(home.id, { name, age, role, traits })) {
+  if (!world.addResident(home.id, { name, age, role, traits, personality })) {
     notice("Use a unique name with letters, numbers, spaces, apostrophes, periods, or hyphens");
     return;
   }
