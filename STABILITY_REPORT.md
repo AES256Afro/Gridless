@@ -16,7 +16,7 @@ The gate creates a fixed NYC reference city with 296 lots, persistent editable r
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
-The separate Explorer regression gate also constructs and restores the Chicago foundation, validates its 30-route grid and river geometry, excludes expressways, trails, and service alleys from parcel frontage, checks its regional zoning mix, and verifies Chicago-specific climate, transit, parking, and event state. The decade gate remains fixed to NYC so its signature stays directly comparable between milestones.
+The separate Explorer regression gate also constructs and restores the Chicago and Houston foundations. It validates Chicago's 30-route grid and river geometry plus Houston's freeway, frontage-road, bayou, floodplain, and large-parcel contract; excludes non-developable routes from parcel frontage; checks regional zoning mixes; and verifies distinct climate, transit, parking, event, risk, and legacy-terrain state. The decade gate remains fixed to NYC so its signature stays directly comparable between milestones.
 
 ## Result
 
@@ -82,7 +82,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With tax, district-policy, municipal-debt, land-value, persistent road-profile, spatial-chunk, parking, curb, event, transit, entrance, household, personality, life-stage, aspiration, career, lineage, preference, inventory, ownership, relationship, identity, and recovery checks included, the latest complete deterministic gate took about 65 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With tax, district-policy, municipal-debt, land-value, persistent road-profile, spatial-chunk, parking, curb, event, transit, entrance, household, personality, life-stage, aspiration, career, lineage, preference, inventory, ownership, relationship, identity, and recovery checks included, the latest complete deterministic gate took about 63 seconds for both decades on the development machine.
 
 ## Boundary
 

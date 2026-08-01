@@ -1,4 +1,4 @@
-import type { Area, Road, WorldTemplate } from "./world";
+import type { Area, CityEventKind, Road, Season, WorldTemplate } from "./world";
 
 const rotate = (x: number, z: number) => {
   const angle = -.19;
@@ -38,11 +38,18 @@ const regionLine = (
   developable
 });
 
-const regionPolygon = (id: string, name: string, kind: Area["kind"], points: Array<[number, number]>): Area => ({
+const regionPolygon = (
+  id: string,
+  name: string,
+  kind: Area["kind"],
+  points: Array<[number, number]>,
+  floodRisk?: Area["floodRisk"]
+): Area => ({
   id,
   name,
   kind,
-  points: points.map(([x, z]) => ({ x, z }))
+  points: points.map(([x, z]) => ({ x, z })),
+  floodRisk
 });
 
 function nycRoads() {
@@ -211,6 +218,130 @@ export const CHICAGO_TEMPLATE: WorldTemplate = {
   ]
 };
 
+function houstonRoads() {
+  const roads: Road[] = [];
+  const northSouth = [
+    [-420, "Eldridge Parkway"],
+    [-300, "Gessner Road"],
+    [-180, "Hillcroft Avenue"],
+    [-60, "Main Street"],
+    [60, "Fannin Street"],
+    [180, "Lockwood Drive"],
+    [300, "Wayside Drive"],
+    [420, "Federal Road"]
+  ] as const;
+  northSouth.forEach(([x, name], index) => roads.push(regionLine(
+    name === "Main Street" ? "houston-main" : `houston-north-south-${index + 1}`,
+    name,
+    name === "Main Street" ? "avenue" : "street",
+    name === "Main Street" ? 14 : 10,
+    [[x, -470], [x, 470]],
+    name === "Main Street"
+      ? { travelLanes: 4, speedLimitKph: 40, sidewalkWidth: 3.2, bikeLanes: false, busLanes: true, median: true, curbParking: false, streetTrees: true }
+      : undefined
+  )));
+  const eastWest = [
+    [-420, "Almeda Genoa Road"],
+    [-300, "Holcombe Boulevard"],
+    [-180, "Westheimer Road"],
+    [-60, "Richmond Avenue"],
+    [80, "Washington Avenue"],
+    [200, "West 18th Street"],
+    [320, "Tidwell Road"],
+    [440, "Little York Road"]
+  ] as const;
+  eastWest.forEach(([z, name], index) => roads.push(regionLine(
+    `houston-east-west-${index + 1}`,
+    name,
+    name === "Westheimer Road" || name === "Richmond Avenue" ? "avenue" : "street",
+    name === "Westheimer Road" || name === "Richmond Avenue" ? 14 : 10,
+    [[-470, z], [470, z]]
+  )));
+  roads.push(regionLine(
+    "houston-i10",
+    "Interstate 10",
+    "arterial",
+    26,
+    [[-500, 38], [500, 38]],
+    { travelLanes: 8, speedLimitKph: 100, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "houston-i45",
+    "Interstate 45",
+    "arterial",
+    24,
+    [[-285, 500], [-150, 280], [-42, 45], [65, -225], [225, -500]],
+    { travelLanes: 6, speedLimitKph: 100, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "houston-us59",
+    "Interstate 69 and US 59",
+    "arterial",
+    24,
+    [[-500, -315], [-210, -180], [-35, -20], [230, 125], [500, 265]],
+    { travelLanes: 6, speedLimitKph: 90, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "houston-loop-610",
+    "Interstate 610 Loop",
+    "arterial",
+    24,
+    [[-350, -320], [325, -320], [390, -220], [390, 250], [305, 340], [-330, 340], [-395, 245], [-395, -235], [-350, -320]],
+    { travelLanes: 6, speedLimitKph: 90, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  [18, 58].forEach((z, index) => roads.push(regionLine(
+    `houston-i10-frontage-${index + 1}`,
+    index ? "Katy Freeway North Frontage Road" : "Katy Freeway South Frontage Road",
+    "avenue",
+    12,
+    [[-480, z], [480, z]],
+    { travelLanes: 3, speedLimitKph: 50, sidewalkWidth: 2, bikeLanes: false, busLanes: false, median: false, curbParking: false, streetTrees: false }
+  )));
+  roads.push(regionLine(
+    "houston-allen-parkway",
+    "Allen Parkway",
+    "avenue",
+    14,
+    [[-330, 96], [-210, 72], [-80, 92], [45, 68], [170, 94]],
+    { travelLanes: 4, speedLimitKph: 50, sidewalkWidth: 3, bikeLanes: true, busLanes: false, median: true, curbParking: false, streetTrees: true }
+  ));
+  roads.push(regionLine(
+    "houston-brays-trail",
+    "Brays Bayou Greenway",
+    "street",
+    5,
+    [[-430, -245], [-245, -220], [-70, -250], [115, -212], [330, -250]],
+    { travelLanes: 1, speedLimitKph: 20, sidewalkWidth: 3, bikeLanes: true, busLanes: false, median: false, curbParking: false, streetTrees: true },
+    false
+  ));
+  return roads;
+}
+
+export const HOUSTON_TEMPLATE: WorldTemplate = {
+  id: "houston",
+  name: "Houston Foundation",
+  description: "A flexible bayou metropolis with freeway loops, frontage roads, large parcels, floodplain tradeoffs, industrial corridors, warm climate, and mixed low-density growth.",
+  roads: houstonRoads(),
+  areas: [
+    regionPolygon("houston-land", "Houston Region", "land", [[-520, -520], [520, -520], [520, 520], [-520, 520]]),
+    regionPolygon("houston-buffalo-floodplain", "Buffalo Bayou Floodplain", "floodplain", [[-510, 45], [-340, 58], [-190, 45], [-40, 62], [110, 46], [270, 64], [510, 48], [510, 122], [265, 128], [105, 108], [-45, 124], [-195, 104], [-345, 118], [-510, 102]], "high"),
+    regionPolygon("houston-brays-floodplain", "Brays Bayou Floodplain", "floodplain", [[-500, -285], [-315, -252], [-145, -286], [35, -244], [215, -278], [500, -240], [500, -185], [220, -215], [40, -184], [-140, -220], [-310, -196], [-500, -225]], "moderate"),
+    regionPolygon("houston-white-oak-floodplain", "White Oak Bayou Floodplain", "floodplain", [[-350, 490], [-305, 490], [-155, 115], [-195, 92]], "moderate"),
+    regionPolygon("houston-buffalo-bayou", "Buffalo Bayou", "water", [[-510, 73], [-340, 84], [-190, 70], [-40, 88], [110, 72], [270, 90], [510, 76], [510, 94], [270, 108], [110, 90], [-40, 106], [-190, 88], [-340, 102], [-510, 91]]),
+    regionPolygon("houston-brays-bayou", "Brays Bayou", "water", [[-500, -255], [-315, -224], [-145, -258], [35, -216], [215, -250], [500, -212], [500, -198], [215, -234], [35, -200], [-145, -242], [-315, -208], [-500, -241]]),
+    regionPolygon("houston-memorial-park", "Memorial Park", "park", [[-300, 112], [-155, 112], [-155, 235], [-300, 235]]),
+    regionPolygon("houston-hermann-park", "Hermann Park", "park", [[-35, -245], [70, -245], [70, -150], [-35, -150]]),
+    regionPolygon("houston-downtown", "Downtown", "district", [[-120, -70], [105, -70], [105, 125], [-120, 125]]),
+    regionPolygon("houston-energy-corridor", "Energy Corridor", "district", [[-500, -165], [-275, -165], [-275, 175], [-500, 175]]),
+    regionPolygon("houston-ship-channel", "Ship Channel", "district", [[205, -180], [500, -180], [500, 180], [205, 180]]),
+    regionPolygon("houston-medical-center", "Texas Medical Center", "district", [[-90, -315], [110, -315], [110, -135], [-90, -135]])
+  ]
+};
+
 export const BLANK_TEMPLATE: WorldTemplate = {
   id: "blank",
   name: "Blank Region",
@@ -224,5 +355,82 @@ export const BLANK_TEMPLATE: WorldTemplate = {
 export const WORLD_TEMPLATES = {
   nyc: NYC_TEMPLATE,
   chicago: CHICAGO_TEMPLATE,
+  houston: HOUSTON_TEMPLATE,
   blank: BLANK_TEMPLATE
 } satisfies Record<WorldTemplate["id"], WorldTemplate>;
+
+export type TemplateRegionalConfig = {
+  defaultCityName: string;
+  climate: {
+    monthlyTemperature: number[];
+    wetThreshold: Record<Season, number>;
+    snowThreshold: number;
+    windBase: number;
+  };
+  transit: { roadId: string; lineName: string; stopNames: string[] } | null;
+  parkingRoadIds: string[];
+  event: { id: string; name: string; kind: CityEventKind; roadId: string } | null;
+};
+
+export const TEMPLATE_REGIONAL_CONFIGS: Record<WorldTemplate["id"], TemplateRegionalConfig> = {
+  nyc: {
+    defaultCityName: "New Gridless City",
+    climate: {
+      monthlyTemperature: [-1, 1, 6, 12, 18, 23, 26, 25, 21, 14, 8, 2],
+      wetThreshold: { winter: 30, spring: 42, summer: 34, autumn: 38 },
+      snowThreshold: 18,
+      windBase: 6
+    },
+    transit: {
+      roadId: "nyc-broadway",
+      lineName: "Broadway Local B1",
+      stopNames: ["Lower Broadway", "Canal Street", "Union Square", "Times Square", "Columbus Circle", "Upper Broadway", "Harlem Terminal", "North Terminal"]
+    },
+    parkingRoadIds: ["nyc-avenue-1", "nyc-avenue-3", "nyc-avenue-5"],
+    event: { id: "template-event-broadway-market", name: "Broadway Night Market", kind: "market", roadId: "nyc-broadway" }
+  },
+  chicago: {
+    defaultCityName: "New Lakeshore City",
+    climate: {
+      monthlyTemperature: [-6, -4, 3, 10, 17, 23, 26, 25, 20, 12, 4, -3],
+      wetThreshold: { winter: 32, spring: 42, summer: 37, autumn: 36 },
+      snowThreshold: 25,
+      windBase: 12
+    },
+    transit: {
+      roadId: "chicago-state",
+      lineName: "State Street Connector C1",
+      stopNames: ["South Side", "Bronzeville", "Roosevelt", "The Loop", "River North", "Near North", "Lincoln Park", "North Terminal"]
+    },
+    parkingRoadIds: ["chicago-state", "chicago-lake", "chicago-milwaukee"],
+    event: { id: "template-event-state-street-arts", name: "State Street Arts Walk", kind: "market", roadId: "chicago-state" }
+  },
+  houston: {
+    defaultCityName: "New Bayou City",
+    climate: {
+      monthlyTemperature: [13, 15, 19, 23, 27, 30, 31, 31, 28, 24, 18, 14],
+      wetThreshold: { winter: 38, spring: 46, summer: 51, autumn: 43 },
+      snowThreshold: 0,
+      windBase: 8
+    },
+    transit: {
+      roadId: "houston-main",
+      lineName: "Main Street Rapid H1",
+      stopNames: ["South Terminal", "Medical Center", "Museum District", "Midtown", "Downtown", "Northside", "North Terminal"]
+    },
+    parkingRoadIds: ["houston-main", "houston-i10-frontage-1", "houston-allen-parkway"],
+    event: { id: "template-event-buffalo-bayou", name: "Buffalo Bayou Festival", kind: "concert", roadId: "houston-allen-parkway" }
+  },
+  blank: {
+    defaultCityName: "Untitled Region",
+    climate: {
+      monthlyTemperature: [-1, 1, 6, 12, 18, 23, 26, 25, 21, 14, 8, 2],
+      wetThreshold: { winter: 30, spring: 42, summer: 34, autumn: 38 },
+      snowThreshold: 18,
+      windBase: 6
+    },
+    transit: null,
+    parkingRoadIds: [],
+    event: null
+  }
+};
