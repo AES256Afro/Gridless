@@ -16,6 +16,8 @@ City Builder also provides a compact City Advisor. It ranks the three highest-va
 
 Zoning separates land use from development intensity. Every parcel can independently apply low, medium, or high intensity to residential, commercial, mixed, industrial, or civic use; capacity, construction, and regional building massing respond without changing the parcel geometry or imposing a grid.
 
+Mixed-use zoning now produces an explicit vertical building program instead of a statistical blend. Intensity determines the commercial podium and residential floors above, Builder renders the podium as a second instanced layer, Explorer adds storefront glazing, canopy, and a separate residential lobby, and parcel inspection reports the same program and access arrangement.
+
 Neighborhood Voices adds a human-scale diagnostic alongside the City Advisor. Every live district receives a deterministic pulse from its utility reliability, wellbeing, traffic, land value, park access, environmental exposure, jobs, outages, and policies. The most urgent representative voices appear first, and each card focuses its district and opens the matching evidence view.
 
 ## NYC as the flexible starting language

@@ -22,6 +22,7 @@ import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { soundscapeProfile } from "./soundscape";
 import { buildingArchitecture } from "./architecture";
 import { neighborhoodPulse } from "./neighborhood";
+import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity } from "./activity";
@@ -76,6 +77,21 @@ const architectureProfiles = architectureTemplates.map((templateId, index) => ({
   templateId,
   profile: buildingArchitecture(templateId, "commercial", 431 + index * 97)
 }));
+const lowMixedProgram = buildingProgram("mixed", "low", 18, 3, 12.8);
+const highMixedProgram = buildingProgram("mixed", "high", 92, 14, 51.2);
+const residentialProgram = buildingProgram("residential", "medium", 42, 0, 19.2);
+check(
+  lowMixedProgram.commercialFloors === 1
+    && lowMixedProgram.residentialFloors === 3
+    && highMixedProgram.commercialFloors === 3
+    && highMixedProgram.residentialFloors === 13
+    && highMixedProgram.totalFloors === 16
+    && highMixedProgram.publicFacing
+    && highMixedProgram.access.includes("Separate residential lobby")
+    && residentialProgram.commercialFloors === 0
+    && residentialProgram.residentialFloors === residentialProgram.totalFloors,
+  "Vertical building programs did not separate mixed-use podiums, homes, and access."
+);
 const matchingArchitecture = buildingArchitecture("nyc", "commercial", 431);
 check(
   JSON.stringify(architectureProfiles[0].profile) === JSON.stringify(matchingArchitecture),
@@ -3768,6 +3784,11 @@ console.log(JSON.stringify({
     heightScale: Number(profile.heightScale.toFixed(2))
   })),
   architectureRoofStyles: [...regionalRoofStyles].sort(),
+  mixedUseProgram: {
+    low: `${lowMixedProgram.commercialFloors} commercial + ${lowMixedProgram.residentialFloors} residential`,
+    high: `${highMixedProgram.commercialFloors} commercial + ${highMixedProgram.residentialFloors} residential`,
+    access: highMixedProgram.access
+  },
   neighborhoodVoices: [outagePulse, trafficPulse, supportedPulse].map(pulse => ({
     district: pulse.districtName,
     status: pulse.status,
