@@ -45,6 +45,7 @@ import {
   scheduledTransitPose
 } from "./transit";
 import {
+  DISTRICT_POLICY_DEFINITIONS,
   ROAD_PROFILE_PRESETS,
   World,
   roadConstructionCost,
@@ -345,6 +346,99 @@ const widePressure = capacityWorld.roadTrafficPressure(wideRoad);
 check(
   narrowPressure > widePressure,
   "Additional road lanes and speed capacity did not reduce pressure for equal traffic."
+);
+
+const governanceWorld = new World();
+const defaultGovernanceEconomy = governanceWorld.cityEconomy();
+check(
+  governanceWorld.taxPolicy.residential === 10
+    && governanceWorld.taxPolicy.commercial === 10
+    && governanceWorld.taxPolicy.industrial === 10
+    && defaultGovernanceEconomy.debtPayments === 0
+    && defaultGovernanceEconomy.districtPolicyCosts === 0,
+  "A new city did not receive neutral tax, debt, and district-policy defaults."
+);
+const legacyGovernanceSnapshot = JSON.parse(governanceWorld.serialize());
+delete legacyGovernanceSnapshot.taxPolicy;
+delete legacyGovernanceSnapshot.districtPolicies;
+delete legacyGovernanceSnapshot.municipalBonds;
+check(governanceWorld.restore(JSON.stringify(legacyGovernanceSnapshot)), "A legacy governance snapshot could not be restored.");
+check(
+  governanceWorld.taxPolicy.residential === 10
+    && Object.keys(governanceWorld.districtPolicies).length === 0
+    && governanceWorld.municipalBonds.length === 0,
+  "Legacy governance migration did not restore safe economic defaults."
+);
+
+const lowTaxWorld = new World();
+const highTaxWorld = new World();
+check(lowTaxWorld.setTaxRate("residential", 5), "A supported low residential tax rate was rejected.");
+check(highTaxWorld.setTaxRate("residential", 20), "A supported high residential tax rate was rejected.");
+check(
+  highTaxWorld.cityEconomy().residentialTaxRevenue === lowTaxWorld.cityEconomy().residentialTaxRevenue * 4,
+  "Residential tax policy did not scale current tax revenue."
+);
+lowTaxWorld.advanceMinutes(30 * 24 * 60, lowTaxWorld.cityEconomy().monthlyBalance);
+highTaxWorld.advanceMinutes(30 * 24 * 60, highTaxWorld.cityEconomy().monthlyBalance);
+check(
+  lowTaxWorld.cityEconomy().households > highTaxWorld.cityEconomy().households,
+  "Tax pressure did not change household demand over a simulated month."
+);
+
+const policyWorld = new World();
+const policyLot = policyWorld.lots.find(candidate => Boolean(policyWorld.districtForLot(candidate)))!;
+const policyDistrict = policyWorld.districtForLot(policyLot)!;
+const landValueBeforePolicy = policyWorld.lotLandValue(policyLot);
+const wellbeingBeforePolicy = policyWorld.lotWellbeing(policyLot);
+check(
+  policyWorld.setDistrictPolicy(policyDistrict.id, "school-boost", true)
+    && policyWorld.setDistrictPolicy(policyDistrict.id, "recycling", true)
+    && !policyWorld.setDistrictPolicy(policyDistrict.id, "recycling", true),
+  "District policies did not enable idempotently."
+);
+check(
+  policyWorld.districtPolicyMonthlyCost()
+    === DISTRICT_POLICY_DEFINITIONS["school-boost"].monthlyCost + DISTRICT_POLICY_DEFINITIONS.recycling.monthlyCost
+    && policyWorld.lotLandValue(policyLot) > landValueBeforePolicy
+    && policyWorld.lotWellbeing(policyLot) > wellbeingBeforePolicy,
+  "District policy did not connect its recurring cost to land value and wellbeing."
+);
+const policySnapshot = policyWorld.serialize();
+check(policyWorld.restore(policySnapshot), "A city with district policy could not be restored.");
+check(
+  policyWorld.districtPolicies[policyDistrict.id]?.includes("school-boost")
+    && policyWorld.districtPolicies[policyDistrict.id]?.includes("recycling"),
+  "District policy persistence lost an enabled policy."
+);
+
+const debtWorld = new World();
+const treasuryBeforeBond = debtWorld.clock.treasury;
+const bond = debtWorld.issueMunicipalBond(5_000_000);
+check(
+  Boolean(bond)
+    && debtWorld.clock.treasury === treasuryBeforeBond + 5_000_000
+    && debtWorld.cityEconomy().debtPayments === bond!.monthlyPayment,
+  "Municipal bond issuance did not add cash and monthly debt service."
+);
+const bondBalanceBeforeMonth = bond!.balance;
+debtWorld.advanceMinutes(30 * 24 * 60, debtWorld.cityEconomy().monthlyBalance);
+check(
+  bond!.balance < bondBalanceBeforeMonth
+    && bond!.monthsRemaining === 119,
+  "Monthly bond settlement did not reduce principal and remaining term."
+);
+const debtBeforeExtraPayment = bond!.balance;
+check(
+  debtWorld.repayMunicipalDebt(1_000_000)
+    && bond!.balance === debtBeforeExtraPayment - 1_000_000,
+  "Extra municipal debt repayment did not reduce principal exactly."
+);
+const debtSnapshot = debtWorld.serialize();
+check(debtWorld.restore(debtSnapshot), "A city with municipal debt could not be restored.");
+check(
+  debtWorld.municipalBonds.length === 1
+    && debtWorld.municipalBonds[0].monthsRemaining === 119,
+  "Municipal debt persistence lost its balance or repayment term."
 );
 
 const historyWorld = new World();

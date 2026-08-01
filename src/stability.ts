@@ -366,6 +366,34 @@ function integrityFailures(world: World) {
   if (world.clock.month < 1 || world.clock.month > 12 || world.clock.day < 1 || world.clock.day > 30) {
     failures.push("Calendar fields are outside their valid ranges.");
   }
+  if (Object.values(world.taxPolicy).some(rate => !Number.isInteger(rate) || rate < 5 || rate > 20)) {
+    failures.push("Tax policy contains an unsupported rate.");
+  }
+  const districtAreaIds = new Set(world.areas.filter(area => area.kind === "district").map(area => area.id));
+  const supportedDistrictPolicies = new Set(["recycling", "school-boost", "heavy-traffic-ban", "small-business-grants"]);
+  for (const [areaId, policies] of Object.entries(world.districtPolicies)) {
+    if (
+      !districtAreaIds.has(areaId)
+      || new Set(policies).size !== policies.length
+      || policies.some(policy => !supportedDistrictPolicies.has(policy))
+    ) failures.push(`District ${areaId} has invalid policy state.`);
+  }
+  const bondIds = new Set(world.municipalBonds.map(bond => bond.id));
+  if (world.municipalBonds.length > 3 || bondIds.size !== world.municipalBonds.length) {
+    failures.push("Municipal debt contains too many or duplicate bonds.");
+  }
+  for (const bond of world.municipalBonds) {
+    if (
+      !Number.isFinite(bond.balance)
+      || bond.balance <= 0
+      || bond.balance > bond.originalPrincipal
+      || bond.annualInterestRate <= 0
+      || bond.annualInterestRate > .15
+      || bond.monthlyPayment <= 0
+      || bond.monthsRemaining <= 0
+      || bond.monthsRemaining > 360
+    ) failures.push(`Municipal bond ${bond.id} has invalid repayment state.`);
+  }
   const weather = world.weather();
   if (
     !Number.isFinite(weather.temperatureC)
@@ -444,6 +472,8 @@ function integrityFailures(world: World) {
     failures.push("Spatial chunk population does not match the city economy.");
   }
 
+  const integrityPopulation = Math.max(1, world.cityEconomy().population);
+  const integrityStaffing = world.effectiveStaffing();
   for (const lot of world.lots) {
     if (!Number.isInteger(lot.households) || lot.households < 0) failures.push(`Lot ${lot.id} has invalid household count.`);
     if (!Number.isInteger(lot.businesses) || lot.businesses < 0) failures.push(`Lot ${lot.id} has invalid business count.`);
@@ -451,6 +481,10 @@ function integrityFailures(world: World) {
     const businessMix = Object.values(lot.businessMix).reduce((total, value) => total + value, 0);
     if (householdMix !== lot.households) failures.push(`Lot ${lot.id} household cohorts do not sum to the household count.`);
     if (businessMix !== lot.businesses) failures.push(`Lot ${lot.id} business sectors do not sum to the business count.`);
+    const landValue = world.lotLandValue(lot, integrityPopulation, integrityStaffing);
+    if (!Number.isFinite(landValue) || landValue < 0 || landValue > 100) {
+      failures.push(`Lot ${lot.id} has invalid land value.`);
+    }
   }
   for (const home of world.homes) {
     if (!lotIds.has(home.lotId)) failures.push(`Home ${home.id} points to a missing lot.`);

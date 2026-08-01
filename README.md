@@ -28,6 +28,9 @@ The current vertical slice proves:
 - A persistent road designer for local streets, avenues, and arterials with one to eight travel lanes, speed limits, variable sidewalks, protected cycling, bus priority, medians, curb parking, and street trees
 - Profile-aware road construction and retrofit costs, treasury checks, capacity and congestion consequences, live previews, exact Undo and Redo, and deterministic legacy-save migration
 - Clean profile-driven street geometry with distinct lane markings, bike and bus bands, planted medians, variable sidewalk edges, and instanced street trees in both Builder and Explorer
+- A city-economy workspace with separate residential, commercial, and industrial tax rates, immediate revenue and demand feedback, district policy operations, and undoable ten-year municipal bonds
+- Named-district recycling, school support, heavy-traffic bans, and small-business grants with explicit recurring costs plus local wellbeing, land-value, commercial-capacity, and freight-access effects
+- A live land-value planning view derived from utilities, neighborhood services, parks, road speed and traffic noise, zoning, tax pressure, and district policy
 - Parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
 - Persistent power, water, fire, health, and school facilities with coverage radii, operating costs, municipal balance, and demand feedback

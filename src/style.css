@@ -1271,7 +1271,7 @@ kbd {
 .city-build-tools button.active { color: #172019; background: #d9e8d7; }
 .city-tool-categories {
   display: grid;
-  grid-template-columns: repeat(6, minmax(80px, 1fr));
+  grid-template-columns: repeat(7, minmax(72px, 1fr));
   gap: 4px;
   width: 100%;
   padding-bottom: 6px;
@@ -1342,6 +1342,16 @@ kbd {
 }
 #apply-road-profile:not(:disabled) { color: #172019; background: #f0d980; }
 #apply-road-profile:disabled { cursor: default; opacity: .38; }
+.economy-options { flex-wrap: wrap; }
+.economy-options select { min-width: 104px; max-width: 148px; }
+.economy-options #district-policy-area { min-width: 136px; }
+.economy-options #district-policy-kind { min-width: 142px; }
+.economy-options #economy-policy-summary {
+  min-width: 210px;
+  color: #c7d3c9;
+  font-size: 10px;
+  line-height: 1.25;
+}
 .city-build-tools select, .city-build-tools input {
   min-width: 145px;
   max-width: 215px;
@@ -1361,6 +1371,7 @@ kbd {
 .city-view-legend i { width: 58px; height: 7px; border-radius: 999px; background: linear-gradient(90deg, #d95f52, #e8c96a, #68b77c); }
 .city-view-legend.normal i { background: linear-gradient(90deg, #87977f, #b7b4aa, #8e8ca0); }
 .city-view-legend.traffic i { background: linear-gradient(90deg, #68b77c, #e8c96a, #d95f52); }
+.city-view-legend.land-value i { background: linear-gradient(90deg, #d95f52, #e8c96a, #68b77c); }
 .city-view-legend.development i { background: linear-gradient(90deg, #66716a, #d7a956, #70b4d0); }
 
 .explorer-status {
@@ -1619,7 +1630,7 @@ kbd {
     width: auto;
     transform: none;
   }
-  .city-tool-categories { grid-template-columns: repeat(6, minmax(70px, 1fr)); overflow-x: auto; }
+  .city-tool-categories { grid-template-columns: repeat(7, minmax(70px, 1fr)); overflow-x: auto; }
   .city-tool-options { overflow-x: auto; justify-content: flex-start; }
   .city-tool-settings.road-profile-settings { flex-wrap: nowrap; }
 }

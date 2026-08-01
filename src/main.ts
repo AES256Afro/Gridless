@@ -7,6 +7,7 @@ import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity, type ActivityEntry } from "./activity";
 import {
   CITY_EVENT_DEFINITIONS,
+  DISTRICT_POLICY_DEFINITIONS,
   HOME_BUILD_COSTS,
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
@@ -27,6 +28,7 @@ import {
   type ConversationIntent,
   type CurbSchedule,
   type CurbUse,
+  type DistrictPolicy,
   type Home,
   type HomeFloorFinish,
   type HomeFurnitureStyle,
@@ -45,6 +47,7 @@ import {
   type ResidentTrait,
   type ServiceKind,
   type SpatialChunk,
+  type TaxCategory,
   type UtilityKind,
   type WeatherState,
   type Zone,
@@ -103,8 +106,8 @@ type Mode = "city" | "explore" | "home";
 type HomeFurnitureKind = Home["furniture"][number]["kind"];
 type HomeTool = "select" | "room" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
-type CityToolGroup = "build" | "zone" | "services" | "mobility" | "events" | "views";
-type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development";
+type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
+type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value";
 const HOME_FURNITURE_KINDS: HomeFurnitureKind[] = ["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"];
 const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_FURNITURE_KINDS.includes(value as HomeFurnitureKind);
@@ -200,6 +203,7 @@ app.innerHTML = `
         <button data-city-tool-group="zone" role="tab">Zones</button>
         <button data-city-tool-group="services" role="tab">Services</button>
         <button data-city-tool-group="mobility" role="tab">Mobility</button>
+        <button data-city-tool-group="economy" role="tab">Economy</button>
         <button data-city-tool-group="events" role="tab">Events</button>
         <button data-city-tool-group="views" role="tab">Views</button>
       </div>
@@ -327,6 +331,35 @@ app.innerHTML = `
           <button id="transit-remove" type="button">Remove line</button>
         </div>
       </div>
+      <div class="city-tool-options economy-options" data-city-group-panel="economy">
+        <span class="tool-label">Taxes</span>
+        <select id="tax-residential" aria-label="Residential tax rate">
+          <option value="5">Homes 5%</option><option value="8">Homes 8%</option><option value="10" selected>Homes 10%</option>
+          <option value="12">Homes 12%</option><option value="15">Homes 15%</option><option value="18">Homes 18%</option><option value="20">Homes 20%</option>
+        </select>
+        <select id="tax-commercial" aria-label="Commercial tax rate">
+          <option value="5">Shops 5%</option><option value="8">Shops 8%</option><option value="10" selected>Shops 10%</option>
+          <option value="12">Shops 12%</option><option value="15">Shops 15%</option><option value="18">Shops 18%</option><option value="20">Shops 20%</option>
+        </select>
+        <select id="tax-industrial" aria-label="Industrial tax rate">
+          <option value="5">Industry 5%</option><option value="8">Industry 8%</option><option value="10" selected>Industry 10%</option>
+          <option value="12">Industry 12%</option><option value="15">Industry 15%</option><option value="18">Industry 18%</option><option value="20">Industry 20%</option>
+        </select>
+        <span class="tool-label">District</span>
+        <select id="district-policy-area" aria-label="Policy district"></select>
+        <select id="district-policy-kind" aria-label="District policy">
+          <option value="recycling">Recycling</option><option value="school-boost">School boost</option>
+          <option value="heavy-traffic-ban">Heavy traffic ban</option><option value="small-business-grants">Business grants</option>
+        </select>
+        <button type="button" id="district-policy-toggle">Enable policy</button>
+        <span class="tool-label">Bonds</span>
+        <select id="municipal-bond" aria-label="Municipal bond">
+          <option value="5000000">$5m · 4.4%</option><option value="15000000">$15m · 5.2%</option><option value="40000000">$40m · 6.2%</option>
+        </select>
+        <button type="button" id="issue-bond">Issue bond</button>
+        <button type="button" id="repay-bond">Repay $1m</button>
+        <output id="economy-policy-summary" aria-live="polite"></output>
+      </div>
       <div class="city-tool-options" data-city-group-panel="events">
         <button data-city-tool="event">Plan city event</button>
         <select id="event-kind" aria-label="City event type">
@@ -346,6 +379,7 @@ app.innerHTML = `
         <button data-city-view="traffic">Traffic</button>
         <button data-city-view="utilities">Utilities</button>
         <button data-city-view="wellbeing">Wellbeing</button>
+        <button data-city-view="land-value">Land value</button>
         <button data-city-view="development">Development</button>
         <div class="city-view-legend" id="city-view-legend"><i></i><span>Natural city colors</span></div>
       </div>
@@ -620,6 +654,7 @@ let cityTool: CityTool = "road";
 let cityToolGroup: CityToolGroup = "build";
 let cityView: CityView = "normal";
 let roadTargetKey = "";
+let districtOptionKey = "";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
@@ -2001,6 +2036,7 @@ function lotPlanningValue(
   }
   if (view === "utilities") return world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "wellbeing") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
+  if (view === "land-value") return world.lotLandValue(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "development") return lot.zone === "unassigned" ? 0 : world.constructionProgress(lot);
   return 1;
 }
@@ -2121,6 +2157,7 @@ function renderWorld() {
   document.querySelector("#city-name-label")!.textContent = world.cityName;
   syncRoadTargetOptions();
   updateRoadProfileSummary();
+  syncEconomyControls();
   const cityNameInput = document.querySelector<HTMLInputElement>("#city-name-input")!;
   if (document.activeElement !== cityNameInput) cityNameInput.value = world.cityName;
   document.title = `${world.cityName} · Gridless`;
@@ -2311,6 +2348,8 @@ function renderWorld() {
   renderIncidents();
   if (mode === "city" && cityToolGroup === "views") {
     updateCityViewPanel();
+  } else if (mode === "city" && cityToolGroup === "economy") {
+    updateEconomyPanel();
   } else if (mode === "city" && (
     cityTool === "inspect"
     || cityTool === "transit"
@@ -2491,7 +2530,9 @@ function transitCrowdingLabel(crowding: number) {
 }
 
 function formatParkingMonthly(value: number) {
-  return value >= 100_000
+  return value >= 1_000_000
+    ? `$${(value / 1_000_000).toFixed(2)}m/mo`
+    : value >= 100_000
     ? `$${(value / 1_000).toFixed(0)}k/mo`
     : `$${(value / 1_000).toFixed(1)}k/mo`;
 }
@@ -2642,6 +2683,11 @@ function updateCityStats() {
     openBusinesses,
     workersOnShift,
     monthlyBalance: balance,
+    residentialTaxRevenue,
+    commercialTaxRevenue,
+    industrialTaxRevenue,
+    districtPolicyCosts,
+    debtPayments,
     parkingRevenue,
     parkingCosts,
     transitRevenue,
@@ -2719,7 +2765,7 @@ function updateCityStats() {
         ? "Available jobs are increasing demand for nearby housing."
         : "Demand reflects current households, jobs, and available land.";
   document.querySelector("#economy-summary")!.textContent =
-    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
+    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · taxes ${formatParkingMonthly(residentialTaxRevenue + commercialTaxRevenue + industrialTaxRevenue)} · policies -${formatParkingMonthly(districtPolicyCosts)} · debt -${formatParkingMonthly(debtPayments)} · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
   updateCityAdvisor({
     roads: world.roads.length,
@@ -3360,6 +3406,63 @@ function updateRoadProfileSummary() {
   const rawCost = pricedPoints.length > 1 ? roadConstructionCost(pricedPoints, road.profile) : 0;
   const cost = targetRoad ? Math.max(25_000, Math.round(rawCost * .35 / 1_000) * 1_000) : rawCost;
   summary.textContent = `${road.width}m · ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} veh/h${cost ? ` · $${cost.toLocaleString()}` : " · draw to price"} · ${roadProfileEffects(road.profile)}`;
+}
+
+function currentDistrictPolicy() {
+  return (document.querySelector("#district-policy-kind") as HTMLSelectElement).value as DistrictPolicy;
+}
+
+function currentPolicyDistrictId() {
+  return (document.querySelector("#district-policy-area") as HTMLSelectElement).value;
+}
+
+function syncEconomyControls() {
+  (Object.keys(world.taxPolicy) as TaxCategory[]).forEach(category => {
+    (document.querySelector(`#tax-${category}`) as HTMLSelectElement).value = String(world.taxPolicy[category]);
+  });
+  const districtSelect = document.querySelector<HTMLSelectElement>("#district-policy-area")!;
+  const districts = world.areas.filter(area => area.kind === "district");
+  const key = districts.map(area => `${area.id}:${area.name}`).join("|");
+  if (key !== districtOptionKey) {
+    const previous = districtSelect.value;
+    districtSelect.replaceChildren(...districts.map(area => new Option(area.name, area.id)));
+    districtSelect.value = districts.some(area => area.id === previous) ? previous : districts[0]?.id ?? "";
+    districtOptionKey = key;
+  }
+  const policy = currentDistrictPolicy();
+  const districtId = currentPolicyDistrictId();
+  const enabled = Boolean(districtId && world.districtPolicies[districtId]?.includes(policy));
+  const toggle = document.querySelector<HTMLButtonElement>("#district-policy-toggle")!;
+  toggle.textContent = enabled ? "Disable policy" : "Enable policy";
+  toggle.classList.toggle("active", enabled);
+  toggle.disabled = !districtId;
+  const debt = world.municipalBonds.reduce((total, bond) => total + bond.balance, 0);
+  const economy = world.cityEconomy();
+  document.querySelector<HTMLOutputElement>("#economy-policy-summary")!.textContent =
+    `${world.municipalBonds.length}/3 bonds · $${(debt / 1_000_000).toFixed(1)}m debt · $${Math.round(economy.debtPayments / 1_000).toLocaleString()}k/mo debt service · $${Math.round(economy.districtPolicyCosts / 1_000).toLocaleString()}k/mo policies`;
+  document.querySelector<HTMLButtonElement>("#issue-bond")!.disabled = world.municipalBonds.length >= 3;
+  document.querySelector<HTMLButtonElement>("#repay-bond")!.disabled = debt <= 0 || world.clock.treasury < 1_000_000;
+}
+
+function updateEconomyPanel() {
+  syncEconomyControls();
+  const economy = world.cityEconomy();
+  const developed = world.lots.filter(lot => lot.zone !== "unassigned");
+  const averageLandValue = developed.length
+    ? Math.round(developed.reduce((total, lot) => total + world.lotLandValue(lot), 0) / developed.length)
+    : 0;
+  const districtId = currentPolicyDistrictId();
+  const district = world.areas.find(area => area.id === districtId);
+  const policies = world.districtPolicies[districtId] ?? [];
+  const policyCopy = policies.length
+    ? policies.map(policy => DISTRICT_POLICY_DEFINITIONS[policy].label).join(" + ")
+    : "No active district policy";
+  setPanel(
+    "CITY ECONOMY",
+    `${economy.monthlyBalance >= 0 ? "+" : "-"}$${(Math.abs(economy.monthlyBalance) / 1_000_000).toFixed(2)}m monthly balance`,
+    `Taxes: homes $${(economy.residentialTaxRevenue / 1_000_000).toFixed(2)}m, shops $${(economy.commercialTaxRevenue / 1_000_000).toFixed(2)}m, industry $${(economy.industrialTaxRevenue / 1_000_000).toFixed(2)}m. Services and operations cost $${((economy.monthlyCosts - economy.debtPayments - economy.districtPolicyCosts) / 1_000_000).toFixed(2)}m, policies cost $${(economy.districtPolicyCosts / 1_000_000).toFixed(2)}m, and debt service costs $${(economy.debtPayments / 1_000_000).toFixed(2)}m. Average developed land value is ${averageLandValue}/100. ${district?.name ?? "District"}: ${policyCopy}.`,
+    "Taxes|Revenue vs demand;District policy|Local benefit and cost;Bond|Cash now, repayment later;Land value view|See place effects;Undo|Reverse policy"
+  );
 }
 
 function currentServiceKind() {
@@ -5210,7 +5313,7 @@ function updateCityToolPanel(lot?: Lot) {
     setPanel(
       "TRANSIT NETWORK",
       line.name,
-      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · ${transferCopy} · every ${world.transitEffectiveHeadway(line)} minutes${world.transitEffectiveHeadway(line) < line.headwayMinutes ? ` during temporary event service, normally ${line.headwayMinutes}` : ""} with ${world.transitActiveFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
+      `${world.transitLines.length}/8 lines · ${line.stops.length} stops · ${transferCopy} · every ${world.transitEffectiveHeadway(line)} minutes${world.transitEffectiveHeadway(line) < line.headwayMinutes ? ` with bus priority or temporary service, normally ${line.headwayMinutes}` : ""} with ${world.transitActiveFleetSize(line)} active buses · ${transitFarePolicyLabel(line.fare)} · ${Math.round(demand)} hourly passenger demand · ${world.transitAverageWait(line).toFixed(1)}m average wait · ${waiting} waiting now · ${transitCrowdingLabel(crowding)} (${Math.round(crowding * 100)}%) · projected ${projectedNet >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(projectedNet))}. Click another road to create or select its line.`,
       "Line selector|Choose route;Name|Create identity;Click road|Create or select;Gold ring|Transfer stop;Stops|Change coverage;Frequency|Fleet and waits;Fare|Demand and revenue;Remove|Delete selected line"
     );
   } else if (cityTool === "access") {
@@ -5266,6 +5369,17 @@ function updateCityViewPanel() {
       `${world.cityWellbeing()}% city wellbeing`,
       `${strained} parcels are strained or critical. This view combines utilities, local services, commute burden, and named household needs so a city-scale problem remains connected to the people experiencing it.`,
       "Red|Critical;Amber|Strained;Green|Stable or thriving;Inspect|See the cause"
+    );
+  } else if (cityView === "land-value") {
+    const values = world.lots.filter(lot => lot.zone !== "unassigned").map(lot => world.lotLandValue(lot, totalPopulation, effectiveStaffing));
+    const averageValue = values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : 0;
+    const pressured = values.filter(value => value < 45).length;
+    legendCopy.textContent = "Pressured · valuable";
+    setPanel(
+      "LAND VALUE VIEW",
+      `${averageValue}/100 average land value`,
+      `${pressured} developed parcels are below 45. Values combine reliable utilities, neighborhood services, park access, road speed and traffic noise, zoning, tax pressure, and district policy.`,
+      "Red|Low value;Amber|Stable;Green|High value;Economy|Change taxes and policy"
     );
   } else if (cityView === "development") {
     const active = world.lots.filter(lot => world.constructionProgress(lot) < 1).length;
@@ -5391,6 +5505,10 @@ renderer.domElement.addEventListener("pointerdown", event => {
           : "Furniture must stay inside a room");
       }
     }
+    return;
+  }
+  if (mode === "city" && cityToolGroup === "economy") {
+    notice("Use the economy controls to change taxes, district policy, or debt");
     return;
   }
   if (mode === "city" && cityTool === "access") {
@@ -6035,6 +6153,7 @@ function setCityToolGroup(group: CityToolGroup, selectDefault = false) {
 document.querySelectorAll<HTMLButtonElement>("[data-city-tool-group]").forEach(button => button.addEventListener("click", () => {
   setCityToolGroup(button.dataset.cityToolGroup as CityToolGroup, true);
   if (button.dataset.cityToolGroup === "views") updateCityViewPanel();
+  if (button.dataset.cityToolGroup === "economy") updateEconomyPanel();
 }));
 
 document.querySelector("#city-advisor")!.addEventListener("click", event => {
@@ -6248,6 +6367,48 @@ document.querySelector("#staffing-policy")!.addEventListener("change", event => 
   if (!world.setServiceFunding(funding)) return;
   renderWorld();
   notice(`Service staffing set to ${Math.round(funding * 100)}%`);
+});
+document.querySelectorAll<HTMLSelectElement>("#tax-residential, #tax-commercial, #tax-industrial").forEach(control => control.addEventListener("change", event => {
+  const category = (event.currentTarget as HTMLSelectElement).id.replace("tax-", "") as TaxCategory;
+  const rate = Number((event.currentTarget as HTMLSelectElement).value);
+  if (!world.setTaxRate(category, rate)) return;
+  renderWorld();
+  updateEconomyPanel();
+  notice(`${category[0].toUpperCase()}${category.slice(1)} tax set to ${rate}%`);
+}));
+document.querySelectorAll<HTMLSelectElement>("#district-policy-area, #district-policy-kind").forEach(control => control.addEventListener("change", () => {
+  syncEconomyControls();
+  updateEconomyPanel();
+}));
+document.querySelector("#district-policy-toggle")!.addEventListener("click", () => {
+  const areaId = currentPolicyDistrictId();
+  const policy = currentDistrictPolicy();
+  const enabled = Boolean(world.districtPolicies[areaId]?.includes(policy));
+  if (!world.setDistrictPolicy(areaId, policy, !enabled)) return;
+  renderWorld();
+  updateEconomyPanel();
+  const district = world.areas.find(area => area.id === areaId);
+  notice(`${DISTRICT_POLICY_DEFINITIONS[policy].label} ${enabled ? "disabled" : "enabled"} in ${district?.name ?? "district"}`);
+});
+document.querySelector("#issue-bond")!.addEventListener("click", () => {
+  const amount = Number((document.querySelector("#municipal-bond") as HTMLSelectElement).value);
+  const bond = world.issueMunicipalBond(amount);
+  if (!bond) {
+    notice("The city can carry up to three active municipal bonds");
+    return;
+  }
+  renderWorld();
+  updateEconomyPanel();
+  notice(`$${(amount / 1_000_000).toFixed(0)}m bond issued · $${bond.monthlyPayment.toLocaleString()}/mo for 10 years`);
+});
+document.querySelector("#repay-bond")!.addEventListener("click", () => {
+  if (!world.repayMunicipalDebt(1_000_000)) {
+    notice("The city needs active debt and $1m cash for an extra repayment");
+    return;
+  }
+  renderWorld();
+  updateEconomyPanel();
+  notice("$1m extra debt repayment posted");
 });
 function activateHomeTool(next: HomeTool) {
   homeTool = next;
