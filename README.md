@@ -79,7 +79,7 @@ The current vertical slice proves:
 - Input-safe global shortcuts for manual save, mode switching, pause and resume, Help, Undo, and Redo, while focused text fields retain native typing and text Undo behavior
 - Visible save-state feedback for pending recovery writes, protected recovery snapshots, manual saves, manual loads, and recovered worlds
 - Live traffic, utilities, wellbeing, and development planning overlays derived from the same roads, commuter routes, service networks, households, and construction state used by the simulation
-- Persistent 256-meter spatial chunks with exact road and lot membership, population/job aggregates, focus-driven agent, active, and aggregate tiers, live regional-detail diagnostics, save migration, and a large-region renderer cutoff
+- Persistent 256-meter spatial chunks with exact road and lot membership, population/job aggregates, focus-driven agent, active, and aggregate tiers, selected-neighborhood promotion, low-poly distant massing, live stream diagnostics, and save migration
 - Grounded first-person acceleration, sprinting, jumping, head movement, shoreline limits, building collision, wall sliding, and a live location, surface, and pace readout
 - Explorer photo mode with clean scene composition, automatic world-label suppression, live location/time/weather metadata, adjustable 28° to 75° field of view, and a completely hideable capture HUD
 - Detected street intersections with zebra crossings, curb-ramp pads, and deterministic two-direction traffic signals
