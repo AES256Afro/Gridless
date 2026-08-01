@@ -16,6 +16,8 @@ const rows = first.yearly.map(checkpoint => ({
   monthlyBalance: Math.round(checkpoint.monthlyBalance),
   treasury: Math.round(checkpoint.treasury),
   residentActions: checkpoint.completedResidentActions,
+  workShifts: checkpoint.completedWorkDays,
+  workPerformance: `${checkpoint.averageWorkPerformance}%`,
   eventVisits: checkpoint.eventAttendance
 }));
 

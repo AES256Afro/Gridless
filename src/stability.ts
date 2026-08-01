@@ -6,6 +6,7 @@ import {
   RESIDENT_PASTIME_DEFINITIONS,
   RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
+  RESIDENT_WORK_TASK_DEFINITIONS,
   RESIDENT_PERSONALITY_AXES,
   MAX_HOME_FLOORS,
   World,
@@ -31,6 +32,8 @@ export type StabilityCheckpoint = {
   minimumUtilityCondition: number;
   residentWellbeing: number;
   completedResidentActions: number;
+  completedWorkDays: number;
+  averageWorkPerformance: number;
   eventOccurrences: number;
   eventAttendance: number;
   snapshotBytes: number;
@@ -166,7 +169,8 @@ export function createStabilityScenario() {
       id: "stability-resident",
       name: "Avery",
       age: "adult",
-      role: "home",
+      role: "office",
+      careerTrack: "enterprise",
       decorPreference: "natural",
       favoritePastime: "relaxing",
       inventory: [{ id: "stability-books", kind: "book-set", acquiredAt: 0 }],
@@ -358,6 +362,10 @@ function checkpoint(world: World): StabilityCheckpoint {
       ? Math.round(residents.reduce((total, resident) => total + world.residentWellbeing(resident).score, 0) / residents.length)
       : 0,
     completedResidentActions: residents.reduce((total, resident) => total + (resident.completedActions ?? 0), 0),
+    completedWorkDays: residents.reduce((total, resident) => total + (resident.workDaysCompleted ?? 0), 0),
+    averageWorkPerformance: residents.some(resident => resident.lastWorkTask)
+      ? Math.round(residents.filter(resident => resident.lastWorkTask).reduce((total, resident) => total + world.residentWorkPerformance(resident), 0) / residents.filter(resident => resident.lastWorkTask).length)
+      : 0,
     eventOccurrences: world.cityEvents.reduce((total, event) => total + event.occurrences, 0),
     eventAttendance: economy.eventAttendance,
     snapshotBytes
@@ -724,6 +732,21 @@ function integrityFailures(world: World) {
         || (careerLevel < 10 && (resident.careerXp ?? 0) >= careerLevel * 40)
       ) {
         failures.push(`Resident ${resident.id} has invalid career progress.`);
+      }
+      const workTask = resident.lastWorkTask ? RESIDENT_WORK_TASK_DEFINITIONS[resident.lastWorkTask] : undefined;
+      if (
+        (resident.lastWorkTask !== undefined && (!workTask || workTask.track !== careerTrack))
+        || !Number.isInteger(resident.workDaysCompleted ?? 0)
+        || (resident.workDaysCompleted ?? 0) < 0
+        || (workTask && (!Number.isInteger(resident.workPerformance) || world.residentWorkPerformance(resident) < 0 || world.residentWorkPerformance(resident) > 100))
+        || (resident.lastWorkDayAt !== undefined && (
+          !Number.isInteger(resident.lastWorkDayAt)
+          || resident.lastWorkDayAt < 0
+          || resident.lastWorkDayAt > world.clock.elapsedMinutes
+        ))
+        || (resident.destinationLotId !== undefined && !lotIds.has(resident.destinationLotId))
+      ) {
+        failures.push(`Resident ${resident.id} has invalid workplace progress.`);
       }
       if (resident.homePosition && !isInteriorPositionValid(home, resident.homePosition)) {
         failures.push(`Resident ${resident.id} has an invalid saved home position.`);

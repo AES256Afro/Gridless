@@ -51,6 +51,7 @@ The current vertical slice proves:
 - Seven persistent life stages from Infant through Elder with deterministic daily aging, stage-aware school and work roles, caregiver lineage, generation numbers, inherited personality blends, family bonds, and legacy-save migration
 - Five long-term aspirations that progress through relationships, skill practice, career success, household prosperity, aging milestones, and elder mentorship
 - Five skill-linked career tracks with distinct roles and wages, deterministic specialization branches at level four, personality fit, ten career levels, and stage-aware retirement
+- Physical career workplaces with deterministic track-specific daily tasks, sector and commute-aware performance, completed-shift history, persistent assignments, Builder rosters, Explorer street context, and Home Simulator career evidence
 - Persistent favorite home styles and pastimes, unique five-item personal collections, resident-owned furnishings, preferred-object autonomy, and a visible belonging score that rewards matching personal space
 - Household and city wellbeing visible across planning, street exploration, and Home Simulator, with local wellbeing feeding back into daily growth
 - Degrading utility infrastructure with deterministic local outages, street-routed repair crews, traffic-sensitive restoration, affected-parcel consequences, and persistent recovery state
