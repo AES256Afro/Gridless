@@ -255,6 +255,26 @@ export type WorldTemplate = {
   areas: Area[];
 };
 
+export type BusinessFinance = {
+  lastRevenue: number;
+  lastPayroll: number;
+  lastOperatingCosts: number;
+  lastProfit: number;
+  operatingReserve: number;
+  consecutiveLossDays: number;
+  lastSettledAt: number;
+  lastClosureAt?: number;
+};
+
+export type BusinessFinanceProjection = {
+  dailyCustomers: number;
+  revenue: number;
+  payroll: number;
+  operatingCosts: number;
+  profit: number;
+  margin: number;
+};
+
 export type Lot = {
   id: string;
   roadId: string;
@@ -270,6 +290,7 @@ export type Lot = {
   householdMix: HouseholdMix;
   businessMix: BusinessMix;
   anchorBusiness?: AnchorBusiness;
+  businessFinance?: BusinessFinance;
   homeId?: string;
 };
 
@@ -1115,6 +1136,8 @@ export type CityEconomy = {
   jobs: number;
   openBusinesses: number;
   workersOnShift: number;
+  privateSectorRevenue: number;
+  privateSectorProfit: number;
   monthlyRevenue: number;
   monthlyCosts: number;
   monthlyBalance: number;
@@ -2356,6 +2379,12 @@ export class World {
       return total;
     }, { openBusinesses: 0, workersOnShift: 0 });
     const workersOnShift = activity.workersOnShift + this.onDutyPublicJobs();
+    const privateSector = completedLots.reduce((totals, lot) => {
+      if (!lot.businesses) return totals;
+      totals.revenue += lot.businessFinance?.lastRevenue ?? 0;
+      totals.profit += lot.businessFinance?.lastProfit ?? 0;
+      return totals;
+    }, { revenue: 0, profit: 0 });
     const parkingRevenue = this.parking.reduce(
       (total, facility) => total + this.parkingMonthlyProjection(facility),
       0
@@ -2435,6 +2464,8 @@ export class World {
       jobs: privateJobs + publicJobs,
       openBusinesses: activity.openBusinesses,
       workersOnShift,
+      privateSectorRevenue: Math.round(privateSector.revenue),
+      privateSectorProfit: Math.round(privateSector.profit),
       monthlyRevenue,
       monthlyCosts,
       monthlyBalance: monthlyRevenue - monthlyCosts,
@@ -2517,6 +2548,104 @@ export class World {
     if (lot.anchorBusiness?.sector) return lot.anchorBusiness.sector;
     return (Object.entries(lot.businessMix) as Array<[BusinessSector, number]>)
       .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0]))[0]?.[0] ?? "office";
+  }
+
+  businessFinance(lot: Lot): BusinessFinance {
+    return normalizeBusinessFinance(lot.businessFinance, lot.businesses, this.clock.elapsedMinutes);
+  }
+
+  businessFinanceProjection(
+    lot: Lot,
+    totalPopulation = Math.max(1, this.lots.reduce((total, candidate) => total + this.lotPopulation(candidate), 0)),
+    effectiveStaffing = this.effectiveStaffing(),
+    districtPolicies = this.districtPoliciesForLot(lot),
+    activeEvents = this.activeCityEvents()
+  ): BusinessFinanceProjection {
+    if (!lot.businesses) {
+      return { dailyCustomers: 0, revenue: 0, payroll: 0, operatingCosts: 0, profit: 0, margin: 0 };
+    }
+    const seed = hashString(lot.id);
+    const sectorRevenue: Record<BusinessSector, number> = {
+      retail: 3_400,
+      office: 8_200,
+      hospitality: 4_800,
+      industrial: 8_800,
+      community: 3_500
+    };
+    const sectorPayroll: Record<BusinessSector, number> = {
+      retail: 145,
+      office: 175,
+      hospitality: 150,
+      industrial: 185,
+      community: 155
+    };
+    const sectorOperating: Record<BusinessSector, number> = {
+      retail: 650,
+      office: 1_300,
+      hospitality: 1_000,
+      industrial: 1_800,
+      community: 500
+    };
+    const sectorCustomers: Record<BusinessSector, number> = {
+      retail: 74,
+      office: 18,
+      hospitality: 92,
+      industrial: 7,
+      community: 48
+    };
+    let baseRevenue = 0;
+    let payroll = 0;
+    let operatingCosts = 0;
+    let dailyCustomers = 0;
+    for (const [sector, count] of Object.entries(lot.businessMix) as Array<[BusinessSector, number]>) {
+      baseRevenue += count * sectorRevenue[sector];
+      payroll += count * sectorJobs(sector, seed) * sectorPayroll[sector];
+      operatingCosts += count * sectorOperating[sector];
+      dailyCustomers += count * sectorCustomers[sector];
+    }
+    const primarySector = this.workplaceSector(lot);
+    const modeledJobs = this.lotJobs(lot);
+    const anchorJobs = lot.anchorBusiness?.jobs ?? 0;
+    if (anchorJobs > modeledJobs) payroll += (anchorJobs - modeledJobs) * sectorPayroll[primarySector];
+    const localPopulation = this.lotPopulation(lot);
+    const demandFactor = clamp(.82 + totalPopulation / 140_000 + localPopulation / 900, .72, 1.34);
+    const staffingFactor = clamp(.68 + effectiveStaffing * .36, .72, 1.05);
+    const grantFactor = districtPolicies.includes("small-business-grants") ? 1.08 : 1;
+    const freightFactor = districtPolicies.includes("heavy-traffic-ban") && primarySector === "industrial" ? .88 : 1;
+    const eventFactor = 1 + activeEvents.reduce((boost, event) => {
+      const proximity = clamp(1 - distance(event.position, lot.center) / 260, 0, 1);
+      return boost + proximity * .12;
+    }, 0);
+    const revenue = Math.max(0, Math.round(baseRevenue * demandFactor * staffingFactor * grantFactor * freightFactor * eventFactor));
+    dailyCustomers = Math.max(0, Math.round(dailyCustomers * demandFactor * eventFactor));
+    const taxRate = this.taxRateForLot(lot);
+    operatingCosts = Math.max(0, Math.round(operatingCosts + revenue * taxRate / 1_000));
+    payroll = Math.max(0, Math.round(payroll));
+    const profit = revenue - payroll - operatingCosts;
+    return {
+      dailyCustomers,
+      revenue,
+      payroll,
+      operatingCosts,
+      profit,
+      margin: revenue ? Math.round(profit / revenue * 1_000) / 10 : 0
+    };
+  }
+
+  businessProfitMargin(lot: Lot) {
+    const finance = this.businessFinance(lot);
+    return finance.lastRevenue ? Math.round(finance.lastProfit / finance.lastRevenue * 1_000) / 10 : 0;
+  }
+
+  businessViabilityLabel(lot: Lot) {
+    const finance = this.businessFinance(lot);
+    if (!lot.businesses) return "Vacant";
+    if (!finance.lastSettledAt) return "New";
+    const margin = this.businessProfitMargin(lot);
+    if (finance.consecutiveLossDays >= 3) return "Loss-making";
+    if (margin < 4 || finance.operatingReserve < lot.businesses * 1_500) return "Fragile";
+    if (margin >= 18 && finance.operatingReserve >= lot.businesses * 7_500) return "Strong";
+    return "Stable";
   }
 
   workplaceActivity(lot: Lot, minute = this.clock.minute): WorkplaceActivity {
@@ -4514,7 +4643,8 @@ export class World {
         businesses,
         householdMix: lot.householdMix ?? createHouseholdMix(households, seed),
         businessMix: lot.businessMix ?? createBusinessMix(businesses, zone, seed),
-        anchorBusiness: businesses > 0 ? lot.anchorBusiness ?? createAnchorBusiness(lot.id, zone, businesses) : undefined
+        anchorBusiness: businesses > 0 ? lot.anchorBusiness ?? createAnchorBusiness(lot.id, zone, businesses) : undefined,
+        businessFinance: normalizeBusinessFinance(lot.businessFinance, businesses, savedElapsedMinutes)
       };
     });
     this.homes = clone(snapshot.homes).map(home => {
@@ -4827,7 +4957,8 @@ export class World {
       businesses: l.businesses,
       householdMix: l.householdMix,
       businessMix: l.businessMix,
-      anchorBusiness: l.anchorBusiness
+      anchorBusiness: l.anchorBusiness,
+      businessFinance: l.businessFinance
     }]));
     const lots: Lot[] = [];
     for (const road of this.roads) {
@@ -4867,6 +4998,7 @@ export class World {
             householdMix: existingActivity.get(id)?.householdMix ?? createHouseholdMix(households, seed),
             businessMix: existingActivity.get(id)?.businessMix ?? createBusinessMix(businesses, zone, seed),
             anchorBusiness: existingActivity.get(id)?.anchorBusiness ?? createAnchorBusiness(id, zone, businesses),
+            businessFinance: existingActivity.get(id)?.businessFinance,
             homeId: existingHomes.get(id)
           });
         }
@@ -4993,6 +5125,7 @@ export class World {
     const effectiveStaffing = this.effectiveStaffing();
     const cityAttractiveness = Math.max(.18, Math.min(1, .24 + this.services.length * .032 + effectiveStaffing * .38 - this.activeIncidents().length * .025));
     const totalPopulation = Math.max(1, this.lots.reduce((total, lot) => total + this.lotPopulation(lot), 0));
+    const activeEvents = this.activeCityEvents();
     for (const lot of this.lots) {
       if (this.constructionProgress(lot) < 1) continue;
       const seed = hashString(lot.id);
@@ -5013,9 +5146,17 @@ export class World {
         activity.households -= moves;
       }
 
+      const priorBusinessFinance = this.businessFinance(lot);
+      const priorMargin = priorBusinessFinance.lastRevenue
+        ? priorBusinessFinance.lastProfit / priorBusinessFinance.lastRevenue
+        : 0;
+      const viabilityFactor = priorBusinessFinance.lastSettledAt
+        ? clamp(1 + priorMargin * .18 - priorBusinessFinance.consecutiveLossDays * .025, .72, 1.12)
+        : 1;
       const grantFactor = policies.includes("small-business-grants") ? 1.14 : 1;
       const freightFactor = policies.includes("heavy-traffic-ban") && lot.zone === "industrial" ? .82 : 1;
-      const businessTarget = Math.round(targetBusinesses(lot.zone, seed) * businessTaxFactor * grantFactor * freightFactor);
+      const businessTarget = Math.round(targetBusinesses(lot.zone, seed) * businessTaxFactor * grantFactor * freightFactor * viabilityFactor);
+      const businessesBeforeGrowth = lot.businesses;
       if (lot.businesses < businessTarget && attractiveness > .38) {
         lot.businesses += 1;
         activity.businesses += 1;
@@ -5033,12 +5174,59 @@ export class World {
           ? lot.anchorBusiness
           : createAnchorBusiness(lot.id, lot.zone, lot.businesses)
         : undefined;
+      if (lot.businesses > businessesBeforeGrowth) {
+        lot.businessFinance = {
+          ...priorBusinessFinance,
+          operatingReserve: priorBusinessFinance.operatingReserve + (lot.businesses - businessesBeforeGrowth) * 5_000
+        };
+      }
+      if (lot.businesses > 0) {
+        activity.businesses -= this.settleBusinessFinance(lot, totalPopulation, effectiveStaffing, policies, activeEvents);
+      }
     }
     this.advanceResidentLives();
     this.advanceResidentCareers();
     this.settleHouseholdFinances(totalPopulation, effectiveStaffing);
     this.lastDailyActivity = activity;
     this.rebuildCommutes();
+  }
+
+  private settleBusinessFinance(
+    lot: Lot,
+    totalPopulation: number,
+    effectiveStaffing: number,
+    policies: DistrictPolicy[],
+    activeEvents: CityEvent[]
+  ) {
+    const current = this.businessFinance(lot);
+    const projection = this.businessFinanceProjection(lot, totalPopulation, effectiveStaffing, policies, activeEvents);
+    const consecutiveLossDays = projection.profit < 0 ? current.consecutiveLossDays + 1 : 0;
+    const operatingReserve = Math.round(clamp(current.operatingReserve + projection.profit, 0, 100_000_000));
+    lot.businessFinance = {
+      lastRevenue: projection.revenue,
+      lastPayroll: projection.payroll,
+      lastOperatingCosts: projection.operatingCosts,
+      lastProfit: projection.profit,
+      operatingReserve,
+      consecutiveLossDays,
+      lastSettledAt: this.clock.elapsedMinutes,
+      lastClosureAt: current.lastClosureAt
+    };
+    if (lot.businesses <= 0 || operatingReserve > 0 || consecutiveLossDays < 5) return 0;
+    lot.businesses -= 1;
+    lot.businessMix = createBusinessMix(lot.businesses, lot.zone, hashString(lot.id));
+    lot.anchorBusiness = lot.businesses > 0
+      ? lot.anchorBusiness && lot.businessMix[lot.anchorBusiness.sector] > 0
+        ? lot.anchorBusiness
+        : createAnchorBusiness(lot.id, lot.zone, lot.businesses)
+      : undefined;
+    lot.businessFinance = {
+      ...lot.businessFinance,
+      operatingReserve: lot.businesses > 0 ? 2_000 : 0,
+      consecutiveLossDays: 0,
+      lastClosureAt: this.clock.elapsedMinutes
+    };
+    return 1;
   }
 
   private advanceResidentLives() {
@@ -6361,6 +6549,31 @@ function initialHouseholds(zone: Zone, seed: number) {
 
 function initialBusinesses(zone: Zone, seed: number) {
   return Math.floor(targetBusinesses(zone, seed) * .7);
+}
+
+function normalizeBusinessFinance(
+  finance: Partial<BusinessFinance> | undefined,
+  businesses: number,
+  elapsedMinutes: number
+): BusinessFinance {
+  const boundedInteger = (value: number | undefined, fallback: number, minimum: number, maximum: number) =>
+    Math.round(clamp(Number.isFinite(value) ? value! : fallback, minimum, maximum));
+  const lastClosureAt = Number.isFinite(finance?.lastClosureAt)
+    ? boundedInteger(finance?.lastClosureAt, 0, 0, elapsedMinutes)
+    : undefined;
+  const lastRevenue = boundedInteger(finance?.lastRevenue, 0, 0, 100_000_000);
+  const lastPayroll = boundedInteger(finance?.lastPayroll, 0, 0, 100_000_000);
+  const lastOperatingCosts = boundedInteger(finance?.lastOperatingCosts, 0, 0, 100_000_000);
+  return {
+    lastRevenue,
+    lastPayroll,
+    lastOperatingCosts,
+    lastProfit: lastRevenue - lastPayroll - lastOperatingCosts,
+    operatingReserve: boundedInteger(finance?.operatingReserve, businesses * 5_000, 0, 100_000_000),
+    consecutiveLossDays: boundedInteger(finance?.consecutiveLossDays, 0, 0, 3_650),
+    lastSettledAt: boundedInteger(finance?.lastSettledAt, 0, 0, elapsedMinutes),
+    lastClosureAt
+  };
 }
 
 function createHouseholdMix(total: number, seed: number): HouseholdMix {

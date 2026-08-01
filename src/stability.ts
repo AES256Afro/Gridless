@@ -42,6 +42,7 @@ export type StabilityCheckpoint = {
   averageWorkPerformance: number;
   residentMilestones: number;
   customersPresent: number;
+  privateSectorProfit: number;
   eventOccurrences: number;
   eventAttendance: number;
   snapshotBytes: number;
@@ -383,6 +384,7 @@ function checkpoint(world: World): StabilityCheckpoint {
       : 0,
     residentMilestones: residents.reduce((total, resident) => total + (resident.milestones?.length ?? 0), 0),
     customersPresent: world.lots.reduce((total, lot) => total + world.workplaceActivity(lot).customersPresent, 0),
+    privateSectorProfit: economy.privateSectorProfit,
     eventOccurrences: world.cityEvents.reduce((total, event) => total + event.occurrences, 0),
     eventAttendance: economy.eventAttendance,
     snapshotBytes
@@ -518,6 +520,33 @@ function integrityFailures(world: World) {
     const businessMix = Object.values(lot.businessMix).reduce((total, value) => total + value, 0);
     if (householdMix !== lot.households) failures.push(`Lot ${lot.id} household cohorts do not sum to the household count.`);
     if (businessMix !== lot.businesses) failures.push(`Lot ${lot.id} business sectors do not sum to the business count.`);
+    if (lot.businessFinance) {
+      const finance = lot.businessFinance;
+      if (
+        !Number.isInteger(finance.lastRevenue)
+        || finance.lastRevenue < 0
+        || !Number.isInteger(finance.lastPayroll)
+        || finance.lastPayroll < 0
+        || !Number.isInteger(finance.lastOperatingCosts)
+        || finance.lastOperatingCosts < 0
+        || !Number.isInteger(finance.lastProfit)
+        || finance.lastProfit !== finance.lastRevenue - finance.lastPayroll - finance.lastOperatingCosts
+        || !Number.isInteger(finance.operatingReserve)
+        || finance.operatingReserve < 0
+        || finance.operatingReserve > 100_000_000
+        || !Number.isInteger(finance.consecutiveLossDays)
+        || finance.consecutiveLossDays < 0
+        || finance.consecutiveLossDays > 3_650
+        || !Number.isInteger(finance.lastSettledAt)
+        || finance.lastSettledAt < 0
+        || finance.lastSettledAt > world.clock.elapsedMinutes
+        || (finance.lastClosureAt !== undefined && (
+          !Number.isInteger(finance.lastClosureAt)
+          || finance.lastClosureAt < 0
+          || finance.lastClosureAt > world.clock.elapsedMinutes
+        ))
+      ) failures.push(`Lot ${lot.id} has invalid business finance state.`);
+    }
     const landValue = world.lotLandValue(lot, integrityPopulation, integrityStaffing);
     if (!Number.isFinite(landValue) || landValue < 0 || landValue > 100) {
       failures.push(`Lot ${lot.id} has invalid land value.`);
