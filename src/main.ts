@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
 import { buildingArchitecture, type BuildingArchitecture } from "./architecture";
 import { neighborhoodPulse, type NeighborhoodPulse } from "./neighborhood";
+import { buildingProgram, type BuildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity, type ActivityEntry } from "./activity";
@@ -2490,6 +2491,7 @@ function renderWorld() {
     worldGroup.add(createAggregateChunkMassing(chunk, activeCityView));
   }
   const cityBuildingInstances: Array<{ lot: Lot; height: number; width: number; depth: number; color: number }> = [];
+  const cityMixedUsePodiums: Array<{ lot: Lot; height: number; width: number; depth: number; color: number }> = [];
   for (const lot of world.lots) {
     if (!detailedLotIds.has(lot.id)) continue;
     const planningValue = lotPlanningValue(lot, activeCityView, totalPopulation, effectiveStaffing, roadTraffic);
@@ -2523,6 +2525,7 @@ function renderWorld() {
     const fullHeight = lotHome
       ? Math.max(3.6, lotHome.floors * 3.2 + .4)
       : zoneBuildingHeight(lot.zone, seed) * architecture.heightScale * densityHeight;
+    const program = buildingProgram(lot.zone, density, lot.households, lot.businesses, fullHeight);
     const progress = world.constructionProgress(lot);
     const height = fullHeight * (.12 + progress * .88);
     if (mode === "home" && lot.id === selectedLot?.id) continue;
@@ -2538,6 +2541,15 @@ function renderWorld() {
       : planningColor;
     if (mode === "city" && progress >= 1) {
       cityBuildingInstances.push({ lot, height, width: buildingWidth, depth: buildingDepth, color: shellColor });
+      if (!lotHome && lot.zone === "mixed") {
+        cityMixedUsePodiums.push({
+          lot,
+          height: Math.min(height, program.podiumHeight),
+          width: buildingWidth * 1.04,
+          depth: buildingDepth * 1.04,
+          color: architecture.trimColor
+        });
+      }
     } else {
       const shell = new THREE.Mesh(
         new THREE.BoxGeometry(buildingWidth, height, buildingDepth),
@@ -2556,7 +2568,10 @@ function renderWorld() {
       worldGroup.add(shell);
       if (progress >= 1 && mode !== "city" && agentLotIds.has(lot.id)) {
         addBuildingWindows(lot, height, buildingWidth, buildingDepth, darkness, occupiedShare);
-        if (!lotHome) worldGroup.add(createArchitectureDetails(lot, height, buildingWidth, buildingDepth, architecture));
+        if (!lotHome) {
+          worldGroup.add(createArchitectureDetails(lot, height, buildingWidth, buildingDepth, architecture));
+          if (lot.zone === "mixed") worldGroup.add(createBuildingProgramDetails(lot, buildingWidth, buildingDepth, program));
+        }
       }
       if (lotHome && progress >= 1 && mode === "explore") {
         const roof = createHomeRoof(lot.width * .68, lot.depth * .64, shellColor);
@@ -2578,6 +2593,11 @@ function renderWorld() {
   const cityBuildingBatch = createCityBuildingBatch(cityBuildingInstances);
   cityBuildingBatchCount = cityBuildingBatch?.count ?? 0;
   if (cityBuildingBatch) worldGroup.add(cityBuildingBatch);
+  const cityMixedUseBatch = createCityBuildingBatch(cityMixedUsePodiums);
+  if (cityMixedUseBatch) {
+    cityMixedUseBatch.userData.cityMixedUsePodiums = true;
+    worldGroup.add(cityMixedUseBatch);
+  }
   renderAccessibilityEntrances();
   renderCityEvents();
   document.querySelector("#lot-count")!.textContent = String(world.lots.length);
@@ -2672,6 +2692,37 @@ function createArchitectureDetails(
     roof.position.y = height + architecture.roofHeight / 2;
     group.add(roof);
   }
+  return group;
+}
+
+function createBuildingProgramDetails(
+  lot: Lot,
+  buildingWidth: number,
+  buildingDepth: number,
+  program: BuildingProgram
+) {
+  const group = new THREE.Group();
+  group.position.set(lot.center.x, 0, lot.center.z);
+  group.rotation.y = lot.rotation;
+  group.userData.buildingProgram = program.label;
+  const glazing = new THREE.Mesh(
+    new THREE.PlaneGeometry(buildingWidth * .82, Math.max(1.8, program.podiumHeight * .7)),
+    new THREE.MeshStandardMaterial({ color: 0x58727a, emissive: 0x253d43, emissiveIntensity: .18, metalness: .22, roughness: .3 })
+  );
+  glazing.position.set(0, Math.max(1.2, program.podiumHeight * .43), buildingDepth / 2 + .055);
+  group.add(glazing);
+  const canopy = new THREE.Mesh(
+    new THREE.BoxGeometry(buildingWidth * .88, .16, 1.1),
+    new THREE.MeshStandardMaterial({ color: 0x4d5d52, roughness: .72 })
+  );
+  canopy.position.set(0, Math.max(2.3, program.podiumHeight * .72), buildingDepth / 2 + .48);
+  group.add(canopy);
+  const lobby = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.max(1.1, buildingWidth * .12), 2.25, .12),
+    new THREE.MeshStandardMaterial({ color: 0xd5c9ae, roughness: .55 })
+  );
+  lobby.position.set(-buildingWidth * .34, 1.13, buildingDepth / 2 + .09);
+  group.add(lobby);
   return group;
 }
 
@@ -6438,9 +6489,16 @@ function renderParcelDetails(lot: Lot) {
   const activity = world.lotActivity(lot);
   const lotWellbeing = world.lotWellbeing(lot);
   const lotWellbeingState = wellbeingLabel(lotWellbeing);
+  const lotHome = world.homes.find(home => home.lotId === lot.id);
   const environmentalQuality = world.lotEnvironmentalQuality(lot);
   const developmentCapacity = world.lotDevelopmentCapacity(lot);
-  const lotHome = world.homes.find(home => home.lotId === lot.id);
+  const parcelSeed = hash(lot.id);
+  const parcelArchitecture = buildingArchitecture(world.templateId, lot.zone, parcelSeed);
+  const parcelDensityHeight = developmentCapacity.density === "low" ? .62 : developmentCapacity.density === "high" ? 1.55 : 1;
+  const parcelHeight = lotHome
+    ? Math.max(3.6, lotHome.floors * 3.2 + .4)
+    : zoneBuildingHeight(lot.zone, parcelSeed) * parcelArchitecture.heightScale * parcelDensityHeight;
+  const parcelProgram = buildingProgram(lot.zone, developmentCapacity.density, lot.households, lot.businesses, parcelHeight);
   const latestHomeMilestone = lotHome?.residents
     .flatMap(resident => world.residentMilestones(resident).map(milestone => ({ resident, milestone })))
     .sort((first, second) => second.milestone.occurredAt - first.milestone.occurredAt)[0];
@@ -6522,6 +6580,7 @@ function renderParcelDetails(lot: Lot) {
       <div><span>Jobs</span><strong>${world.lotJobs(lot).toLocaleString()}</strong></div>
     </div>
     <div class="parcel-line"><span>Zoning intensity</span><strong>${developmentCapacity.density} · capacity ${developmentCapacity.households} households and ${developmentCapacity.businesses} businesses</strong></div>
+    <div class="parcel-line"><span>Building program</span><strong>${parcelProgram.label} · ${parcelProgram.totalFloors} floors${parcelProgram.commercialFloors ? ` · ${parcelProgram.commercialFloors} commercial` : ""}${parcelProgram.residentialFloors ? ` · ${parcelProgram.residentialFloors} residential` : ""}</strong><small>${parcelProgram.groundFloor} · ${parcelProgram.access}</small></div>
     <div class="parcel-line"><span>Household mix</span><strong>${householdMix.length ? householdMix.map(([label, count]) => `${label} ${count}`).join(" · ") : "No occupied homes"}</strong></div>
     <div class="parcel-line"><span>Business mix</span><strong>${businessMix.length ? businessMix.join(" · ") : "No open businesses"}</strong></div>
     <div class="parcel-line"><span>Live neighborhood routine</span><strong>${activity.atHome} home · ${activity.atWorkOrSchool} work or school · ${activity.outInCity} elsewhere · ${activity.openBusinesses}/${lot.businesses} businesses open</strong></div>
