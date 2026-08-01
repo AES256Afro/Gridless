@@ -2196,9 +2196,18 @@ check(
 check(
   groupEditWorld.setFurnitureGroupVariant(groupEditHome.id, groupEditIds, "soft")
     && groupEditWorld.setFurnitureGroupTint(groupEditHome.id, groupEditIds, "#2563EB")
-    && groupEditWorld.rotateFurnitureGroup(groupEditHome.id, groupEditIds)
-    && groupEditWorld.moveFurnitureGroup(groupEditHome.id, groupEditIds, groupEditAnchor.id, -2, -2),
+    && groupEditWorld.rotateFurnitureGroup(groupEditHome.id, groupEditIds),
   "Grouped furnishing design, rotation, or collision-safe movement failed."
+);
+const validGroupMovePreview = groupEditWorld.previewFurnitureGroupMove(groupEditWorld.homes[0], groupEditIds, groupEditAnchor.id, -2, -2);
+const blockedGroupMovePreview = groupEditWorld.previewFurnitureGroupMove(groupEditWorld.homes[0], groupEditIds, groupEditAnchor.id, 5, -2);
+check(
+  validGroupMovePreview.ok
+    && validGroupMovePreview.placements.length === 2
+    && !blockedGroupMovePreview.ok
+    && blockedGroupMovePreview.reason.includes("room boundary")
+    && groupEditWorld.moveFurnitureGroup(groupEditHome.id, groupEditIds, groupEditAnchor.id, -2, -2),
+  "Grouped furnishing placement previews did not agree with the committed collision-safe move."
 );
 const movedGroupItems = groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id));
 const groupSale = groupEditWorld.removeFurnitureGroup(groupEditHome.id, groupEditIds);
@@ -4412,7 +4421,9 @@ console.log(JSON.stringify({
     movedBy: { x: 1, z: 1 },
     rotation: movedGroupItems[0]?.rotation,
     refund: groupSale.refund,
-    undoRestored: groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id)).length === 2
+    undoRestored: groupEditWorld.homes[0].furniture.filter(item => groupEditIds.includes(item.id)).length === 2,
+    validPreview: validGroupMovePreview.reason,
+    blockedPreview: blockedGroupMovePreview.reason
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,

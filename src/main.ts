@@ -493,6 +493,7 @@ app.innerHTML = `
       <select id="home-catalog" aria-label="Home object catalog"></select>
       <button id="favorite-catalog-item" type="button" aria-label="Favorite selected catalog object">☆ Favorite</button>
       <button id="place-catalog-item">Place sofa</button>
+      <div class="home-budget" id="home-placement-preview" aria-live="polite" hidden></div>
       <div class="tool-divider"></div>
       <button id="move-furniture" disabled>Move</button>
       <button id="rotate-furniture" disabled>Rotate 45°</button>
@@ -3863,6 +3864,11 @@ function hash(value: string) {
 
 function renderDraft() {
   previewGroup.clear();
+  const homePlacementStatus = document.querySelector<HTMLElement>("#home-placement-preview");
+  if (homePlacementStatus) {
+    homePlacementStatus.hidden = true;
+    homePlacementStatus.classList.remove("warning");
+  }
   const draftRoad = cityTool === "road" ? currentRoadConfig() : undefined;
   const previewElevation = draftRoad?.structure === "tunnel" ? .35 : draftRoad?.elevationMeters ?? 0;
   if (draft.length > 1) {
@@ -3958,23 +3964,60 @@ function renderDraft() {
       preview.rotation.y = selectedLot.rotation + (placement?.orientation === "x" ? Math.PI / 2 : 0);
       previewGroup.add(preview);
     } else if (home && kind) {
-      const rotation = movingItem?.rotation ?? 0;
+      const movingIds = movingItem ? [...selectedFurnitureIds] : [];
+      const groupPreview = movingItem
+        ? world.previewFurnitureGroupMove(home, movingIds, movingItem.id, homePreviewPoint.x, homePreviewPoint.z)
+        : null;
       const activeFloor = movingItem ? homeEntityFloor(movingItem) : homeFloor;
-      const valid = world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, rotation, movingItem?.id, activeFloor);
-      const size = HOME_FURNITURE_SIZE[kind];
-      const footprint = new THREE.Mesh(
-        new THREE.BoxGeometry(size.width, .06, size.depth),
-        new THREE.MeshBasicMaterial({
-          color: valid ? 0x73c68b : 0xd96c5f,
-          transparent: true,
-          opacity: .58,
-          depthWrite: false
-        })
-      );
-      const worldPosition = localToWorld(homePreviewPoint, selectedLot);
-      footprint.position.set(worldPosition.x, .42, worldPosition.z);
-      footprint.rotation.y = selectedLot.rotation + rotation;
-      previewGroup.add(footprint);
+      const spatiallyValid = groupPreview?.ok
+        ?? world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, 0, undefined, activeFloor);
+      const cost = movingItem ? 0 : HOME_BUILD_COSTS[kind];
+      const affordable = movingItem || world.homeRemainingBudget(home) >= cost;
+      const valid = spatiallyValid && affordable;
+      const placements = groupPreview
+        ? groupPreview.placements.map(placement => ({
+            item: home.furniture.find(candidate => candidate.id === placement.id)!,
+            x: placement.x,
+            z: placement.z
+          }))
+        : [{
+            item: { kind, rotation: 0 } as Home["furniture"][number],
+            x: homePreviewPoint.x,
+            z: homePreviewPoint.z
+          }];
+      for (const placement of placements) {
+        const size = HOME_FURNITURE_SIZE[placement.item.kind];
+        const footprint = new THREE.Mesh(
+          new THREE.BoxGeometry(size.width, .06, size.depth),
+          new THREE.MeshBasicMaterial({
+            color: valid ? 0x73c68b : 0xd96c5f,
+            transparent: true,
+            opacity: .58,
+            depthWrite: false
+          })
+        );
+        const worldPosition = localToWorld(placement, selectedLot);
+        footprint.position.set(worldPosition.x, .42, worldPosition.z);
+        footprint.rotation.y = selectedLot.rotation + placement.item.rotation;
+        previewGroup.add(footprint);
+      }
+      const status = !spatiallyValid
+        ? groupPreview?.reason ?? "Blocked by a room boundary or another furnishing."
+        : !affordable
+          ? `${formatHomeCurrency(cost)} needed · ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+          : movingItem
+            ? `${movingIds.length} furnishing${movingIds.length === 1 ? "" : "s"} · Floor ${activeFloor + 1} · Ready to move`
+            : `${homeFurnitureLabel(kind)} · Floor ${activeFloor + 1} · ${formatHomeCurrency(cost)} · Ready to place`;
+      if (homePlacementStatus) {
+        homePlacementStatus.hidden = false;
+        homePlacementStatus.textContent = status;
+        homePlacementStatus.classList.toggle("warning", !valid);
+      }
+      const label = makeHomeLabel(status);
+      const labelPosition = localToWorld(homePreviewPoint, selectedLot);
+      label.position.set(labelPosition.x, 1.2, labelPosition.z);
+      label.material.opacity = .92;
+      previewGroup.add(label);
     } else if (home && homeTool === "stairs") {
       const valid = homeFloor < home.floors - 1
         && homeFloorView(home, homeFloor).rooms.some(room => Math.abs(homePreviewPoint!.x - room.x) <= room.width / 2 - 1.1 && Math.abs(homePreviewPoint!.z - room.z) <= room.depth / 2 - 2.1)

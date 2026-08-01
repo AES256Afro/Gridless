@@ -407,6 +407,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] The furnishing eyedropper samples style, design variant, and custom tint from a selected object, visibly carries that design across catalog choices, applies it atomically during placement, and offers an explicit reset.
 - [Complete] A unified move-in readiness scorecard weighs safety, circulation, household capacity, organization, energy, privacy, and condition. Unsafe homes stay blocked regardless of their aggregate score, while the Home Simulator and parcel inspector show the same severity-ranked corrections and strengths.
 - [Complete] Shift-click multi-select keeps every selected furnishing visibly outlined, exposes the group count, and applies style, variant, tint, collision-safe relative movement, 45-degree rotation, or combined sale as one validated Undo-safe operation.
+- [Complete] Furniture placement previews show green or red footprints before a click, preserve and validate every footprint in a moving group, and report the active floor, exact catalog price, budget shortfall, or physical blocker in both the scene and build toolbar.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 
 Exit gate: a player can build a distinctive two-story home, furnish it efficiently, and traverse every finished space from its actual city entrance.
