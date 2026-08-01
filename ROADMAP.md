@@ -32,7 +32,7 @@ Later map import should use versioned public GIS data as an optional reference l
 - **Chicago is live:** an editable lakefront, three river branches, service alleys, a strong orthogonal grid, Milwaukee diagonal, expressway, bus-priority State and Lake corridors, lakefront trail, neighborhood zoning, distinct parks and districts, local parking, State Street event, transit identity, and colder windier climate
 - **Houston is live:** editable freeway loops, frontage roads, two bayous, three mapped floodplains, large parcels, industrial corridors, intentional unassigned land, low-density growth, Main Street transit, regional parking and event identity, and a warm wet climate
 - **Seattle is live:** narrow developable land between sound and lake, Lake Union and ship-canal constraints, four mapped hill areas, three major bridge corridors, freeways without parcel frontage, compact urban villages, bicycle routes, 3rd Avenue transit, and a cool wet climate; ferries and seismic systems remain ahead
-- **Portland:** compact blocks, Willamette and Columbia rivers, bridges, light rail, bicycle networks, neighborhood main streets, and an urban-growth boundary
+- **Portland is live:** compact blocks, Willamette and Columbia rivers, four bridge corridors, two bicycle greenways, transit-priority Burnside, neighborhood main streets and centers, three major parks, and a visible urban growth boundary; modeled light rail vehicles remain ahead
 
 Every foundation must remain editable. Their value comes from distinct constraints and planning opportunities, not from locking the player into a replica.
 
@@ -66,6 +66,8 @@ The foundation chooser now pairs each available template with a plain-language p
 Houston loads as New Bayou City with 24 editable routes, 768 large-parcel frontages, a 610-style loop, two crossing freeways, paired frontage roads, two bayous, three visible floodplains, four districts, two parks, an industrial ship-channel pattern, 60 intentionally unassigned parcels, and region-specific transit, parking, event, and warm-climate behavior. The Environment planning view distinguishes outside, moderate, and high flood exposure. Risk does not lock development, but it creates an explicit seven- or fourteen-point land-value penalty so preserving floodplain space becomes a legible player tradeoff.
 
 Seattle loads as New Sound City with 26 editable routes, 519 parcels, three internal water constraints, four mapped hill areas, three cross-water bridge corridors, two limited-access regional roads, a bicycle trail, five urban districts, two major parks, and region-specific transit, parking, event, and cool-wet climate behavior. The Environment view combines flood and terrain evidence: 69 parcels begin on steep ground and 55 on moderate slopes. Terrain remains editable, while four- and nine-point land-value pressure makes corridor alignment and open-space choices visible before a full elevation engine arrives.
+
+Portland loads as New River City with 28 editable routes, 645 compact-block parcels, the Willamette and Columbia rivers, four cross-river main streets, two limited-access highways, two bicycle greenways, five neighborhood districts, three parks, and region-specific transit, parking, Rose Festival, and cool-rainy climate behavior. A visible urban growth boundary contains 528 starting parcels while 117 sit outside it. The exterior remains editable and begins largely unassigned, but carries ten points of land-value pressure so compact growth is a readable incentive rather than an invisible rule.
 
 Home Simulator exposes the same authored identity for each property or household. Names use the bounded safe character set, remain attached to the exact city lot, enter the activity feed, and participate in snapshots, recovery, Undo, and Redo.
 
@@ -332,6 +334,7 @@ Current foundation:
 - The same regression gate verifies Chicago identity, exact grid and water features, developable-road parcel rules, four-way zoning mix, road-profile hierarchy, local transit, parking, event, deterministic climate, and save restoration.
 - Houston regression coverage verifies freeway and frontage-road access rules, large parcels, flexible zoning, three flood-exposure states, land-value pressure, bayous, transit, parking, event identity, warm deterministic climate, and legacy terrain restoration.
 - Seattle regression coverage verifies constrained water geometry, no-frontage freeways and bridges, transit and bicycle priority, three slope states, terrain land-value pressure, urban-village zoning, regional transit and events, cool deterministic climate, and legacy terrain restoration.
+- Portland regression coverage verifies two-river geometry, bridge corridors, compact parcels, freeway and greenway access rules, inside and outside growth-boundary states, boundary land-value pressure, neighborhood zoning, regional transit and events, rainy deterministic climate, and legacy terrain restoration.
 
 Next scale systems are chunk impostors, instanced building batches, hierarchical inter-chunk pathfinding, deterministic background workers, and real million-population performance budgets.
 
@@ -401,7 +404,8 @@ Exit gate: the one-million-person reference region meets its published budgets f
 - [Complete] Add Chicago as a data-driven terrain, climate, street-hierarchy, transit, zoning, parking, and event profile.
 - [Complete] Add Houston as a data-driven terrain, climate, floodplain, street-hierarchy, transit, zoning, parking, and event profile.
 - [Complete] Add Seattle as a data-driven water-constraint, climate, slope, bridge, street-hierarchy, transit, zoning, parking, and event profile.
-- Add Portland as a data-driven terrain, climate, street-hierarchy, transit, zoning, architecture, and economy profile.
+- [Complete] Add Portland as a data-driven river, climate, growth-boundary, bridge, street-hierarchy, bicycle, transit-priority, zoning, parking, and event profile.
+- Add region-specific architecture and economy modifiers plus modeled ferries, elevated rail, and light-rail vehicles to the five live foundations.
 - Keep every foundation flexible: players can erase, extend, remix, or combine regional rules.
 
 Exit gate: each foundation creates a recognizably different planning problem while using the same tested world systems and save format.

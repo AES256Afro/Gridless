@@ -470,6 +470,117 @@ export const SEATTLE_TEMPLATE: WorldTemplate = {
   ]
 };
 
+function portlandRoads() {
+  const roads: Road[] = [];
+  const northSouth = [
+    [-400, "Northwest Skyline Boulevard"],
+    [-320, "Northwest 23rd Avenue"],
+    [-240, "Northwest 14th Avenue"],
+    [-160, "Southwest Broadway"],
+    [-80, "Naito Parkway"],
+    [80, "Martin Luther King Jr Boulevard"],
+    [160, "Southeast 12th Avenue"],
+    [240, "Southeast 39th Avenue"],
+    [320, "Southeast 60th Avenue"],
+    [400, "Southeast 82nd Avenue"]
+  ] as const;
+  northSouth.forEach(([x, name], index) => roads.push(regionLine(
+    name === "Naito Parkway" ? "portland-naito" : `portland-north-south-${index + 1}`,
+    name,
+    name === "Naito Parkway" || name.includes("Boulevard") ? "avenue" : "street",
+    name === "Naito Parkway" || name.includes("Boulevard") ? 12 : 8,
+    [[x, -455], [x + (index % 2 ? 4 : -4), 455]],
+    name === "Naito Parkway"
+      ? { travelLanes: 2, speedLimitKph: 30, sidewalkWidth: 4, bikeLanes: true, busLanes: false, median: false, curbParking: true, streetTrees: true }
+      : undefined
+  )));
+  const localEastWest = [
+    [-420, "Southeast Flavel Street"],
+    [-220, "Southeast Division Street"],
+    [110, "Northeast Broadway"],
+    [310, "Northeast Alberta Street"],
+    [420, "North Lombard Street"]
+  ] as const;
+  localEastWest.forEach(([z, name], index) => {
+    roads.push(regionLine(`portland-west-east-${index + 1}`, `${name} West`, "street", 8, [[-455, z], [-30, z]]));
+    roads.push(regionLine(`portland-east-east-${index + 1}`, name, name.includes("Broadway") ? "avenue" : "street", name.includes("Broadway") ? 12 : 8, [[35, z], [455, z]]));
+  });
+  const bridges = [
+    [-320, "Sellwood Bridge"],
+    [-120, "Hawthorne Bridge"],
+    [0, "Burnside Street"],
+    [210, "Broadway Bridge"]
+  ] as const;
+  bridges.forEach(([z, name], index) => roads.push(regionLine(
+    name === "Burnside Street" ? "portland-burnside" : `portland-bridge-${index + 1}`,
+    name,
+    "avenue",
+    name === "Burnside Street" ? 14 : 12,
+    [[-455, z], [455, z]],
+    name === "Burnside Street"
+      ? { travelLanes: 4, speedLimitKph: 35, sidewalkWidth: 3.5, bikeLanes: true, busLanes: true, median: false, curbParking: false, streetTrees: true }
+      : { travelLanes: 2, speedLimitKph: 30, sidewalkWidth: 3, bikeLanes: true, busLanes: false, median: false, curbParking: false, streetTrees: true }
+  )));
+  roads.push(regionLine(
+    "portland-i5",
+    "Interstate 5",
+    "arterial",
+    22,
+    [[35, -500], [48, -250], [42, 0], [58, 260], [65, 500]],
+    { travelLanes: 6, speedLimitKph: 90, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "portland-i84",
+    "Interstate 84",
+    "arterial",
+    20,
+    [[45, 72], [220, 88], [500, 120]],
+    { travelLanes: 6, speedLimitKph: 80, sidewalkWidth: 1.2, bikeLanes: false, busLanes: false, median: true, curbParking: false, streetTrees: false },
+    false
+  ));
+  roads.push(regionLine(
+    "portland-springwater",
+    "Springwater Corridor",
+    "street",
+    5,
+    [[-20, -355], [160, -340], [330, -385], [480, -350]],
+    { travelLanes: 1, speedLimitKph: 20, sidewalkWidth: 3.2, bikeLanes: true, busLanes: false, median: false, curbParking: false, streetTrees: true },
+    false
+  ));
+  roads.push(regionLine(
+    "portland-willamette-greenway",
+    "Willamette Greenway",
+    "street",
+    5,
+    [[-42, -440], [-48, -220], [-40, 0], [-52, 225], [-46, 370]],
+    { travelLanes: 1, speedLimitKph: 20, sidewalkWidth: 3.2, bikeLanes: true, busLanes: false, median: false, curbParking: false, streetTrees: true },
+    false
+  ));
+  return roads;
+}
+
+export const PORTLAND_TEMPLATE: WorldTemplate = {
+  id: "portland",
+  name: "Portland Foundation",
+  description: "A flexible compact-block city with two rivers, bridge corridors, bicycle greenways, transit-priority main streets, neighborhood centers, and a visible urban growth boundary.",
+  roads: portlandRoads(),
+  areas: [
+    regionPolygon("portland-land", "Portland Region", "land", [[-520, -520], [520, -520], [520, 520], [-520, 520]]),
+    regionPolygon("portland-growth-boundary", "Urban Growth Boundary", "growth-boundary", [[-405, -365], [385, -365], [435, -285], [430, 285], [350, 370], [-345, 370], [-430, 285], [-435, -280]]),
+    regionPolygon("portland-willamette", "Willamette River", "water", [[-35, -520], [35, -520], [45, -250], [32, 0], [48, 245], [32, 390], [-42, 390], [-55, 220], [-45, 0], [-58, -260]]),
+    regionPolygon("portland-columbia", "Columbia River", "water", [[-520, 385], [520, 385], [520, 520], [-520, 520]]),
+    regionPolygon("portland-forest-park", "Forest Park", "park", [[-500, 80], [-345, 80], [-345, 355], [-500, 355]]),
+    regionPolygon("portland-mount-tabor", "Mount Tabor Park", "park", [[260, -80], [370, -80], [370, 45], [260, 45]]),
+    regionPolygon("portland-waterfront-park", "Waterfront Park", "park", [[-78, -190], [-48, -190], [-48, 150], [-78, 150]]),
+    regionPolygon("portland-pearl", "Pearl District", "district", [[-235, 40], [-72, 40], [-72, 210], [-235, 210]]),
+    regionPolygon("portland-downtown", "Downtown", "district", [[-250, -210], [-65, -210], [-65, 35], [-250, 35]]),
+    regionPolygon("portland-alberta", "Alberta Arts District", "district", [[70, 225], [310, 225], [310, 375], [70, 375]]),
+    regionPolygon("portland-hawthorne", "Hawthorne", "district", [[65, -250], [330, -250], [330, -65], [65, -65]]),
+    regionPolygon("portland-central-eastside", "Central Eastside", "district", [[45, -85], [235, -85], [235, 165], [45, 165]])
+  ]
+};
+
 export const BLANK_TEMPLATE: WorldTemplate = {
   id: "blank",
   name: "Blank Region",
@@ -485,6 +596,7 @@ export const WORLD_TEMPLATES = {
   chicago: CHICAGO_TEMPLATE,
   houston: HOUSTON_TEMPLATE,
   seattle: SEATTLE_TEMPLATE,
+  portland: PORTLAND_TEMPLATE,
   blank: BLANK_TEMPLATE
 } satisfies Record<WorldTemplate["id"], WorldTemplate>;
 
@@ -565,6 +677,22 @@ export const TEMPLATE_REGIONAL_CONFIGS: Record<WorldTemplate["id"], TemplateRegi
     },
     parkingRoadIds: ["seattle-third", "seattle-east-west-5", "seattle-north-south-1"],
     event: { id: "template-event-waterfront-music", name: "Seattle Waterfront Music Walk", kind: "concert", roadId: "seattle-north-south-2" }
+  },
+  portland: {
+    defaultCityName: "New River City",
+    climate: {
+      monthlyTemperature: [5, 7, 9, 12, 16, 19, 22, 22, 19, 14, 9, 6],
+      wetThreshold: { winter: 62, spring: 48, summer: 20, autumn: 58 },
+      snowThreshold: 3,
+      windBase: 4
+    },
+    transit: {
+      roadId: "portland-burnside",
+      lineName: "Burnside Crosstown P1",
+      stopNames: ["West Hills", "Northwest", "Downtown", "Old Town", "Central Eastside", "Laurelhurst", "East Terminal"]
+    },
+    parkingRoadIds: ["portland-burnside", "portland-bridge-2", "portland-east-east-4"],
+    event: { id: "template-event-rose-festival", name: "Waterfront Rose Festival", kind: "parade", roadId: "portland-naito" }
   },
   blank: {
     defaultCityName: "Untitled Region",

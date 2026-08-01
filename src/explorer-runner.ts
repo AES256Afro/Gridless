@@ -746,6 +746,93 @@ check(
   "A legacy Seattle save without area geometry did not recover its regional terrain."
 );
 
+const portlandWorld = new World();
+check(
+  portlandWorld.applyTemplate("portland")
+    && portlandWorld.cityName === "New River City"
+    && portlandWorld.templateId === "portland",
+  "The Portland foundation did not reset world and city identity."
+);
+check(
+  portlandWorld.roads.length === 28
+    && portlandWorld.areas.filter(area => area.kind === "water").length === 2
+    && portlandWorld.areas.filter(area => area.kind === "growth-boundary").length === 1
+    && portlandWorld.areas.filter(area => area.kind === "park").length === 3
+    && portlandWorld.areas.filter(area => area.kind === "district").length === 5,
+  "The Portland foundation lost its rivers, growth boundary, parks, districts, or compact street structure."
+);
+const portlandI5 = portlandWorld.roads.find(road => road.id === "portland-i5")!;
+const portlandBurnside = portlandWorld.roads.find(road => road.id === "portland-burnside")!;
+const portlandGreenway = portlandWorld.roads.find(road => road.id === "portland-willamette-greenway")!;
+check(
+  portlandI5.developable === false
+    && portlandI5.profile?.travelLanes === 6
+    && portlandI5.profile.speedLimitKph === 90
+    && portlandBurnside.profile?.busLanes === true
+    && portlandBurnside.profile.bikeLanes === true
+    && portlandGreenway.developable === false
+    && portlandGreenway.profile?.bikeLanes === true
+    && !portlandWorld.lots.some(lot => lot.roadId === portlandI5.id || lot.roadId === portlandGreenway.id),
+  "Portland freeway, transit-priority main street, and bicycle greenway profiles lost their access rules."
+);
+const portlandBoundaryCounts = { inside: 0, outside: 0 };
+portlandWorld.lots.forEach(lot => portlandBoundaryCounts[portlandWorld.lotGrowthBoundaryStatus(lot)] += 1);
+const portlandZones = new Set(portlandWorld.lots.map(lot => lot.zone));
+check(
+  portlandWorld.lots.length > 600
+    && portlandBoundaryCounts.inside > 0
+    && portlandBoundaryCounts.outside > 0
+    && portlandZones.has("unassigned")
+    && portlandZones.has("residential")
+    && portlandZones.has("commercial")
+    && portlandZones.has("mixed")
+    && portlandZones.has("industrial"),
+  "Portland did not create compact parcels, inside and outside boundary states, and neighborhood zoning variety."
+);
+const portlandOutsideLot = portlandWorld.lots.find(lot => portlandWorld.lotGrowthBoundaryStatus(lot) === "outside")!;
+const portlandOutsideValue = portlandWorld.lotLandValue(portlandOutsideLot);
+const portlandBoundaryAreaIndex = portlandWorld.areas.findIndex(area => area.kind === "growth-boundary");
+const [portlandBoundaryArea] = portlandWorld.areas.splice(portlandBoundaryAreaIndex, 1);
+const portlandUnconstrainedValue = portlandWorld.lotLandValue(portlandOutsideLot);
+check(
+  portlandWorld.lotGrowthBoundaryStatus(portlandOutsideLot) === "inside"
+    && portlandOutsideValue === Math.max(0, portlandUnconstrainedValue - 10),
+  "Development beyond the Portland growth boundary did not receive its explicit land-value pressure."
+);
+portlandWorld.areas.splice(portlandBoundaryAreaIndex, 0, portlandBoundaryArea);
+check(
+  portlandWorld.transitLines[0]?.name === "Burnside Crosstown P1"
+    && portlandWorld.transitLines[0].stops.some(stop => stop.name === "Downtown")
+    && portlandWorld.parking.length === 3
+    && portlandWorld.cityEvents[0]?.name === "Waterfront Rose Festival"
+    && portlandWorld.cityEvents[0].kind === "parade",
+  "The Portland foundation did not seed its local transit, parking, and waterfront event."
+);
+const portlandWeather = portlandWorld.weather();
+const matchingPortlandWorld = new World();
+matchingPortlandWorld.applyTemplate("portland");
+check(
+  portlandWeather.kind === "rain"
+    && portlandWeather.temperatureC < houstonWeather.temperatureC
+    && JSON.stringify(portlandWeather) === JSON.stringify(matchingPortlandWorld.weather()),
+  "Portland climate was not cool, rainy, and deterministic on the reference winter date."
+);
+const restoredPortlandWorld = new World();
+check(
+  restoredPortlandWorld.restore(portlandWorld.serialize())
+    && restoredPortlandWorld.templateId === "portland"
+    && restoredPortlandWorld.roads.some(road => road.id === "portland-i84")
+    && restoredPortlandWorld.areas.some(area => area.kind === "growth-boundary"),
+  "Portland regional identity, freeway geometry, or growth boundary was lost during persistence."
+);
+const legacyPortlandSnapshot = JSON.parse(portlandWorld.serialize());
+delete legacyPortlandSnapshot.areas;
+check(
+  restoredPortlandWorld.restore(JSON.stringify(legacyPortlandSnapshot))
+    && restoredPortlandWorld.areas.some(area => area.kind === "water" && area.name === "Willamette River"),
+  "A legacy Portland save without area geometry did not recover its regional terrain."
+);
+
 const householdIdentityWorld = new World();
 const householdIdentityHome = householdIdentityWorld.ensureHome(householdIdentityWorld.lots[0]);
 check(!householdIdentityWorld.setHomeName(householdIdentityHome.id, "<home>"), "Home identity accepted unsafe markup characters.");
