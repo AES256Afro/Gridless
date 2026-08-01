@@ -45,7 +45,10 @@ import {
   scheduledTransitPose
 } from "./transit";
 import {
+  ROAD_PROFILE_PRESETS,
   World,
+  roadConstructionCost,
+  roadWidthForProfile,
   type AccessibilityEntrance,
   type Area,
   type ConversationIntent,
@@ -234,6 +237,115 @@ const nearest = nearestRoadLocation(paths, { x: 0, z: 9 });
 check(Boolean(nearest), "Curved road lookup did not return a location.");
 check(nearest!.roadName === "Test Avenue", "Road lookup lost the road name.");
 check(nearest!.distance < 2, "Curved road lookup is too far from the visible spline.");
+
+const profiledWorld = new World();
+check(
+  profiledWorld.roads.every(candidate => {
+    const profile = profiledWorld.roadProfile(candidate);
+    return profile.travelLanes >= 1
+      && profile.speedLimitKph >= 20
+      && profile.sidewalkWidth >= 1.2;
+  }),
+  "Template roads did not receive valid road profile defaults."
+);
+const legacyRoadSnapshot = JSON.parse(profiledWorld.serialize());
+for (const legacyRoad of legacyRoadSnapshot.roads) delete legacyRoad.profile;
+check(profiledWorld.restore(JSON.stringify(legacyRoadSnapshot)), "A legacy road snapshot could not be restored.");
+check(
+  profiledWorld.roads.every(candidate => Boolean(candidate.profile)),
+  "Legacy road migration did not add persistent road profiles."
+);
+
+const authoredProfile = {
+  ...ROAD_PROFILE_PRESETS.avenue,
+  travelLanes: 6,
+  speedLimitKph: 60,
+  bikeLanes: true,
+  busLanes: true,
+  median: true,
+  curbParking: false,
+  sidewalkWidth: 4
+};
+const profileRoadPoints = [{ x: 900, z: 820 }, { x: 990, z: 820 }];
+const profileTreasuryBefore = profiledWorld.clock.treasury;
+const profileConstructionCost = roadConstructionCost(profileRoadPoints, authoredProfile);
+check(
+  profiledWorld.addRoad(profileRoadPoints, 12, "avenue", authoredProfile),
+  "A funded custom road profile could not be built."
+);
+const authoredRoad = profiledWorld.roads.at(-1)!;
+const authoredRoadLot = profiledWorld.lots.find(candidate => candidate.roadId === authoredRoad.id)!;
+const authoredRoadHome = profiledWorld.ensureHome(authoredRoadLot);
+check(
+  authoredRoad.width === roadWidthForProfile(authoredProfile)
+    && authoredRoad.profile?.travelLanes === 6
+    && authoredRoad.profile.busLanes
+    && profiledWorld.clock.treasury === profileTreasuryBefore - profileConstructionCost,
+  "Custom road construction did not persist its geometry, features, and treasury cost."
+);
+const profileCapacityBefore = profiledWorld.roadCapacity(authoredRoad);
+const retrofit = profiledWorld.updateRoadProfile(authoredRoad.id, {
+  ...authoredProfile,
+  travelLanes: 2,
+  speedLimitKph: 30,
+  busLanes: false,
+  median: false
+}, "street");
+check(
+  retrofit.ok
+    && retrofit.cost > 0
+    && profiledWorld.roadCapacity(authoredRoad) < profileCapacityBefore
+    && profiledWorld.lots.some(candidate => candidate.id === authoredRoadLot.id)
+    && profiledWorld.homes.some(candidate => candidate.id === authoredRoadHome.id && candidate.lotId === authoredRoadLot.id),
+  "Road profile retrofit did not update capacity, charge its cost, and preserve its developed parcel."
+);
+const profiledSnapshot = profiledWorld.serialize();
+check(profiledWorld.restore(profiledSnapshot), "A city with custom road profiles could not be restored.");
+const restoredProfileRoad = profiledWorld.roads.find(candidate => candidate.id === authoredRoad.id);
+check(
+  restoredProfileRoad?.profile?.travelLanes === 2
+    && restoredProfileRoad.class === "street",
+  "Road profile persistence lost a retrofitted road design."
+);
+const priorityLine = profiledWorld.addTransitLine(authoredRoad.id)!;
+const unprioritizedHeadway = profiledWorld.transitEffectiveHeadway(priorityLine);
+const priorityRetrofit = profiledWorld.updateRoadProfile(authoredRoad.id, {
+  ...profiledWorld.roadProfile(restoredProfileRoad!),
+  busLanes: true
+});
+check(
+  priorityRetrofit.ok
+    && profiledWorld.transitEffectiveHeadway(priorityLine) < unprioritizedHeadway,
+  "A bus-priority road profile did not improve effective transit frequency."
+);
+
+const capacityWorld = new World();
+capacityWorld.applyTemplate("blank");
+const narrowProfile = { ...ROAD_PROFILE_PRESETS.street, travelLanes: 1, curbParking: false };
+const wideProfile = { ...ROAD_PROFILE_PRESETS.arterial, travelLanes: 8, speedLimitKph: 80, bikeLanes: false, median: false };
+capacityWorld.addRoad([{ x: -120, z: -20 }, { x: 120, z: -20 }], 3, "street", narrowProfile);
+capacityWorld.addRoad([{ x: -120, z: 20 }, { x: 120, z: 20 }], 24, "arterial", wideProfile);
+const narrowRoad = capacityWorld.roads[0];
+const wideRoad = capacityWorld.roads[1];
+capacityWorld.commuteFlows = [{
+  id: "road-profile-flow",
+  originLotId: "profile-origin",
+  destinationLotId: "profile-destination",
+  travelers: 180,
+  mode: "car",
+  route: [{ x: -100, z: -20 }, { x: 100, z: -20 }],
+  distance: 200,
+  travelMinutes: 12,
+  departMinute: 480,
+  returnMinute: 1020
+}];
+const narrowPressure = capacityWorld.roadTrafficPressure(narrowRoad);
+capacityWorld.commuteFlows[0].route = [{ x: -100, z: 20 }, { x: 100, z: 20 }];
+const widePressure = capacityWorld.roadTrafficPressure(wideRoad);
+check(
+  narrowPressure > widePressure,
+  "Additional road lanes and speed capacity did not reduce pressure for equal traffic."
+);
 
 const historyWorld = new World();
 const startingRoadCount = historyWorld.roads.length;

@@ -197,6 +197,11 @@ Current vertical slice:
 - Pressing `O` enters Explorer photo mode from walking, driving, transit, or an interior. The mode suppresses planning and world labels, retains a compact place/time/weather card, adjusts the lens from 28° to 75° with bracket keys, and lets `H` remove the last overlay for a clean capture without interrupting the living simulation.
 - Pointer-lock failure is handled without a runtime error, and clicking the city view retries mouse capture.
 - Road crossings are generated from actual spline intersections, with zebra markings, curb-ramp pads, and signal poles on both street axes.
+- Every road now owns a persistent editable profile for class, one to eight travel lanes, 20 to 80 km/h speed policy, 1.5m to 6m sidewalks, protected bike lanes, bus-priority lanes, medians, curb parking, and street trees.
+- New roads show width, modeled vehicles-per-hour capacity, mobility tradeoffs, and live construction cost before commitment. Existing named roads can be selected and retrofitted for a separately priced, undoable treasury cost.
+- Road capacity and whole-network congestion use the authored cross-section instead of class alone. Default migrated streets preserve the established reference-city traffic behavior.
+- Builder and Explorer geometry now derives from the same saved profile: variable curb and sidewalk widths, lane dividers, protected cycling and bus bands, planted medians, curb-parking markings, and batched roadside trees.
+- Older cities deterministically receive class-appropriate profiles, while save recovery preserves exact custom profiles, road class, width, capacity, and treasury effects.
 - Traffic signals follow a deterministic two-direction cycle with green, yellow, and all-red clearance phases.
 - City Explorer can enter a road-aligned vehicle, accelerate, brake, reverse, steer, handbrake, collide with the built world, leave the roadway with reduced traction, and return safely to a nearby sidewalk.
 - Driving uses a dedicated chase camera and live speed and road-surface readout. The vehicle retains its parked position and heading in the world save.
@@ -270,7 +275,7 @@ Current vertical slice:
 - Scheduled 3D fleets render across every active line instead of only the first route.
 - `npm run test:explorer` verifies road lookup, normalized planning-view road pressure, prioritized City Advisor recommendations and healthy-city fallback, closure severity, safe sidewalk entry, collisions, intersection and signal behavior, red-light stopping, green-light movement, directional lane separation, scale-aware soundscape profiles, weather and night audio response, parking capacity, pricing, demand response, turnover, revenue, persistence, price-aware selection, timed curb rules, legal-parking changes, loading demand, deliveries, curb enforcement and revenue, named event scheduling and recurrence, attendance, event-controlled curbs, traffic pressure, event transit demand, event finance and persistence, ramp-aware pedestrian routing, entrance generation, destination categories, complete-trip barrier reporting, funded upgrades, interior entry access, room doorways, rotated lot transforms, wall and furniture collision, all eight catalog objects, exact catalog debits, study and shower skill gains, home purchase debits, collision rejection, cost-free furniture moves, wall-safe 45-degree object rotation, half-cost selling, room finish costs and persistence, duplicate finish charge protection, final-room protection, room-removal furniture cleanup and refunds, over-budget rejection, design-budget persistence, authored resident profiles, exact personality matrices, invalid-axis rejection, deterministic legacy migration, matrix-weighted autonomy, compatibility and career fit, duplicate and unsafe name rejection, child-role normalization, direct resident selection, persistent home positions, nearby object selection, directed action completion, personality persistence, compatibility ranking, all five conversation intents and their need effects, conflict tension, apology repair, bounded social memories, autonomous reconciliation, persistent recent outcomes, paired autonomous conversations, shared need effects, transit generation, bidirectional fleets, unique line naming, transfer detection, connected-demand gain, frequency, fare demand, waiting time, ridership, revenue, boarding, stop requests, and alighting.
 
-Next systems are branching physical careers, personal inventories and object ownership, deeper catalog variants, visitors and household milestones, advanced road profiles and policies, richer event and vehicle audio cues, and metropolitan streaming built on the current simulation level of detail.
+Next systems are branching physical careers, personal inventories and object ownership, deeper catalog variants, visitors and household milestones, road snapping and grade tools, richer event and vehicle audio cues, and metropolitan streaming built on the current simulation level of detail.
 
 `npm run test:explorer` also verifies empty-home onboarding, pressured-household priorities, and the absence of invented wants in a fully supported healthy household.
 
@@ -327,7 +332,7 @@ These are the highest-value next slices for reaching the clarity of Cities: Skyl
 ### P0: Roads that feel authored
 
 - Add optional angle, tangent, parallel, and endpoint snapping without introducing a tile grid.
-- Support lane count, medians, bike lanes, bus lanes, sidewalks, trees, parking, and speed policy as editable road profiles.
+- [Complete] Support lane count, medians, bike lanes, bus lanes, sidewalks, trees, parking, and speed policy as editable persistent road profiles.
 - Add elevation handles, grade limits, bridges, tunnels, roundabouts, and safe intersection rebuilding.
 - Preview demolition, parcel impact, construction cost, accessibility, and traffic consequences before committing.
 

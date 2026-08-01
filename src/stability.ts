@@ -402,8 +402,25 @@ function integrityFailures(world: World) {
   }
   for (const road of world.roads) {
     const pressure = world.roadTrafficPressure(road);
+    const profile = world.roadProfile(road);
     if (!Number.isFinite(pressure) || pressure < 0 || pressure > 1) {
       failures.push(`Road ${road.id} has invalid planning-view traffic pressure.`);
+    }
+    if (
+      !Number.isFinite(road.width)
+      || road.width < 4
+      || road.width > 40
+      || !Number.isInteger(profile.travelLanes)
+      || profile.travelLanes < 1
+      || profile.travelLanes > 8
+      || profile.speedLimitKph < 20
+      || profile.speedLimitKph > 100
+      || profile.sidewalkWidth < 1.2
+      || profile.sidewalkWidth > 6
+      || !Number.isFinite(world.roadCapacity(road))
+      || world.roadCapacity(road) < 90
+    ) {
+      failures.push(`Road ${road.id} has an invalid persistent road profile.`);
     }
   }
   const spatialChunkIds = new Set(world.spatialChunks.map(chunk => chunk.id));

@@ -1311,6 +1311,37 @@ kbd {
   border-left: 1px solid rgba(255,255,255,.12);
 }
 .city-tool-settings.active { display: flex; }
+.city-tool-settings.road-profile-settings {
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.road-profile-settings select {
+  min-width: 104px;
+  max-width: 142px;
+}
+.road-profile-settings #road-target { min-width: 148px; max-width: 175px; }
+.road-profile-toggles { display: flex; gap: 3px; }
+.road-profile-toggles button {
+  padding: 7px 8px;
+  color: #aab7ad;
+  background: rgba(255,255,255,.045);
+  font-size: 10px;
+}
+.road-profile-toggles button.active,
+.road-profile-toggles button[aria-pressed="true"] {
+  color: #172019;
+  background: #b9d7ba;
+}
+#road-profile-summary {
+  min-width: 178px;
+  color: #c7d3c9;
+  font-size: 10px;
+  line-height: 1.25;
+}
+#apply-road-profile:not(:disabled) { color: #172019; background: #f0d980; }
+#apply-road-profile:disabled { cursor: default; opacity: .38; }
 .city-build-tools select, .city-build-tools input {
   min-width: 145px;
   max-width: 215px;
@@ -1590,4 +1621,5 @@ kbd {
   }
   .city-tool-categories { grid-template-columns: repeat(6, minmax(70px, 1fr)); overflow-x: auto; }
   .city-tool-options { overflow-x: auto; justify-content: flex-start; }
+  .city-tool-settings.road-profile-settings { flex-wrap: nowrap; }
 }
