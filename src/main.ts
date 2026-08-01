@@ -512,6 +512,7 @@ app.innerHTML = `
       </select>
       <button id="sell-furniture" disabled>Sell</button>
       <button id="duplicate-furniture" disabled>Duplicate</button>
+      <button id="sample-furniture-design" disabled>Eyedrop design</button>
       <button id="repair-furniture" disabled>Repair</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
@@ -798,6 +799,7 @@ let selectedRoomId: string | null = null;
 let selectedHomeWindowId: string | null = null;
 let selectedHomeDoorId: string | null = null;
 let movingFurnitureId: string | null = null;
+let sampledFurnitureDesign: { style: HomeFurnitureStyle; variant: HomeFurnitureVariant; tint?: string } | null = null;
 let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
 let pitch = 0;
@@ -5640,6 +5642,7 @@ function updateHomeBuildControls(home: Home | null) {
   const owner = document.querySelector<HTMLSelectElement>("#furniture-owner")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const duplicateFurniture = document.querySelector<HTMLButtonElement>("#duplicate-furniture")!;
+  const sampleFurnitureDesign = document.querySelector<HTMLButtonElement>("#sample-furniture-design")!;
   const repair = document.querySelector<HTMLButtonElement>("#repair-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const autoAssignRooms = document.querySelector<HTMLButtonElement>("#auto-assign-rooms")!;
@@ -5713,6 +5716,13 @@ function updateHomeBuildControls(home: Home | null) {
   duplicateFurniture.textContent = selected && furnitureDuplicatePreview
     ? `Duplicate ${selected.kind} · ${formatHomeCurrency(furnitureDuplicatePreview.cost)}`
     : "Duplicate";
+  sampleFurnitureDesign.disabled = !selected && !sampledFurnitureDesign;
+  sampleFurnitureDesign.textContent = selected
+    ? `Eyedrop ${selected.style ?? "natural"} · ${selected.variant ?? "classic"}`
+    : sampledFurnitureDesign
+      ? `Clear sample · ${sampledFurnitureDesign.style} ${sampledFurnitureDesign.variant}`
+      : "Eyedrop design";
+  sampleFurnitureDesign.classList.toggle("active", Boolean(sampledFurnitureDesign));
   const repairCost = selected ? world.furnitureRepairCost(selected) : 0;
   repair.disabled = !selected || !repairCost;
   addResident.disabled = !home || home.residents.length >= 8;
@@ -7439,9 +7449,9 @@ renderer.domElement.addEventListener("pointerdown", event => {
           : "Windows snap to an open exterior wall and cannot overlap");
       }
     } else {
-      if (world.addFurniture(home.id, homeTool, point.x, point.z, homeFloor)) {
+      if (world.addFurniture(home.id, homeTool, point.x, point.z, homeFloor, sampledFurnitureDesign ?? undefined)) {
         renderWorld();
-        notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed`);
+        notice(`${homeTool[0].toUpperCase()}${homeTool.slice(1)} placed${sampledFurnitureDesign ? ` with sampled ${sampledFurnitureDesign.style} ${sampledFurnitureDesign.variant} design` : ""}`);
       } else {
         notice(world.homeRemainingBudget(home) < HOME_BUILD_COSTS[homeTool]
           ? `${formatHomeCurrency(HOME_BUILD_COSTS[homeTool])} needed. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
@@ -8730,6 +8740,22 @@ document.querySelector("#duplicate-furniture")!.addEventListener("click", () => 
   selectedFurnitureId = result.furnitureId ?? selectedFurnitureId;
   renderWorld();
   notice(result.reason);
+});
+document.querySelector("#sample-furniture-design")!.addEventListener("click", () => {
+  const home = currentHome();
+  const selected = home?.furniture.find(item => item.id === selectedFurnitureId);
+  if (selected) {
+    sampledFurnitureDesign = {
+      style: selected.style ?? "natural",
+      variant: selected.variant ?? "classic",
+      tint: selected.tint
+    };
+    notice(`Sampled ${sampledFurnitureDesign.style} ${sampledFurnitureDesign.variant} design${sampledFurnitureDesign.tint ? ` · ${sampledFurnitureDesign.tint}` : ""}`);
+  } else if (sampledFurnitureDesign) {
+    sampledFurnitureDesign = null;
+    notice("Furnishing design sample cleared");
+  }
+  renderHome();
 });
 document.querySelector("#room-kind")!.addEventListener("change", event => {
   const home = currentHome();
