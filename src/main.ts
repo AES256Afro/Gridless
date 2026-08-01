@@ -540,6 +540,7 @@ app.innerHTML = `
       <div class="home-budget" id="home-privacy">Privacy unavailable</div>
       <div class="home-budget" id="home-space-plan">Space plan unavailable</div>
       <div class="home-budget" id="home-safety">Safety audit unavailable</div>
+      <div class="home-budget" id="home-organization">Organization unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
@@ -5757,6 +5758,12 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Safety ${safety.score}% · egress ${safety.egressCoverage}% · clearance ${safety.clearanceShare}% · ${safety.issues.length} issue${safety.issues.length === 1 ? "" : "s"}`
     : "Safety audit unavailable";
   safetyElement.classList.toggle("warning", Boolean(safety && !safety.safe));
+  const organization = home ? world.homeOrganization(home) : null;
+  const organizationElement = document.querySelector<HTMLElement>("#home-organization")!;
+  organizationElement.textContent = organization
+    ? `Organization ${organization.score}% · storage ${organization.storageCapacity}/${organization.possessionDemand} · ${organization.looseItems} loose · ${organization.clearFloorShare}% clear floor`
+    : "Organization unavailable";
+  organizationElement.classList.toggle("warning", Boolean(organization && organization.score < 68));
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -5851,11 +5858,12 @@ function updateHouseholdSummary(home: Home) {
     const privacy = world.homePrivacy(home);
     const spacePlan = world.homeSpacePlan(home);
     const safety = homeSafetyAudit(home);
+    const organization = world.homeOrganization(home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight and ${privacy}% bedroom privacy. The household space plan scores ${spacePlan.score}%${spacePlan.deficits.length ? ` and recommends ${spacePlan.deficits[0].recommendation.toLowerCase()}` : " with every tracked capacity covered"}. Safety scores ${safety.score}% with ${safety.egressCoverage}% sleeping-room egress coverage${safety.issues.length ? `; first priority: ${safety.issues[0].recommendation.toLowerCase()}` : " and no identified hazards"}. The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Energy performance is ${energy.score}% at ${energy.dailyKwh.toFixed(1)} kWh and ${formatHomeCurrency(energy.dailyCost)} per day.${energy.benefits.length ? ` Benefits: ${energy.benefits.join(", ")}.` : ""} Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight and ${privacy}% bedroom privacy. The household space plan scores ${spacePlan.score}%${spacePlan.deficits.length ? ` and recommends ${spacePlan.deficits[0].recommendation.toLowerCase()}` : " with every tracked capacity covered"}. Safety scores ${safety.score}% with ${safety.egressCoverage}% sleeping-room egress coverage${safety.issues.length ? `; first priority: ${safety.issues[0].recommendation.toLowerCase()}` : " and no identified hazards"}. Organization is ${organization.status.toLowerCase()} at ${organization.score}%: ${organization.recommendation.toLowerCase()} The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Energy performance is ${energy.score}% at ${energy.dailyKwh.toFixed(1)} kWh and ${formatHomeCurrency(energy.dailyCost)} per day.${energy.benefits.length ? ` Benefits: ${energy.benefits.join(", ")}.` : ""} Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5881,6 +5889,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Bedroom privacy</span><strong>${privacy}%</strong></div>
         <div title="${spacePlan.area.squareMeters} of ${spacePlan.area.targetSquareMeters} m² target"><span>Space plan</span><strong>${spacePlan.score}% · ${spacePlan.deficits.length} recommendation${spacePlan.deficits.length === 1 ? "" : "s"}</strong></div>
         <div title="${safety.egressCoverage}% sleeping-room egress · ${safety.clearanceShare}% clear floor"><span>Safety</span><strong>${safety.score}% · ${safety.safe ? "No critical hazards" : "Action needed"}</strong></div>
+        <div title="${organization.storageCapacity} storage for ${organization.possessionDemand} demand · ${organization.clearFloorShare}% clear floor"><span>Organization</span><strong>${organization.score}% · ${organization.status}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -5910,6 +5919,14 @@ function updateHouseholdSummary(home: Home) {
               <strong>${issue.label}</strong><span>${issue.recommendation}</span>
             </div>
           `).join("")}
+        </section>
+      ` : ""}
+      ${organization.score < 88 ? `
+        <section class="home-advisor" aria-label="Home organization recommendation">
+          <div class="relationship-title">Storage and clutter</div>
+          <div class="home-space-recommendation ${organization.score < 45 ? "critical" : organization.score < 68 ? "important" : "advisory"}">
+            <strong>${organization.looseItems} loose item${organization.looseItems === 1 ? "" : "s"} · ${organization.clearFloorShare}% clear floor</strong><span>${organization.recommendation}</span>
+          </div>
         </section>
       ` : ""}
       ${homeAdvice.length ? `

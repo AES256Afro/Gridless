@@ -1728,6 +1728,18 @@ roomClaimHome.furniture.push(
   { id: "space-sofa", kind: "sofa", x: 5, z: 1, rotation: 0 }
 );
 const equippedSpacePlan = roomClaimWorld.homeSpacePlan(roomClaimHome);
+const crowdedOrganization = roomClaimWorld.homeOrganization(roomClaimHome);
+const organizedHome = structuredClone(roomClaimHome);
+organizedHome.furniture.push({ id: "organization-bookcase", kind: "bookcase", x: 6, z: 2, rotation: 0 });
+const organizedOrganization = roomClaimWorld.homeOrganization(organizedHome);
+check(
+  crowdedOrganization.looseItems > 0
+    && organizedOrganization.storageCapacity > crowdedOrganization.storageCapacity
+    && organizedOrganization.looseItems < crowdedOrganization.looseItems
+    && organizedOrganization.score > crowdedOrganization.score
+    && roomClaimWorld.homeOrganization({ ...structuredClone(organizedHome), residents: [] }).score === 100,
+  "Household storage and clutter pressure did not respond to possessions, bookcases, and empty homes."
+);
 check(
   constrainedSpacePlan.deficits.some(deficit => deficit.kind === "hygiene")
     && constrainedSpacePlan.deficits.some(deficit => deficit.kind === "work")
@@ -4271,6 +4283,7 @@ console.log(JSON.stringify({
     constrained: constrainedSpacePlan,
     equipped: equippedSpacePlan
   },
+  homeOrganization: { crowded: crowdedOrganization, organized: organizedOrganization },
   homeSafetyAudit: { unsafe: unsafeAudit, safe: safeAudit },
   roomDuplication: {
     cost: duplicatedRoom.cost,
