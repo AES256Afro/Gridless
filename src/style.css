@@ -1073,6 +1073,38 @@ kbd {
 .resident-aspiration small { overflow: hidden; margin-top: 1px; color: #9f9878; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .resident-aspiration i { overflow: hidden; height: 4px; border-radius: 999px; background: rgba(255,255,255,.09); }
 .resident-aspiration i b { display: block; height: 100%; border-radius: inherit; background: #d7bc65; }
+.resident-milestones {
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid rgba(167,143,205,.17);
+  border-radius: 7px;
+  margin-top: 7px;
+  background: rgba(132,105,174,.06);
+}
+.resident-milestones > span {
+  color: #baacd3;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.resident-milestones > div {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 2px 6px;
+  align-items: baseline;
+}
+.resident-milestones b { color: #8f7eaa; font-size: 7px; }
+.resident-milestones strong { overflow: hidden; color: #d2c7e3; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.resident-milestones small {
+  grid-column: 2;
+  overflow: hidden;
+  color: #9589a8;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .resident-aspiration em { color: #a89f76; font-size: 7px; font-style: normal; }
 .resident-action-row {
   display: grid;

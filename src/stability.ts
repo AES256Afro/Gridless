@@ -7,6 +7,8 @@ import {
   RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
   RESIDENT_WORK_TASK_DEFINITIONS,
+  RESIDENT_MILESTONE_KINDS,
+  MAX_RESIDENT_MILESTONES,
   RESIDENT_PERSONALITY_AXES,
   MAX_HOME_FLOORS,
   World,
@@ -34,6 +36,7 @@ export type StabilityCheckpoint = {
   completedResidentActions: number;
   completedWorkDays: number;
   averageWorkPerformance: number;
+  residentMilestones: number;
   eventOccurrences: number;
   eventAttendance: number;
   snapshotBytes: number;
@@ -180,6 +183,13 @@ export function createStabilityScenario() {
       health: 84,
       stress: 24,
       traits: ["organized", "homebody"],
+      milestones: [{
+        id: "stability-resident-arrival",
+        kind: "arrival",
+        title: "Joined the household",
+        detail: "Avery's stability story began here.",
+        occurredAt: 0
+      }],
       completedActions: 0
     }],
     relationships: []
@@ -366,6 +376,7 @@ function checkpoint(world: World): StabilityCheckpoint {
     averageWorkPerformance: residents.some(resident => resident.lastWorkTask)
       ? Math.round(residents.filter(resident => resident.lastWorkTask).reduce((total, resident) => total + world.residentWorkPerformance(resident), 0) / residents.filter(resident => resident.lastWorkTask).length)
       : 0,
+    residentMilestones: residents.reduce((total, resident) => total + (resident.milestones?.length ?? 0), 0),
     eventOccurrences: world.cityEvents.reduce((total, event) => total + event.occurrences, 0),
     eventAttendance: economy.eventAttendance,
     snapshotBytes
@@ -747,6 +758,26 @@ function integrityFailures(world: World) {
         || (resident.destinationLotId !== undefined && !lotIds.has(resident.destinationLotId))
       ) {
         failures.push(`Resident ${resident.id} has invalid workplace progress.`);
+      }
+      const milestoneIds = new Set((resident.milestones ?? []).map(milestone => milestone.id));
+      if (
+        (resident.milestones?.length ?? 0) > MAX_RESIDENT_MILESTONES
+        || milestoneIds.size !== (resident.milestones?.length ?? 0)
+        || (resident.milestones ?? []).some(milestone =>
+          !milestone.id
+          || !RESIDENT_MILESTONE_KINDS.includes(milestone.kind)
+          || !milestone.title
+          || milestone.title.length > 64
+          || /[<>&]/.test(milestone.title)
+          || !milestone.detail
+          || milestone.detail.length > 140
+          || /[<>&]/.test(milestone.detail)
+          || !Number.isInteger(milestone.occurredAt)
+          || milestone.occurredAt < 0
+          || milestone.occurredAt > world.clock.elapsedMinutes
+        )
+      ) {
+        failures.push(`Resident ${resident.id} has invalid life milestones.`);
       }
       if (resident.homePosition && !isInteriorPositionValid(home, resident.homePosition)) {
         failures.push(`Resident ${resident.id} has an invalid saved home position.`);

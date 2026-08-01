@@ -49,6 +49,7 @@ The current vertical slice proves:
 - Persistent resident energy, social, comfort, health, and stress needs shaped by schedules, home design, utilities, neighborhood services, incidents, and commute burden
 - Persistent two-trait resident identities plus editable Cleanliness, Spontaneity, Sociability, Emotional intensity, and Activity axes, with visible personality spectra, matrix-weighted autonomy, compatibility, career fit, and deterministic save migration
 - Seven persistent life stages from Infant through Elder with deterministic daily aging, stage-aware school and work roles, caregiver lineage, generation numbers, inherited personality blends, family bonds, and legacy-save migration
+- Bounded resident life stories that remember household arrivals, birthdays, career specializations, promotions, fulfilled aspirations, and personal collections with dated Home Simulator timelines and cross-scale context
 - Five long-term aspirations that progress through relationships, skill practice, career success, household prosperity, aging milestones, and elder mentorship
 - Five skill-linked career tracks with distinct roles and wages, deterministic specialization branches at level four, personality fit, ten career levels, and stage-aware retirement
 - Physical career workplaces with deterministic track-specific daily tasks, sector and commute-aware performance, completed-shift history, persistent assignments, Builder rosters, Explorer street context, and Home Simulator career evidence
