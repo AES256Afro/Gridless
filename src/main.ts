@@ -811,6 +811,8 @@ let photoMode = false;
 let photoHudVisible = true;
 let photoFov = 55;
 let soundscapeSyncAccumulator = 0;
+let spatialStreamSyncAccumulator = 0;
+let renderedSpatialTierSignature = "";
 
 const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x303533, roughness: .94 });
 const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b4aa, roughness: .98 });
@@ -2352,12 +2354,20 @@ function renderWorld() {
   const roadTraffic = new Map(activeCityView === "traffic"
     ? world.roads.map(road => [road.id, world.roadTrafficPressure(road)] as const)
     : []);
-  const spatialChunks = world.refreshSpatialChunks();
-  const detailedLotIds = spatialChunks.length > 16
-    ? new Set(spatialChunks
-      .filter(chunk => world.spatialDetailTier(chunk, renderFocus) !== "aggregate")
-      .flatMap(chunk => chunk.lotIds))
-    : undefined;
+  const spatialRenderPlan = world.spatialRenderPlan(renderFocus);
+  renderedSpatialTierSignature = spatialTierSignature(renderFocus);
+  const detailedLotIds = new Set(spatialRenderPlan.detailedLotIds);
+  const agentLotIds = new Set(spatialRenderPlan.agentChunks.flatMap(chunk => chunk.lotIds));
+  const detailedRoadIds = new Set(spatialRenderPlan.detailedRoadIds);
+  let aggregateChunks = spatialRenderPlan.aggregateChunks;
+  if (selectedLot) {
+    const selectedChunk = aggregateChunks.find(chunk => chunk.lotIds.includes(selectedLot!.id));
+    if (selectedChunk) {
+      selectedChunk.lotIds.forEach(id => detailedLotIds.add(id));
+      selectedChunk.roadIds.forEach(id => detailedRoadIds.add(id));
+      aggregateChunks = aggregateChunks.filter(chunk => chunk.id !== selectedChunk.id);
+    }
+  }
   for (const road of world.roads) {
     const profile = world.roadProfile(road);
     const elevation = world.roadStructure(road).elevationMeters;
@@ -2376,14 +2386,14 @@ function renderWorld() {
     const roadway = ribbon(road.points, road.width, activeRoadMaterial);
     roadway.position.y = elevation + (road.class === "arterial" ? .166 : road.class === "avenue" ? .163 : .16);
     worldGroup.add(roadway);
-    if (activeCityView === "normal") {
+    if (activeCityView === "normal" && detailedRoadIds.has(road.id)) {
       const details = roadProfileGeometry(road);
       details.position.y = elevation;
       worldGroup.add(details, roadStructureGeometry(road));
     }
   }
   if (activeCityView === "normal") {
-    worldGroup.add(roadTreeGeometry(world.roads.filter(road => world.roadStructure(road).structure === "surface")));
+    worldGroup.add(roadTreeGeometry(world.roads.filter(road => detailedRoadIds.has(road.id) && world.roadStructure(road).structure === "surface")));
   }
   for (const intersection of streetIntersections) {
     const width = Math.max(intersection.roadAWidth, intersection.roadBWidth);
@@ -2457,8 +2467,11 @@ function renderWorld() {
   for (const facility of world.parking) {
     worldGroup.add(createParkingFacility(facility));
   }
+  for (const chunk of aggregateChunks) {
+    worldGroup.add(createAggregateChunkMassing(chunk, activeCityView));
+  }
   for (const lot of world.lots) {
-    if (detailedLotIds && !detailedLotIds.has(lot.id)) continue;
+    if (!detailedLotIds.has(lot.id)) continue;
     const planningValue = lotPlanningValue(lot, activeCityView, totalPopulation, effectiveStaffing, roadTraffic);
     const planningColor = lotPlanningColor(activeCityView, planningValue);
     const planningMaterial = activeCityView === "normal"
@@ -2507,7 +2520,7 @@ function renderWorld() {
     shell.rotation.y = lot.rotation;
     shell.castShadow = shell.receiveShadow = mode !== "city";
     worldGroup.add(shell);
-    if (progress >= 1 && mode !== "city") {
+    if (progress >= 1 && mode !== "city" && agentLotIds.has(lot.id)) {
       addBuildingWindows(lot, height, darkness, occupiedShare);
     }
     if (progress < 1) {
@@ -2523,7 +2536,7 @@ function renderWorld() {
   renderAccessibilityEntrances();
   renderCityEvents();
   document.querySelector("#lot-count")!.textContent = String(world.lots.length);
-  updateCityStats();
+  updateCityStats(spatialRenderPlan);
   updateClockDisplay();
   renderHome();
   renderIncidents();
@@ -2867,11 +2880,47 @@ function worldRenderFocus(): Point2 {
   return { x: orbit.target.x, z: orbit.target.z };
 }
 
+function spatialTierSignature(focus: Point2) {
+  return `${mode}:${selectedLot?.id ?? ""}:${world.spatialChunks
+    .map(chunk => `${chunk.id}:${world.spatialDetailTier(chunk, focus)}`)
+    .join("|")}`;
+}
+
 function spatialChunkLabel(chunk: SpatialChunk) {
   return `${chunk.id.replace("chunk-", "")} · ${chunk.population.toLocaleString()} residents`;
 }
 
-function updateCityStats() {
+function createAggregateChunkMassing(chunk: SpatialChunk, view: CityView) {
+  const group = new THREE.Group();
+  group.userData.spatialChunkId = chunk.id;
+  group.userData.spatialTier = "aggregate";
+  if (!chunk.lotIds.length || chunk.population + chunk.jobs <= 0) return group;
+  const density = Math.min(1, (chunk.population + chunk.jobs) / Math.max(1, chunk.lotIds.length * 85));
+  const height = THREE.MathUtils.clamp(7 + Math.log2(1 + chunk.population + chunk.jobs) * 2.45, 9, 42);
+  const normalColor = chunk.businesses > chunk.households * .22 ? 0x8294a0 : 0x87947d;
+  const color = view === "normal" ? normalColor : planningHeatColor(.45 + density * .42);
+  const material = new THREE.MeshStandardMaterial({ color, roughness: .94, flatShading: true });
+  const blockCount = Math.min(4, Math.max(1, Math.ceil(chunk.lotIds.length / 30)));
+  const offsets = [
+    [-.21, -.21], [.21, -.21], [-.21, .21], [.21, .21]
+  ];
+  for (let index = 0; index < blockCount; index++) {
+    const blockHeight = height * (.7 + index * .1);
+    const block = new THREE.Mesh(
+      new THREE.BoxGeometry(chunk.size * .32, blockHeight, chunk.size * .32),
+      material
+    );
+    block.position.set(
+      chunk.center.x + offsets[index][0] * chunk.size,
+      blockHeight / 2,
+      chunk.center.z + offsets[index][1] * chunk.size
+    );
+    group.add(block);
+  }
+  return group;
+}
+
+function updateCityStats(renderPlan = world.spatialRenderPlan(worldRenderFocus())) {
   const {
     households,
     businesses,
@@ -2926,19 +2975,15 @@ function updateCityStats() {
   document.querySelector("#wellbeing")!.textContent = wellbeing
     ? `${wellbeing}% · ${wellbeingLabel(wellbeing)}`
     : "No residents";
-  const lod = world.spatialLodSummary(worldRenderFocus());
-  const totalChunks = lod.agentChunks + lod.activeChunks + lod.aggregateChunks;
-  const activePopulation = lod.agentPopulation + lod.activePopulation;
-  const aggregateCopy = lod.aggregateChunks
-    ? ` · ${lod.aggregateChunks} aggregate`
-    : "";
-  const representativeChunk = world.spatialChunks
-    .find(chunk => world.spatialDetailTier(chunk, worldRenderFocus()) === "agent")
+  const totalChunks = renderPlan.agentChunks.length + renderPlan.activeChunks.length + renderPlan.aggregateChunks.length;
+  const activePopulation = [...renderPlan.agentChunks, ...renderPlan.activeChunks]
+    .reduce((total, chunk) => total + chunk.population, 0);
+  const representativeChunk = renderPlan.agentChunks[0]
     ?? world.spatialChunks[0];
   const lodStatus = document.querySelector<HTMLElement>("#lod-status")!;
-  lodStatus.textContent = `${totalChunks} region chunks · ${activePopulation.toLocaleString()} residents in active detail${aggregateCopy}`;
+  lodStatus.textContent = `${totalChunks} streamed chunks · ${renderPlan.agentChunks.length} agent · ${renderPlan.activeChunks.length} active · ${renderPlan.aggregateChunks.length} massed`;
   lodStatus.title = representativeChunk
-    ? `Focused chunk ${spatialChunkLabel(representativeChunk)}`
+    ? `Focused chunk ${spatialChunkLabel(representativeChunk)} · ${activePopulation.toLocaleString()} residents in active detail`
     : "No populated spatial chunks";
 
   const completedLots = world.lots.filter(lot => world.constructionProgress(lot) >= 1);
@@ -7831,6 +7876,11 @@ function animate() {
   if (soundscape.enabled && soundscapeSyncAccumulator >= .25) {
     soundscapeSyncAccumulator = 0;
     syncSoundscape();
+  }
+  spatialStreamSyncAccumulator += dt;
+  if (spatialStreamSyncAccumulator >= .4) {
+    spatialStreamSyncAccumulator = 0;
+    if (spatialTierSignature(worldRenderFocus()) !== renderedSpatialTierSignature) renderWorld();
   }
   if (mode === "explore") {
     if (transitRide) {

@@ -1248,6 +1248,15 @@ export type SpatialLodSummary = {
   aggregatePopulation: number;
 };
 
+export type SpatialRenderPlan = {
+  agentChunks: SpatialChunk[];
+  activeChunks: SpatialChunk[];
+  aggregateChunks: SpatialChunk[];
+  detailedLotIds: string[];
+  detailedRoadIds: string[];
+  aggregateLotCount: number;
+};
+
 export type WorldSnapshot = {
   version: 1;
   cityName?: string;
@@ -1553,6 +1562,28 @@ export class World {
       }
     }
     return summary;
+  }
+
+  spatialRenderPlan(focus: Point2): SpatialRenderPlan {
+    this.refreshSpatialChunks();
+    const agentChunks: SpatialChunk[] = [];
+    const activeChunks: SpatialChunk[] = [];
+    const aggregateChunks: SpatialChunk[] = [];
+    for (const chunk of this.spatialChunks) {
+      const tier = this.spatialDetailTier(chunk, focus);
+      if (tier === "agent") agentChunks.push(chunk);
+      else if (tier === "active") activeChunks.push(chunk);
+      else aggregateChunks.push(chunk);
+    }
+    const detailedChunks = [...agentChunks, ...activeChunks];
+    return {
+      agentChunks,
+      activeChunks,
+      aggregateChunks,
+      detailedLotIds: [...new Set(detailedChunks.flatMap(chunk => chunk.lotIds))].sort(),
+      detailedRoadIds: [...new Set(detailedChunks.flatMap(chunk => chunk.roadIds))].sort(),
+      aggregateLotCount: aggregateChunks.reduce((total, chunk) => total + chunk.lotIds.length, 0)
+    };
   }
 
   private checkpoint() {

@@ -2865,11 +2865,23 @@ check(
 );
 const nearSpatialLod = mobilityWorld.spatialLodSummary({ x: 0, z: 0 });
 const farSpatialLod = mobilityWorld.spatialLodSummary({ x: 1_000_000, z: 1_000_000 });
+const nearSpatialRenderPlan = mobilityWorld.spatialRenderPlan({ x: 0, z: 0 });
+const farSpatialRenderPlan = mobilityWorld.spatialRenderPlan({ x: 1_000_000, z: 1_000_000 });
 check(
   nearSpatialLod.agentChunks > 0
     && farSpatialLod.aggregateChunks === spatialChunks.length
     && farSpatialLod.aggregatePopulation === mobilityWorld.cityEconomy().population,
   "Spatial LOD did not switch between focused agent detail and distant aggregates."
+);
+check(
+  new Set([
+    ...nearSpatialRenderPlan.detailedLotIds,
+    ...nearSpatialRenderPlan.aggregateChunks.flatMap(chunk => chunk.lotIds)
+  ]).size === mobilityWorld.lots.length
+    && farSpatialRenderPlan.detailedLotIds.length === 0
+    && farSpatialRenderPlan.aggregateLotCount === mobilityWorld.lots.length
+    && farSpatialRenderPlan.aggregateChunks.length === spatialChunks.length,
+  "The metropolitan render plan did not partition every lot between detailed and aggregate streams."
 );
 const spatialSnapshot = mobilityWorld.snapshot();
 check(
@@ -3342,6 +3354,8 @@ console.log(JSON.stringify({
   spatialChunks: spatialChunks.length,
   agentDetailChunks: nearSpatialLod.agentChunks,
   farAggregatePopulation: farSpatialLod.aggregatePopulation,
+  streamedDetailedLots: nearSpatialRenderPlan.detailedLotIds.length,
+  streamedAggregateLots: farSpatialRenderPlan.aggregateLotCount,
   accessibleRouteMeters: Math.round(accessibleRoute!.distance),
   rampedCrossings: accessibleRoute!.rampedCrossings,
   accessibilityEntrances: mobilityWorld.accessibilityEntrances.length,
