@@ -617,6 +617,7 @@ kbd {
 }
 .home-tools input:focus { border-color: #f0d980; box-shadow: 0 0 0 2px rgba(240,217,128,.13); }
 .home-tools input:disabled { opacity: .4; }
+.home-tools input[type="color"] { width: 42px; height: 34px; padding: 3px; cursor: pointer; }
 .home-tools button { padding: 9px 12px; white-space: nowrap; }
 .home-tools button:hover { color: white; background: rgba(255,255,255,.08); }
 .home-tools button.active { color: #172019; background: #f0d980; }

@@ -967,6 +967,8 @@ export type UtilityFailure = {
 export type HomeFloorFinish = "oak" | "tile" | "concrete" | "carpet";
 export type HomeWallFinish = "warm-white" | "sage" | "clay" | "slate";
 export type HomeFurnitureStyle = "natural" | "light" | "dark" | "colorful";
+export const HOME_FURNITURE_VARIANTS = ["classic", "modern", "soft"] as const;
+export type HomeFurnitureVariant = typeof HOME_FURNITURE_VARIANTS[number];
 export type HouseholdGatheringKind = "dinner" | "game-night" | "birthday" | "open-house";
 export type HouseholdGathering = {
   id: string;
@@ -1010,7 +1012,7 @@ export type Home = {
   name: string;
   floors: number;
   rooms: HomeRoom[];
-  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; floor?: number; ownerResidentId?: string }>;
+  furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; variant?: HomeFurnitureVariant; tint?: string; floor?: number; ownerResidentId?: string }>;
   stairs?: HomeStair[];
   designBudget: number;
   designSpent: number;
@@ -4384,6 +4386,25 @@ export class World {
     return true;
   }
 
+  setFurnitureVariant(homeId: string, furnitureId: string, variant: HomeFurnitureVariant) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    if (!home || !furniture || !HOME_FURNITURE_VARIANTS.includes(variant) || (furniture.variant ?? "classic") === variant) return false;
+    this.checkpoint();
+    furniture.variant = variant;
+    return true;
+  }
+
+  setFurnitureTint(homeId: string, furnitureId: string, tint: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const furniture = home?.furniture.find(item => item.id === furnitureId);
+    const normalizedTint = normalizeFurnitureTint(tint);
+    if (!home || !furniture || !normalizedTint || furniture.tint === normalizedTint) return false;
+    this.checkpoint();
+    furniture.tint = normalizedTint;
+    return true;
+  }
+
   setFurnitureOwner(homeId: string, furnitureId: string, residentId?: string) {
     const home = this.homes.find(item => item.id === homeId);
     const furniture = home?.furniture.find(item => item.id === furnitureId);
@@ -4946,6 +4967,8 @@ export class World {
           ...item,
           floor: Math.round(clamp(item.floor ?? 0, 0, normalizedFloors - 1)),
           style: normalizeHomeFurnitureStyle(item.style),
+          variant: normalizeHomeFurnitureVariant(item.variant),
+          tint: normalizeFurnitureTint(item.tint),
           ownerResidentId: item.ownerResidentId && residentIds.has(item.ownerResidentId) ? item.ownerResidentId : undefined
         })),
         stairs: (home.stairs ?? []).filter(stair =>
@@ -6373,6 +6396,14 @@ function normalizeConversationIntent(intent: ConversationIntent | undefined): Co
 
 function normalizeHomeFurnitureStyle(style: HomeFurnitureStyle | undefined): HomeFurnitureStyle {
   return style === "light" || style === "dark" || style === "colorful" ? style : "natural";
+}
+
+function normalizeHomeFurnitureVariant(variant: HomeFurnitureVariant | undefined): HomeFurnitureVariant {
+  return variant && HOME_FURNITURE_VARIANTS.includes(variant) ? variant : "classic";
+}
+
+function normalizeFurnitureTint(tint: string | undefined) {
+  return typeof tint === "string" && /^#[0-9a-f]{6}$/i.test(tint) ? tint.toLowerCase() : undefined;
 }
 
 function normalizeResidentLifeStage(stage: ResidentLifeStage | undefined, age: Resident["age"]): ResidentLifeStage {
