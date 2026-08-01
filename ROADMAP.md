@@ -399,7 +399,8 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] A resident can personalize a claimed room in one atomic action. Every furnishing adopts that resident's preferred decor and ownership, conflicting custom tints clear, household funds pay one bounded cost, and the resulting personal-room fit updates immediately.
 - [Complete] Household space planning compares beds, shower capacity, work surfaces, social seats, and total room area with the actual household. A bounded score and severity-ranked, life-stage-aware recommendations appear in both the Home Simulator toolbar and parcel evidence.
 - [Complete] A whole-home safety audit scores ground-floor entry, room circulation, stair continuity, sleeping-room escape windows, clear floor area, and mobility-sensitive egress. Critical hazards and exact corrections appear at home and parcel scales.
-- Add copy, multi-select, eyedropper, room duplication, search, favorites, recolors, and object variants.
+- [Complete] One-click room duplication finds the nearest valid adjacent footprint, preserves purpose, size, finishes, and furnishings, clears resident claims and ownership, charges the exact shell-plus-furnishing cost, and reverts as one Undo operation.
+- Add multi-select, eyedropper, search, and favorites. Recolors and object variants are already live.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 
 Exit gate: a player can build a distinctive two-story home, furnish it efficiently, and traverse every finished space from its actual city entrance.

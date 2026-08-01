@@ -1444,6 +1444,28 @@ check(
 );
 const furniturePlacementWorld = new World();
 furniturePlacementWorld.homes = [structuredClone(interiorHome)];
+const duplicateSourceHome = furniturePlacementWorld.homes[0];
+const duplicateBudgetBefore = furniturePlacementWorld.homeRemainingBudget(duplicateSourceHome);
+const duplicatePreview = furniturePlacementWorld.previewRoomDuplicate(duplicateSourceHome, "living-room");
+const duplicatedRoom = furniturePlacementWorld.duplicateRoom(duplicateSourceHome.id, "living-room");
+const duplicatedRoomEntity = duplicateSourceHome.rooms.find(room => room.id === duplicatedRoom.roomId);
+check(
+  Boolean(duplicatePreview)
+    && duplicatedRoom.ok
+    && duplicatedRoom.cost === duplicatePreview!.cost
+    && duplicatedRoom.copiedFurniture === 1
+    && duplicatedRoomEntity?.kind === "Living room"
+    && duplicatedRoomEntity?.floorFinish === duplicateSourceHome.rooms.find(room => room.id === "living-room")?.floorFinish
+    && duplicateSourceHome.furniture.some(item => item.id !== "interior-table" && item.kind === "table" && item.ownerResidentId === undefined)
+    && furniturePlacementWorld.homeRemainingBudget(duplicateSourceHome) === duplicateBudgetBefore - duplicatedRoom.cost,
+  "Room duplication did not copy the nearest valid room, finishes, furnishings, and exact cost atomically."
+);
+check(
+  furniturePlacementWorld.undo()
+    && furniturePlacementWorld.homes[0].rooms.length === interiorHome.rooms.length
+    && furniturePlacementWorld.homes[0].furniture.length === interiorHome.furniture.length,
+  "Undo did not remove an entire duplicated room and its copied furnishings."
+);
 const interiorExteriorWalls = interiorHome.rooms.flatMap(room => homeRoomExteriorWalls(interiorHome, room));
 check(
   interiorExteriorWalls.length === 6,
@@ -4250,6 +4272,11 @@ console.log(JSON.stringify({
     equipped: equippedSpacePlan
   },
   homeSafetyAudit: { unsafe: unsafeAudit, safe: safeAudit },
+  roomDuplication: {
+    cost: duplicatedRoom.cost,
+    copiedFurniture: duplicatedRoom.copiedFurniture,
+    undoRestoredSource: furniturePlacementWorld.homes[0].rooms.length === interiorHome.rooms.length
+  },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,

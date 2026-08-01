@@ -5164,6 +5164,89 @@ export class World {
     return true;
   }
 
+  previewRoomDuplicate(home: Home, roomId: string) {
+    const room = home.rooms.find(item => item.id === roomId);
+    if (!room) return undefined;
+    const floor = homeEntityFloor(room);
+    const candidates = [
+      { x: room.x + room.width, z: room.z },
+      { x: room.x - room.width, z: room.z },
+      { x: room.x, z: room.z + room.depth },
+      { x: room.x, z: room.z - room.depth }
+    ];
+    const lot = this.lots.find(item => item.id === home.lotId);
+    const position = candidates.find(candidate => {
+      if (lot && (Math.abs(candidate.x) + room.width / 2 > lot.width / 2 || Math.abs(candidate.z) + room.depth / 2 > lot.depth / 2)) return false;
+      return !home.rooms.some(other =>
+        homeEntityFloor(other) === floor
+        && Math.abs(candidate.x - other.x) < (room.width + other.width) / 2 - .05
+        && Math.abs(candidate.z - other.z) < (room.depth + other.depth) / 2 - .05
+      );
+    });
+    if (!position) return undefined;
+    const roomFurniture = home.furniture.filter(item =>
+      homeEntityFloor(item) === floor
+      && Math.abs(item.x - room.x) <= room.width / 2
+      && Math.abs(item.z - room.z) <= room.depth / 2
+    );
+    const roomCost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
+    const furnishingCost = roomFurniture.reduce((total, item) => total + HOME_BUILD_COSTS[item.kind], 0);
+    return {
+      x: position.x,
+      z: position.z,
+      floor,
+      roomCost,
+      furnishingCost,
+      cost: roomCost + furnishingCost,
+      furnishingCount: roomFurniture.length
+    };
+  }
+
+  duplicateRoom(homeId: string, roomId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const source = home?.rooms.find(item => item.id === roomId);
+    const preview = home && this.previewRoomDuplicate(home, roomId);
+    if (!home || !source || !preview) return { ok: false, roomId: undefined, cost: 0, copiedFurniture: 0, reason: "No clear adjacent space is available for this room." };
+    if (this.homeRemainingBudget(home) < preview.cost) return { ok: false, roomId: undefined, cost: preview.cost, copiedFurniture: 0, reason: `Duplicating this room needs $${preview.cost}. The design budget has $${this.homeRemainingBudget(home)} left.` };
+    const room = {
+      ...clone(source),
+      id: crypto.randomUUID(),
+      x: preview.x,
+      z: preview.z,
+      floor: preview.floor,
+      assignedResidentIds: [],
+      condition: 100,
+      lastRenovatedAt: undefined
+    };
+    const offset = { x: room.x - source.x, z: room.z - source.z };
+    const sourceFurniture = home.furniture.filter(item =>
+      homeEntityFloor(item) === preview.floor
+      && Math.abs(item.x - source.x) <= source.width / 2
+      && Math.abs(item.z - source.z) <= source.depth / 2
+    );
+    const copiedFurniture = sourceFurniture.map(item => ({
+      ...clone(item),
+      id: crypto.randomUUID(),
+      x: item.x + offset.x,
+      z: item.z + offset.z,
+      floor: preview.floor,
+      ownerResidentId: undefined,
+      condition: 100,
+      lastRepairedAt: undefined
+    }));
+    this.checkpoint();
+    home.rooms.push(room);
+    home.furniture.push(...copiedFurniture);
+    home.designSpent += preview.cost;
+    return {
+      ok: true,
+      roomId: room.id,
+      cost: preview.cost,
+      copiedFurniture: copiedFurniture.length,
+      reason: `${source.kind} duplicated with ${copiedFurniture.length} furnishing${copiedFurniture.length === 1 ? "" : "s"} for $${preview.cost}.`
+    };
+  }
+
   setRoomFloorFinish(homeId: string, roomId: string, finish: HomeFloorFinish) {
     const home = this.homes.find(item => item.id === homeId);
     const room = home?.rooms.find(item => item.id === roomId);
