@@ -1202,6 +1202,23 @@ kbd {
 .resident-card .resident-connection {
   color: #d8c98e;
 }
+.resident-move {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+.resident-move select, .resident-move button {
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid rgba(109,169,200,.18);
+  border-radius: 7px;
+  color: #c8d8df;
+  background: rgba(109,169,200,.07);
+  font: 700 8px "DM Sans", sans-serif;
+}
+.resident-move select { flex: 1; }
+.resident-move button { cursor: pointer; }
+.resident-move small { color: #78909a; font-size: 7px; line-height: 1.35; }
 .home-advisor {
   display: grid;
   gap: 6px;

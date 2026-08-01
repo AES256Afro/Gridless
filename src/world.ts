@@ -354,7 +354,7 @@ export type ResidentWorkTask =
   | "develop-commission"
   | "refine-portfolio"
   | "deliver-project";
-export type ResidentMilestoneKind = "arrival" | "life-stage" | "promotion" | "career-branch" | "aspiration" | "collection";
+export type ResidentMilestoneKind = "arrival" | "life-stage" | "promotion" | "career-branch" | "aspiration" | "collection" | "move";
 export type ResidentMilestone = {
   id: string;
   kind: ResidentMilestoneKind;
@@ -594,7 +594,7 @@ const CAREER_WORKPLACE_SECTORS: Record<ResidentCareerTrack, [BusinessSector, Bus
 };
 
 export const RESIDENT_MILESTONE_KINDS: ResidentMilestoneKind[] = [
-  "arrival", "life-stage", "promotion", "career-branch", "aspiration", "collection"
+  "arrival", "life-stage", "promotion", "career-branch", "aspiration", "collection", "move"
 ];
 export const MAX_RESIDENT_MILESTONES = 12;
 
@@ -4076,6 +4076,69 @@ export class World {
     this.checkpoint();
     home.name = name;
     return true;
+  }
+
+  moveResidentToHome(sourceHomeId: string, residentId: string, destinationHomeId: string) {
+    const source = this.homes.find(home => home.id === sourceHomeId);
+    const destination = this.homes.find(home => home.id === destinationHomeId);
+    const resident = source?.residents.find(item => item.id === residentId);
+    if (!source || !destination || source.id === destination.id || !resident) {
+      return { ok: false, reason: "Choose a resident and a different household.", transferred: 0 };
+    }
+    if (destination.residents.length >= 8) {
+      return { ok: false, reason: `${destination.name} already has eight residents.`, transferred: 0 };
+    }
+    const dependent = source.residents.find(candidate =>
+      candidate.id !== resident.id
+      && (candidate.caregiverIds ?? []).includes(resident.id)
+      && ["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(candidate))
+    );
+    if (dependent) {
+      return { ok: false, reason: `${resident.name} must arrange care for ${dependent.name} before moving.`, transferred: 0 };
+    }
+    const sourceFunds = this.homeHouseholdFunds(source);
+    const destinationFunds = this.homeHouseholdFunds(destination);
+    const transfer = Math.min(
+      10_000,
+      Math.max(0, Math.floor(sourceFunds / Math.max(1, source.residents.length))),
+      Math.max(0, 10_000_000 - destinationFunds)
+    );
+    const partnerId = resident.currentAction?.partnerResidentId;
+    this.checkpoint();
+    if (partnerId) {
+      const partner = source.residents.find(candidate => candidate.id === partnerId);
+      if (partner?.currentAction?.partnerResidentId === resident.id) partner.currentAction = undefined;
+    }
+    resident.currentAction = undefined;
+    resident.homeFloor = 0;
+    const destinationRoom = destination.rooms.find(room => homeEntityFloor(room) === 0) ?? destination.rooms[0];
+    resident.homePosition = destinationRoom ? { x: destinationRoom.x, z: destinationRoom.z } : { x: 0, z: 0 };
+    resident.caregiverIds = (resident.caregiverIds ?? []).filter(id => destination.residents.some(candidate => candidate.id === id));
+    source.residents = source.residents.filter(candidate => candidate.id !== resident.id);
+    source.relationships = source.relationships.filter(relationship => !relationship.residentIds.includes(resident.id));
+    source.gatherings = (source.gatherings ?? []).filter(gathering => gathering.hostResidentId !== resident.id);
+    if (source.lastPurchase?.residentId === resident.id) source.lastPurchase = undefined;
+    for (const furniture of source.furniture) {
+      if (furniture.ownerResidentId === resident.id) furniture.ownerResidentId = undefined;
+    }
+    for (const remainingResident of source.residents) {
+      remainingResident.caregiverIds = (remainingResident.caregiverIds ?? []).filter(id => id !== resident.id);
+    }
+    destination.residents.push(resident);
+    destination.relationships = normalizeRelationships(destination.residents, destination.relationships);
+    source.householdFunds = sourceFunds - transfer;
+    destination.householdFunds = destinationFunds + transfer;
+    this.recordResidentMilestone(
+      resident,
+      "move",
+      `Moved to ${destination.name}`,
+      `${resident.name} left ${source.name} and began a new household chapter.`
+    );
+    return {
+      ok: true,
+      reason: `${resident.name} moved to ${destination.name} with ${transfer ? `$${transfer.toLocaleString("en-US")}` : "no household funds"}.`,
+      transferred: transfer
+    };
   }
 
   changeRevision() {
