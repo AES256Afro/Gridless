@@ -271,7 +271,9 @@ app.innerHTML = `
           <div class="road-drawing-aids" aria-label="Road drawing aids">
             <button type="button" id="road-snap-endpoints" aria-pressed="true" class="active">Snap ends</button>
             <button type="button" id="road-angle-lock" aria-pressed="false">15° lock</button>
-            <output id="road-snap-status">Endpoint snap · free angle</output>
+            <button type="button" id="road-tangent-guide" aria-pressed="false">Tangent</button>
+            <button type="button" id="road-parallel-guide" aria-pressed="false">Parallel</button>
+            <output id="road-snap-status">Endpoint snap · free angle · free curve</output>
           </div>
           <output id="road-profile-summary" aria-live="polite"></output>
           <button type="button" id="apply-road-profile" disabled>Apply profile</button>
@@ -3500,8 +3502,12 @@ function renderDraft() {
     ));
   }
   for (const [index, point] of draft.entries()) {
-    const isSnappedEndpoint = cityTool === "road" && index === draft.length - 1 && lastRoadSnap?.kind === "endpoint";
-    const marker = new THREE.Mesh(new THREE.SphereGeometry(isSnappedEndpoint ? 2.1 : 1.5), new THREE.MeshBasicMaterial({ color: isSnappedEndpoint ? 0x73c68b : 0xffe07b }));
+    const activeSnapKind = cityTool === "road" && index === draft.length - 1 ? lastRoadSnap?.kind : undefined;
+    const isGuided = activeSnapKind && activeSnapKind !== "free";
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(isGuided ? 2.1 : 1.5),
+      new THREE.MeshBasicMaterial({ color: activeSnapKind === "endpoint" ? 0x73c68b : activeSnapKind === "tangent" || activeSnapKind === "parallel" ? 0x6da9c8 : 0xffe07b })
+    );
     marker.position.set(point.x, 1.5, point.z);
     previewGroup.add(marker);
   }
@@ -3514,6 +3520,10 @@ function renderDraft() {
       ? ` · joins ${lastRoadSnap.targetRoadName}`
       : lastRoadSnap?.kind === "angle"
         ? " · angle locked"
+        : lastRoadSnap?.kind === "tangent"
+          ? ` · tangent to ${lastRoadSnap.targetRoadName}`
+          : lastRoadSnap?.kind === "parallel"
+            ? ` · parallel to ${lastRoadSnap.targetRoadName}`
         : "";
     const guide = makeLabel(`${length}m · ${angle}°${alignment}`);
     guide.position.set((from.x + to.x) / 2, 7, (from.z + to.z) / 2);
@@ -3587,7 +3597,7 @@ function currentRoadConfig() {
   };
 }
 
-function roadDrawingAidEnabled(id: "road-snap-endpoints" | "road-angle-lock") {
+function roadDrawingAidEnabled(id: "road-snap-endpoints" | "road-angle-lock" | "road-tangent-guide" | "road-parallel-guide") {
   return document.querySelector<HTMLButtonElement>(`#${id}`)?.getAttribute("aria-pressed") === "true";
 }
 
@@ -3596,12 +3606,20 @@ function updateRoadDrawingAidStatus() {
   if (!status) return;
   const endpointCopy = roadDrawingAidEnabled("road-snap-endpoints") ? "Endpoint snap" : "Free endpoints";
   const angleCopy = roadDrawingAidEnabled("road-angle-lock") ? "15° angle lock" : "free angle";
+  const curveCopy = [
+    roadDrawingAidEnabled("road-tangent-guide") ? "tangent" : "",
+    roadDrawingAidEnabled("road-parallel-guide") ? "parallel" : ""
+  ].filter(Boolean).join(" + ") || "free curve";
   const liveCopy = lastRoadSnap?.kind === "endpoint"
     ? ` · joined ${lastRoadSnap.targetRoadName}`
     : lastRoadSnap?.kind === "angle"
       ? ` · aligned ${lastRoadSnap.angleDegrees}°`
+      : lastRoadSnap?.kind === "tangent"
+        ? ` · tangent to ${lastRoadSnap.targetRoadName}`
+        : lastRoadSnap?.kind === "parallel"
+          ? ` · parallel to ${lastRoadSnap.targetRoadName}`
       : "";
-  status.textContent = `${endpointCopy} · ${angleCopy}${liveCopy}`;
+  status.textContent = `${endpointCopy} · ${angleCopy} · ${curveCopy}${liveCopy}`;
 }
 
 function roadFeatureEnabled(feature: keyof RoadProfile) {
@@ -5972,7 +5990,7 @@ function updateCityToolPanel(lot?: Lot) {
   if (cityTool === "road") {
     const road = currentRoadConfig();
     const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
-    const drawingAids = `${roadDrawingAidEnabled("road-snap-endpoints") ? "endpoints snap within 12m" : "endpoint snapping off"} · ${roadDrawingAidEnabled("road-angle-lock") ? "15° angle lock on" : "free-angle curves"}`;
+    const drawingAids = `${roadDrawingAidEnabled("road-snap-endpoints") ? "endpoints snap within 12m" : "endpoint snapping off"} · ${roadDrawingAidEnabled("road-angle-lock") ? "15° angle lock on" : "free-angle curves"} · ${roadDrawingAidEnabled("road-tangent-guide") ? "tangent guides" : "tangent guides off"} · ${roadDrawingAidEnabled("road-parallel-guide") ? "parallel guides" : "parallel guides off"}`;
     setPanel(
       "STREET DESIGNER",
       targetId ? "Retrofit a living street" : "Draw beyond the grid",
@@ -6495,8 +6513,12 @@ renderer.domElement.addEventListener("pointerdown", event => {
     lastRoadSnap = snapRoadDrawingPoint(candidate, draft, world.roads, {
       endpoints: roadDrawingAidEnabled("road-snap-endpoints"),
       angleLock: roadDrawingAidEnabled("road-angle-lock"),
+      tangentGuide: roadDrawingAidEnabled("road-tangent-guide"),
+      parallelGuide: roadDrawingAidEnabled("road-parallel-guide"),
       angleStepDegrees: 15,
-      endpointDistance: 12
+      endpointDistance: 12,
+      alignmentDistance: 28,
+      alignmentToleranceDegrees: 12
     });
     const previous = draft[draft.length - 1];
     if (previous && Math.hypot(lastRoadSnap.point.x - previous.x, lastRoadSnap.point.z - previous.z) < 2) {
@@ -6513,6 +6535,10 @@ renderer.domElement.addEventListener("pointerdown", event => {
       ? ` · joined ${lastRoadSnap.targetRoadName}`
       : lastRoadSnap.kind === "angle"
         ? ` · locked ${lastRoadSnap.angleDegrees}°`
+        : lastRoadSnap.kind === "tangent"
+          ? ` · tangent to ${lastRoadSnap.targetRoadName}`
+          : lastRoadSnap.kind === "parallel"
+            ? ` · parallel to ${lastRoadSnap.targetRoadName}`
         : "";
     notice(`${draft.length} road points${snapCopy}${cost ? ` · $${cost.toLocaleString()} estimate` : ""}`);
   }
@@ -7064,7 +7090,7 @@ document.querySelectorAll<HTMLButtonElement>("[data-road-feature]").forEach(butt
   updateRoadProfileSummary();
   updateCityToolPanel();
 }));
-document.querySelectorAll<HTMLButtonElement>("#road-snap-endpoints, #road-angle-lock").forEach(button => button.addEventListener("click", () => {
+document.querySelectorAll<HTMLButtonElement>("#road-snap-endpoints, #road-angle-lock, #road-tangent-guide, #road-parallel-guide").forEach(button => button.addEventListener("click", () => {
   const enabled = button.getAttribute("aria-pressed") !== "true";
   button.setAttribute("aria-pressed", String(enabled));
   button.classList.toggle("active", enabled);
@@ -7072,7 +7098,11 @@ document.querySelectorAll<HTMLButtonElement>("#road-snap-endpoints, #road-angle-
   updateCityToolPanel();
   notice(button.id === "road-snap-endpoints"
     ? `Road endpoint snapping ${enabled ? "enabled" : "disabled"}`
-    : `15° angle locking ${enabled ? "enabled" : "disabled"}`);
+    : button.id === "road-angle-lock"
+      ? `15° angle locking ${enabled ? "enabled" : "disabled"}`
+      : button.id === "road-tangent-guide"
+        ? `Road tangent guides ${enabled ? "enabled" : "disabled"}`
+        : `Road parallel guides ${enabled ? "enabled" : "disabled"}`);
 }));
 document.querySelector("#apply-road-profile")!.addEventListener("click", () => {
   const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;

@@ -114,18 +114,36 @@ export function roadConstructionCost(points: Point2[], profile: RoadProfile) {
 
 export type RoadDrawingSnap = {
   point: Point2;
-  kind: "free" | "endpoint" | "angle";
+  kind: "free" | "endpoint" | "angle" | "tangent" | "parallel";
   distance: number;
   angleDegrees?: number;
   targetRoadId?: string;
   targetRoadName?: string;
 };
 
+function nearestPointOnSegment(point: Point2, start: Point2, end: Point2) {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const lengthSquared = dx * dx + dz * dz;
+  if (lengthSquared <= .0001) return { x: start.x, z: start.z };
+  const progress = clamp(((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared, 0, 1);
+  return { x: start.x + dx * progress, z: start.z + dz * progress };
+}
+
 export function snapRoadDrawingPoint(
   candidate: Point2,
   draftPoints: Point2[],
   roads: Road[],
-  settings: { endpoints: boolean; angleLock: boolean; angleStepDegrees?: number; endpointDistance?: number }
+  settings: {
+    endpoints: boolean;
+    angleLock: boolean;
+    tangentGuide?: boolean;
+    parallelGuide?: boolean;
+    angleStepDegrees?: number;
+    endpointDistance?: number;
+    alignmentDistance?: number;
+    alignmentToleranceDegrees?: number;
+  }
 ): RoadDrawingSnap {
   const endpointDistance = clamp(settings.endpointDistance ?? 12, 2, 30);
   if (settings.endpoints) {
@@ -148,6 +166,73 @@ export function snapRoadDrawingPoint(
     }
   }
   const previous = draftPoints[draftPoints.length - 1];
+  const alignToAngle = (
+    angle: number,
+    kind: "tangent" | "parallel",
+    road: Road,
+    maximumDifference: number
+  ): RoadDrawingSnap | undefined => {
+    if (!previous) return undefined;
+    const dx = candidate.x - previous.x;
+    const dz = candidate.z - previous.z;
+    const segmentLength = Math.hypot(dx, dz);
+    if (segmentLength <= .5) return undefined;
+    const candidateAngle = Math.atan2(dz, dx);
+    const difference = Math.abs(Math.atan2(Math.sin(candidateAngle - angle), Math.cos(candidateAngle - angle)));
+    if (difference > maximumDifference) return undefined;
+    return {
+      point: {
+        x: Math.round((previous.x + Math.cos(angle) * segmentLength) * 100) / 100,
+        z: Math.round((previous.z + Math.sin(angle) * segmentLength) * 100) / 100
+      },
+      kind,
+      distance: segmentLength,
+      angleDegrees: positiveModulo(Math.round(angle * 180 / Math.PI), 360),
+      targetRoadId: road.id,
+      targetRoadName: road.name ?? "Unnamed road"
+    };
+  };
+  const alignmentDistance = clamp(settings.alignmentDistance ?? 24, 6, 60);
+  const tolerance = clamp(settings.alignmentToleranceDegrees ?? 12, 3, 30) * Math.PI / 180;
+  if (settings.tangentGuide && previous) {
+    const tangent = roads
+      .flatMap(road => {
+        if (road.points.length < 2) return [];
+        const start = road.points[0];
+        const next = road.points[1];
+        const end = road.points[road.points.length - 1];
+        const beforeEnd = road.points[road.points.length - 2];
+        return [
+          { road, point: start, angle: Math.atan2(start.z - next.z, start.x - next.x) },
+          { road, point: end, angle: Math.atan2(end.z - beforeEnd.z, end.x - beforeEnd.x) }
+        ];
+      })
+      .map(entry => ({ ...entry, proximity: Math.hypot(entry.point.x - previous.x, entry.point.z - previous.z) }))
+      .filter(entry => entry.proximity <= alignmentDistance)
+      .sort((first, second) => first.proximity - second.proximity || first.road.id.localeCompare(second.road.id))
+      .map(entry => alignToAngle(entry.angle, "tangent", entry.road, tolerance))
+      .find((entry): entry is RoadDrawingSnap => Boolean(entry));
+    if (tangent) return tangent;
+  }
+  if (settings.parallelGuide && previous) {
+    const midpoint = { x: (previous.x + candidate.x) / 2, z: (previous.z + candidate.z) / 2 };
+    const parallel = roads
+      .flatMap(road => road.points.slice(1).map((point, index) => {
+        const start = road.points[index];
+        const projection = nearestPointOnSegment(midpoint, start, point);
+        return {
+          road,
+          angle: Math.atan2(point.z - start.z, point.x - start.x),
+          proximity: Math.hypot(projection.x - midpoint.x, projection.z - midpoint.z)
+        };
+      }))
+      .filter(entry => entry.proximity <= alignmentDistance)
+      .sort((first, second) => first.proximity - second.proximity || first.road.id.localeCompare(second.road.id))
+      .flatMap(entry => [entry.angle, entry.angle + Math.PI].map(angle => ({ ...entry, angle })))
+      .map(entry => alignToAngle(entry.angle, "parallel", entry.road, tolerance))
+      .find((entry): entry is RoadDrawingSnap => Boolean(entry));
+    if (parallel) return parallel;
+  }
   if (settings.angleLock && previous) {
     const dx = candidate.x - previous.x;
     const dz = candidate.z - previous.z;

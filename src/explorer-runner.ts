@@ -266,6 +266,18 @@ const freeSnap = snapRoadDrawingPoint(
   [road],
   { endpoints: false, angleLock: false }
 );
+const tangentSnap = snapRoadDrawingPoint(
+  { x: 60, z: -3 },
+  [{ x: 40, z: 0 }],
+  [road],
+  { endpoints: false, angleLock: false, tangentGuide: true, alignmentDistance: 18, alignmentToleranceDegrees: 12 }
+);
+const parallelSnap = snapRoadDrawingPoint(
+  { x: 20, z: 18 },
+  [{ x: -10, z: 20 }],
+  [road],
+  { endpoints: false, angleLock: false, parallelGuide: true, alignmentDistance: 28, alignmentToleranceDegrees: 12 }
+);
 check(
   endpointSnap.kind === "endpoint"
     && endpointSnap.point.x === 40
@@ -281,6 +293,20 @@ check(
     && freeSnap.point.x === 19
     && freeSnap.point.z === 7,
   "Optional road angle locking did not preserve segment length or release cleanly."
+);
+check(
+  tangentSnap.kind === "tangent"
+    && tangentSnap.targetRoadId === road.id
+    && tangentSnap.angleDegrees === 349
+    && Math.abs(Math.hypot(tangentSnap.point.x - 40, tangentSnap.point.z) - Math.hypot(20, -3)) < .02,
+  "Road tangent guidance did not extend a curved road endpoint while preserving the drawn segment length."
+);
+check(
+  parallelSnap.kind === "parallel"
+    && parallelSnap.targetRoadId === road.id
+    && parallelSnap.angleDegrees === 349
+    && Math.abs(Math.hypot(parallelSnap.point.x + 10, parallelSnap.point.z - 20) - Math.hypot(30, -2)) < .02,
+  "Road parallel guidance did not match a nearby curved-road segment while preserving the drawn length."
 );
 
 const profiledWorld = new World();
@@ -3237,6 +3263,8 @@ console.log(JSON.stringify({
   roadSamples: paths[0].points.length,
   roadEndpointSnap: endpointSnap.targetRoadName,
   roadAngleSnap: angleSnap.angleDegrees,
+  roadTangentSnap: tangentSnap.angleDegrees,
+  roadParallelSnap: parallelSnap.angleDegrees,
   intersections: intersections.length,
   redSignalStop: stoppedTraffic.stopped,
   greenSignalMovement: !movingTraffic.stopped,
