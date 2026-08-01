@@ -5491,6 +5491,7 @@ function updateHouseholdSummary(home: Home) {
           const outfitColors = world.residentOutfitColors(resident);
           const routineProfile = world.residentRoutineProfile(resident);
           const milestones = world.residentMilestones(resident).slice(0, 3);
+          const carePriority = world.caregivingPriority(home, resident);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
@@ -5562,6 +5563,7 @@ function updateHouseholdSummary(home: Home) {
                 data-control-resident="${resident.id}"
                 ${canControl ? "" : "disabled"}
               >${status !== "Home" ? status : canEnterHome ? "Control in home" : "Upgrade entrance first"}</button>
+              ${carePriority ? `<button type="button" class="resident-control" data-caregiver-resident="${resident.id}" data-care-dependent="${carePriority.resident.id}" ${status === "Home" && !action ? "" : "disabled"}>Care for ${carePriority.resident.name} · priority ${carePriority.need}</button>` : ""}
               <div class="resident-move">
                 ${destinationHomes.length ? `
                   <select data-resident-move-destination="${resident.id}" aria-label="Move ${resident.name} to household">
@@ -5665,6 +5667,16 @@ function updateHouseholdSummary(home: Home) {
           if (controlledResidentId === residentId) controlledResidentId = null;
           renderWorld();
         }
+        notice(result.reason);
+      });
+    });
+    details.querySelectorAll<HTMLButtonElement>("[data-caregiver-resident]").forEach(button => {
+      button.addEventListener("click", () => {
+        const caregiverId = button.dataset.caregiverResident;
+        const dependentId = button.dataset.careDependent;
+        if (!caregiverId || !dependentId) return;
+        const result = world.commandResidentCare(home.id, caregiverId, dependentId);
+        if (result.ok) renderWorld();
         notice(result.reason);
       });
     });
@@ -5962,15 +5974,17 @@ function updateExplorerContext() {
     const conversationPartner = controlledAction?.partnerResidentId
       ? interior.home.residents.find(resident => resident.id === controlledAction.partnerResidentId)
       : undefined;
-    const conversationCopy = controlled && conversationPartner
-      ? ` ${world.conversationIntentLabel(controlledAction?.conversationIntent ?? "chat")} with ${conversationPartner.name}. Their personality fit is ${world.compatibilityLabel(
+    const conversationCopy = controlled && conversationPartner && controlledAction?.kind === "socialize"
+      ? ` ${world.conversationIntentLabel(controlledAction.conversationIntent ?? "chat")} with ${conversationPartner.name}. Their personality fit is ${world.compatibilityLabel(
           world.relationshipCompatibility(controlled.resident, conversationPartner)
         ).toLowerCase()}, and their relationship is ${world.relationshipLabel(
           world.relationshipScore(interior.home, controlled.resident.id, conversationPartner.id)
         ).toLowerCase()} with ${world.relationshipTensionLabel(
           world.relationshipBetween(interior.home, controlled.resident.id, conversationPartner.id)?.tension ?? 0
         ).toLowerCase()} tension.`
-      : "";
+      : controlled && conversationPartner && controlledAction?.kind === "care"
+        ? ` ${controlled.resident.name} is caring for ${conversationPartner.name}, strengthening their bond while restoring the dependent's needs.`
+        : "";
     const controlCopy = controlled
       ? ` You are controlling ${controlled.resident.name}. ${controlledAction
           ? `${world.residentActionLabel(controlled.resident)} has ${Math.max(1, Math.ceil(controlledAction.endsAt - world.clock.elapsedMinutes))} minutes remaining.`

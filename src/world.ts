@@ -523,7 +523,8 @@ export type SocialMemory = {
   initiatorResidentId: string;
 };
 
-export type ResidentActionKind = "sleep" | "eat" | "relax" | "study" | "shower" | "socialize" | "tend-plants" | "idle";
+export const RESIDENT_ACTION_KINDS = ["sleep", "eat", "relax", "study", "shower", "socialize", "care", "tend-plants", "idle"] as const;
+export type ResidentActionKind = (typeof RESIDENT_ACTION_KINDS)[number];
 export type ResidentRoutineProfile = "early-bird" | "steady" | "night-owl" | "split-shift" | "flexible";
 export type ResidentActivityPreference = {
   action: ResidentActionKind;
@@ -531,7 +532,7 @@ export type ResidentActivityPreference = {
   satisfaction: number;
   lastAt: number;
 };
-export const MAX_RESIDENT_ACTIVITY_PREFERENCES = 8;
+export const MAX_RESIDENT_ACTIVITY_PREFERENCES = RESIDENT_ACTION_KINDS.length;
 export type ResidentSkill = "communication" | "creativity" | "wellness" | "practical";
 export type ResidentSkills = Record<ResidentSkill, number>;
 export type ResidentPurchaseKind = "meal-delivery" | "creative-supplies" | "wellness-care";
@@ -3401,12 +3402,14 @@ export class World {
         apologize: "Making amends"
       }[action.conversationIntent ?? "chat"];
     }
+    if (action.kind === "care") return "Caring for a dependent";
     return {
       sleep: "Sleeping",
       eat: "Having a meal",
       relax: "Relaxing",
       study: "Studying",
       shower: "Taking a shower",
+      care: "Caring for a dependent",
       "tend-plants": "Tending plants",
       idle: "Taking a breather"
     }[action.kind];
@@ -3780,6 +3783,7 @@ export class World {
       study: "Studying",
       shower: "Self-care",
       socialize: "Social time",
+      care: "Childcare",
       "tend-plants": "Plant care",
       idle: "Quiet breaks"
     }[action];
@@ -3985,6 +3989,55 @@ export class World {
       ok: true,
       reason: `${resident.name} chose ${this.conversationIntentLabel(intent).toLowerCase()} with ${partner.name}.`
     };
+  }
+
+  caregivingPriority(home: Home, caregiver: Resident) {
+    return home.residents
+      .filter(resident =>
+        (resident.caregiverIds ?? []).includes(caregiver.id)
+        && ["infant", "toddler", "child"].includes(this.residentLifeStage(resident))
+        && this.residentStatus(resident) === "Home"
+      )
+      .map(resident => ({
+        resident,
+        need: Math.round(
+          (100 - resident.comfort)
+          + (100 - resident.social)
+          + (100 - resident.health) * .75
+          + (100 - resident.energy) * .35
+          + resident.stress * .35
+        )
+      }))
+      .sort((first, second) => second.need - first.need || first.resident.id.localeCompare(second.resident.id))[0];
+  }
+
+  commandResidentCare(homeId: string, caregiverId: string, dependentId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const caregiver = home?.residents.find(item => item.id === caregiverId);
+    const dependent = home?.residents.find(item => item.id === dependentId);
+    if (!home || !caregiver || !dependent || !(dependent.caregiverIds ?? []).includes(caregiver.id)) {
+      return { ok: false, reason: "Choose a linked caregiver and dependent." };
+    }
+    if (!["infant", "toddler", "child"].includes(this.residentLifeStage(dependent))) {
+      return { ok: false, reason: `${dependent.name} no longer needs a childcare action.` };
+    }
+    if (this.residentStatus(caregiver) !== "Home" || this.residentStatus(dependent) !== "Home") {
+      return { ok: false, reason: "The caregiver and dependent both need to be home." };
+    }
+    if (this.activeResidentAction(caregiver)) {
+      return { ok: false, reason: `${caregiver.name} is already busy.` };
+    }
+    this.checkpoint();
+    caregiver.homeFloor = dependent.homeFloor ?? caregiver.homeFloor ?? 0;
+    caregiver.currentAction = {
+      kind: "care",
+      startedAt: this.clock.elapsedMinutes,
+      endsAt: this.clock.elapsedMinutes + 45,
+      partnerResidentId: dependent.id,
+      directed: true,
+      relationshipCredit: true
+    };
+    return { ok: true, reason: `${caregiver.name} started caring for ${dependent.name}.` };
   }
 
   cancelResidentAction(homeId: string, residentId: string) {
@@ -5418,6 +5471,7 @@ export class World {
           traits,
           personality,
           currentAction: resident.currentAction
+            && RESIDENT_ACTION_KINDS.includes(resident.currentAction.kind)
             ? {
                 ...resident.currentAction,
                 conversationIntent: resident.currentAction.kind === "socialize"
@@ -6373,6 +6427,7 @@ export class World {
       })
       .sort((first, second) => second.score - first.score)[0];
     const availablePartner = availablePartnerMatch?.resident;
+    const careMatch = this.caregivingPriority(home, resident);
     const learnedPreference = this.residentLearnedPreferences(home, resident);
     const autonomousConversationIntent: ConversationIntent =
       availablePartnerMatch
@@ -6442,6 +6497,13 @@ export class World {
         partnerResidentId: availablePartner?.id
       },
       {
+        kind: "care",
+        score: careMatch
+          ? Math.max(14, (careMatch.need - 34) * 1.08)
+          : -60,
+        partnerResidentId: careMatch?.resident.id
+      },
+      {
         kind: "tend-plants",
         score: (100 - resident.health) * .52 + resident.stress * .48 + (furniture.plant ? 24 : -48),
         targetFurnitureId: furniture.plant?.id
@@ -6475,6 +6537,7 @@ export class World {
           : choice.kind === "study" ? 60
             : choice.kind === "shower" ? 35
               : choice.kind === "socialize" ? autonomousConversationIntent === "apologize" ? 45 : 60
+                : choice.kind === "care" ? 45
                 : choice.kind === "tend-plants" ? 45 : 30;
     return {
       kind: choice.kind,
@@ -6569,6 +6632,40 @@ export class World {
           }, ...(relationship.memories ?? [])].slice(0, 8);
         }
       }
+    } else if (action.kind === "care") {
+      const dependent = action.partnerResidentId
+        ? home.residents.find(item => item.id === action.partnerResidentId)
+        : undefined;
+      resident.social = clamp(resident.social + 8, 0, 100);
+      resident.comfort = clamp(resident.comfort + 3, 0, 100);
+      resident.stress = clamp(resident.stress + (resident.traits.includes("empathetic") ? -2 : 2), 0, 100);
+      if (dependent && (dependent.caregiverIds ?? []).includes(resident.id)) {
+        dependent.energy = clamp(dependent.energy + 6, 0, 100);
+        dependent.social = clamp(dependent.social + 18, 0, 100);
+        dependent.comfort = clamp(dependent.comfort + 20, 0, 100);
+        dependent.health = clamp(dependent.health + 5, 0, 100);
+        dependent.stress = clamp(dependent.stress - 12, 0, 100);
+        const relationship = this.relationshipBetween(home, resident.id, dependent.id);
+        if (relationship) {
+          const previousTension = relationship.tension ?? 0;
+          const relationshipChange = Math.round(clamp(
+            4
+            + (resident.traits.includes("empathetic") ? 2 : 0)
+            + (this.relationshipCompatibility(resident, dependent) - 50) / 20,
+            3,
+            8
+          ));
+          relationship.score = clamp(relationship.score + relationshipChange, 0, 100);
+          relationship.tension = clamp(previousTension - 8, 0, 100);
+          relationship.memories = [{
+            intent: "support" as const,
+            relationshipChange,
+            tensionChange: relationship.tension - previousTension,
+            occurredAt: action.endsAt,
+            initiatorResidentId: resident.id
+          }, ...(relationship.memories ?? [])].slice(0, 8);
+        }
+      }
     } else if (action.kind === "tend-plants") {
       resident.health = clamp(resident.health + 6, 0, 100);
       resident.comfort = clamp(resident.comfort + 5, 0, 100);
@@ -6581,7 +6678,7 @@ export class World {
       resident.skills[skill] = clamp(resident.skills[skill] + gain, 0, 100);
     }
     const aspiration = this.residentAspiration(resident);
-    const aspirationGain = aspiration === "family" && action.kind === "socialize"
+    const aspirationGain = aspiration === "family" && (action.kind === "socialize" || action.kind === "care")
       ? 4
       : aspiration === "community" && (action.kind === "socialize" || action.kind === "tend-plants")
         ? 3
@@ -6880,6 +6977,7 @@ function residentActionSkillGains(action: ResidentAction): Partial<ResidentSkill
   if (action.kind === "study") return { creativity: 4, practical: 1 };
   if (action.kind === "shower") return { wellness: 3 };
   if (action.kind === "tend-plants") return { practical: 3, wellness: 1 };
+  if (action.kind === "care") return { communication: 2, wellness: 2, practical: 2 };
   if (action.kind === "socialize") {
     if (action.conversationIntent === "joke") return { communication: 2, creativity: 2 };
     if (action.conversationIntent === "support" || action.conversationIntent === "apologize") return { communication: 3, wellness: 1 };
@@ -6946,6 +7044,8 @@ function residentActionTraitBonus(resident: Resident, action: ResidentActionKind
       if (action === "sleep") bonus += 4;
     } else if (trait === "empathetic" && action === "socialize") {
       bonus += 18;
+    } else if (trait === "empathetic" && action === "care") {
+      bonus += 22;
     }
   }
   return bonus;
@@ -6955,6 +7055,7 @@ function residentActionPersonalityBonus(resident: Resident, action: ResidentActi
   let bonus = 0;
   const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
   if (action === "socialize") bonus += (personality.sociability - 50) * .52;
+  if (action === "care") bonus += (personality.emotionality - 50) * .18 + (personality.cleanliness - 50) * .12;
   if (action === "study") bonus += (personality.cleanliness - 50) * .18 - (personality.spontaneity - 50) * .08;
   if (action === "tend-plants") bonus += (personality.activity - 50) * .34 + (personality.cleanliness - 50) * .12;
   if (action === "relax") bonus += (personality.emotionality - 50) * .2 - (personality.activity - 50) * .12;
@@ -7109,9 +7210,7 @@ function normalizeResidentActivityPreferences(
   preferences: ResidentActivityPreference[] | undefined,
   elapsedMinutes: number
 ): ResidentActivityPreference[] {
-  const supported = new Set<ResidentActionKind>([
-    "sleep", "eat", "relax", "study", "shower", "socialize", "tend-plants", "idle"
-  ]);
+  const supported = new Set<ResidentActionKind>(RESIDENT_ACTION_KINDS);
   const seen = new Set<ResidentActionKind>();
   const normalized: ResidentActivityPreference[] = [];
   for (const item of Array.isArray(preferences) ? preferences : []) {
