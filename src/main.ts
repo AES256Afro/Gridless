@@ -535,6 +535,7 @@ app.innerHTML = `
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
       <div class="home-budget" id="home-circulation">Circulation unavailable</div>
       <div class="home-budget" id="home-energy">Energy unavailable</div>
+      <div class="home-budget" id="home-privacy">Privacy unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
@@ -555,6 +556,9 @@ app.innerHTML = `
         <option value="slate">Slate · $12/m²</option>
       </select></label>
       <span id="room-condition">Pristine · 100%</span>
+      <label>Room claim<select id="room-resident-claim"><option value="">Clear room claims</option></select></label>
+      <span id="room-claim-status">No resident claim</span>
+      <button id="assign-room-resident">Assign room</button>
       <button id="renovate-room">Renovate</button>
       <button id="furnish-room">Furnish room</button>
       <button id="delete-room">Delete room</button>
@@ -5731,6 +5735,9 @@ function updateHomeBuildControls(home: Home | null) {
   document.querySelector("#home-energy")!.textContent = energy
     ? `Energy ${energy.score}% · ${energy.dailyKwh.toFixed(1)} kWh/day · ${formatHomeCurrency(energy.dailyCost)}/day`
     : "Energy unavailable";
+  document.querySelector("#home-privacy")!.textContent = home
+    ? `Bedroom privacy ${world.homePrivacy(home)}% · ${home.residents.filter(resident => world.residentRoom(home, resident.id)).length}/${home.residents.length} residents assigned`
+    : "Privacy unavailable";
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -5752,6 +5759,25 @@ function updateRoomEditor(home: Home | null) {
   kindSelect.value = room.kind;
   document.querySelector<HTMLSelectElement>("#room-floor-finish")!.value = room.floorFinish ?? "oak";
   document.querySelector<HTMLSelectElement>("#room-wall-finish")!.value = room.wallFinish ?? "warm-white";
+  const roomCapacity = world.roomResidentCapacity(home, room);
+  const assignedIds = room.assignedResidentIds ?? [];
+  const claimSelect = document.querySelector<HTMLSelectElement>("#room-resident-claim")!;
+  claimSelect.replaceChildren(
+    new Option("Clear room claims", ""),
+    ...home.residents.map(resident => new Option(
+      `${assignedIds.includes(resident.id) ? "✓ " : ""}${resident.name} · ${world.residentLifeStageLabel(resident)}`,
+      resident.id
+    ))
+  );
+  claimSelect.disabled = !roomCapacity || !home.residents.length;
+  claimSelect.value = assignedIds[0] ?? "";
+  const assignedNames = assignedIds.map(id => home.residents.find(resident => resident.id === id)?.name).filter(Boolean);
+  document.querySelector("#room-claim-status")!.textContent = roomCapacity
+    ? `${assignedNames.length}/${roomCapacity} claimed · ${assignedNames.join(", ") || "unassigned"}`
+    : "Add a bed to a Bedroom, Nursery, or Studio";
+  const assignButton = document.querySelector<HTMLButtonElement>("#assign-room-resident")!;
+  assignButton.disabled = !roomCapacity || !home.residents.length;
+  assignButton.textContent = assignedIds.length ? "Update room claim" : "Assign room";
   const deleteButton = document.querySelector<HTMLButtonElement>("#delete-room")!;
   const floorRoomCount = home.rooms.filter(candidate => homeEntityFloor(candidate) === homeEntityFloor(room)).length;
   deleteButton.disabled = floorRoomCount <= 1;
@@ -5793,11 +5819,12 @@ function updateHouseholdSummary(home: Home) {
     const circulation = homeCirculation(home);
     const foundation = world.homeFoundationPerformance(home);
     const energy = world.homeEnergyPerformance(home);
+    const privacy = world.homePrivacy(home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Energy performance is ${energy.score}% at ${energy.dailyKwh.toFixed(1)} kWh and ${formatHomeCurrency(energy.dailyCost)} per day.${energy.benefits.length ? ` Benefits: ${energy.benefits.join(", ")}.` : ""} Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight and ${privacy}% bedroom privacy. The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Energy performance is ${energy.score}% at ${energy.dailyKwh.toFixed(1)} kWh and ${formatHomeCurrency(energy.dailyCost)} per day.${energy.benefits.length ? ` Benefits: ${energy.benefits.join(", ")}.` : ""} Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5820,6 +5847,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Roof</span><strong>${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)}</strong></div>
         <div title="${foundation.protection}% flood protection"><span>Foundation</span><strong>${foundation.style} · ${foundation.residualExposure}% exposure</strong></div>
         <div title="Heating ${energy.heating} kWh · cooling ${energy.cooling} kWh · lighting ${energy.lighting} kWh"><span>Energy</span><strong>${energy.score}% · ${formatHomeCurrency(energy.dailyCost)}/day</strong></div>
+        <div><span>Bedroom privacy</span><strong>${privacy}%</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -8577,6 +8605,25 @@ document.querySelector("#room-kind")!.addEventListener("change", event => {
   if (!home || !room || !world.setRoomKind(home.id, room.id, kind)) return;
   renderWorld();
   notice(`Room purpose changed to ${kind}`);
+});
+document.querySelector("#assign-room-resident")!.addEventListener("click", () => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  const residentId = (document.querySelector("#room-resident-claim") as HTMLSelectElement).value;
+  if (!home || !room) return;
+  if (!residentId) {
+    if (!world.clearRoomAssignments(home.id, room.id)) return;
+    renderWorld();
+    notice(`${room.kind} claims cleared · household privacy ${world.homePrivacy(home)}%`);
+    return;
+  }
+  const resident = home.residents.find(item => item.id === residentId);
+  if (!resident || !world.assignResidentRoom(home.id, room.id, residentId)) {
+    notice("This room needs an available bed before another resident can claim it");
+    return;
+  }
+  renderWorld();
+  notice(`${resident.name} claimed this ${room.kind.toLowerCase()} · household privacy ${world.homePrivacy(home)}%`);
 });
 document.querySelector("#room-floor-finish")!.addEventListener("change", event => {
   const home = currentHome();
