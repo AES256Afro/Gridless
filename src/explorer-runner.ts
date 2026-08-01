@@ -687,6 +687,31 @@ check(
   "District policy persistence lost an enabled policy."
 );
 
+const environmentalHealthWorld = new World();
+const environmentalHealthLot = environmentalHealthWorld.lots.find(candidate => Boolean(environmentalHealthWorld.districtForLot(candidate)))!;
+const environmentalHealthDistrict = environmentalHealthWorld.districtForLot(environmentalHealthLot)!;
+const environmentalHealthBefore = environmentalHealthWorld.lotEnvironmentalQuality(environmentalHealthLot);
+check(
+  environmentalHealthWorld.setDistrictPolicy(environmentalHealthDistrict.id, "heavy-traffic-ban", true)
+    && environmentalHealthWorld.setDistrictPolicy(environmentalHealthDistrict.id, "recycling", true),
+  "Environmental health policies could not be enabled for a valid district."
+);
+const environmentalHealthAfter = environmentalHealthWorld.lotEnvironmentalQuality(environmentalHealthLot);
+check(
+  environmentalHealthBefore.airQuality >= 0
+    && environmentalHealthBefore.airQuality <= 100
+    && environmentalHealthBefore.noiseLevel >= 0
+    && environmentalHealthBefore.noiseLevel <= 100
+    && environmentalHealthBefore.groundPollution >= 0
+    && environmentalHealthBefore.groundPollution <= 100
+    && environmentalHealthAfter.noiseLevel < environmentalHealthBefore.noiseLevel
+    && environmentalHealthAfter.groundPollution <= environmentalHealthBefore.groundPollution
+    && environmentalHealthAfter.score >= environmentalHealthBefore.score
+    && environmentalHealthAfter.mitigations.includes("heavy traffic ban")
+    && environmentalHealthAfter.mitigations.includes("recycling policy"),
+  "Environmental health did not remain bounded or respond to district mitigation."
+);
+
 const debtWorld = new World();
 const treasuryBeforeBond = debtWorld.clock.treasury;
 const bond = debtWorld.issueMunicipalBond(5_000_000);
@@ -3722,6 +3747,13 @@ console.log(JSON.stringify({
     focus: pulse.focusView,
     score: pulse.score
   })),
+  environmentalHealth: {
+    before: environmentalHealthBefore.score,
+    after: environmentalHealthAfter.score,
+    noiseBefore: environmentalHealthBefore.noiseLevel,
+    noiseAfter: environmentalHealthAfter.noiseLevel,
+    mitigations: environmentalHealthAfter.mitigations
+  },
   localizedSoundCue: emergencyStreetSound.focus,
   shelteredEmergencyLevel: shelteredEmergencySound.emergency,
   roadSamples: paths[0].points.length,

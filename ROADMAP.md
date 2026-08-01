@@ -412,6 +412,8 @@ Exit gate: one household can be followed for a full in-game year with understand
 - Give districts readable design rules without forcing identical buildings or sacrificing player overrides.
 - Keep Builder colors diagnostic, Explorer materials grounded, and Home details warm and tactile.
 
+Environmental health is now calculated per parcel from live road pressure and speed, nearby industry and municipal processing, plus park and street-tree buffers. The Pollution view separates air quality, noise, and ground pollution, while parcel inspection names sources and mitigation from recycling or heavy-traffic policy.
+
 Exit gate: screenshots from five districts are immediately distinguishable at skyline, street, and room scales.
 
 ### P1: Metropolitan performance

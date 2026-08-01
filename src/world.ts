@@ -322,6 +322,16 @@ export type FloodRisk = "none" | "moderate" | "high";
 export type TerrainSlope = "flat" | "moderate" | "steep";
 export type GrowthBoundaryStatus = "inside" | "outside";
 
+export type EnvironmentalQuality = {
+  score: number;
+  label: "Healthy" | "Fair" | "Strained" | "Unhealthy";
+  airQuality: number;
+  noiseLevel: number;
+  groundPollution: number;
+  sources: string[];
+  mitigations: string[];
+};
+
 export type TaxCategory = "residential" | "commercial" | "industrial";
 
 export type TaxPolicy = Record<TaxCategory, number>;
@@ -2613,6 +2623,84 @@ export class World {
       this.lotTerrainSlopeScore(lot),
       this.lotGrowthBoundaryStatus(lot) === "outside" ? .7 : 0
     );
+  }
+
+  lotEnvironmentalQuality(lot: Lot): EnvironmentalQuality {
+    const road = this.roads.find(candidate => candidate.id === lot.roadId);
+    const profile = road ? this.roadProfile(road) : ROAD_PROFILE_PRESETS.street;
+    const traffic = road ? this.roadTrafficPressure(road) : 0;
+    const policies = this.districtPoliciesForLot(lot);
+    const industrialPressure = clamp(this.lots.reduce((total, candidate) => {
+      if (candidate.zone !== "industrial" || this.constructionProgress(candidate) < 1) return total;
+      const proximity = clamp(1 - distance(lot.center, candidate.center) / 190, 0, 1);
+      return total + proximity * (.08 + Math.min(.24, candidate.businesses / 70));
+    }, 0), 0, 1);
+    const facilityPressure = clamp(this.services.reduce((total, service) => {
+      if (service.kind !== "waste" && service.kind !== "sewage" && service.kind !== "power") return total;
+      const proximity = clamp(1 - distance(lot.center, service.position) / 240, 0, 1);
+      const intensity = service.kind === "waste" ? .32 : service.kind === "sewage" ? .27 : .18;
+      return total + proximity * intensity;
+    }, 0), 0, 1);
+    const parkDistance = this.areas
+      .filter(area => area.kind === "park")
+      .reduce((closest, park) => Math.min(closest, distance(lot.center, polygonCenter(park.points))), Number.POSITIVE_INFINITY);
+    const parkBuffer = Number.isFinite(parkDistance) ? clamp(1 - parkDistance / 340, 0, 1) : 0;
+    const treeBuffer = profile.streetTrees ? .16 : 0;
+    const freightRelief = policies.includes("heavy-traffic-ban") ? .2 : 0;
+    const recyclingRelief = policies.includes("recycling") ? .22 : 0;
+    const noiseLevel = Math.round(clamp(
+      traffic * 68
+      + Math.max(0, profile.speedLimitKph - 20) * .6
+      + industrialPressure * 24
+      - freightRelief * 100
+      - treeBuffer * 24,
+      0,
+      100
+    ));
+    const groundPollution = Math.round(clamp(
+      industrialPressure * 62
+      + facilityPressure * 48
+      - recyclingRelief * 100
+      - parkBuffer * 10,
+      0,
+      100
+    ));
+    const airQuality = Math.round(clamp(
+      100
+      - traffic * 38
+      - industrialPressure * 34
+      - facilityPressure * 18
+      + treeBuffer * 42
+      + parkBuffer * 9
+      + freightRelief * 32,
+      0,
+      100
+    ));
+    const score = Math.round(clamp(
+      airQuality * .4 + (100 - noiseLevel) * .35 + (100 - groundPollution) * .25,
+      0,
+      100
+    ));
+    const sources = [
+      traffic >= .55 || profile.speedLimitKph >= 60 ? "road traffic" : undefined,
+      industrialPressure >= .16 ? "nearby industry" : undefined,
+      facilityPressure >= .12 ? "municipal processing" : undefined
+    ].filter((source): source is string => Boolean(source));
+    const mitigations = [
+      profile.streetTrees ? "street trees" : undefined,
+      parkBuffer >= .3 ? "park buffer" : undefined,
+      policies.includes("heavy-traffic-ban") ? "heavy traffic ban" : undefined,
+      policies.includes("recycling") ? "recycling policy" : undefined
+    ].filter((mitigation): mitigation is string => Boolean(mitigation));
+    return {
+      score,
+      label: score >= 78 ? "Healthy" : score >= 60 ? "Fair" : score >= 42 ? "Strained" : "Unhealthy",
+      airQuality,
+      noiseLevel,
+      groundPollution,
+      sources,
+      mitigations
+    };
   }
 
   lotGrowthBoundaryStatus(lot: Lot): GrowthBoundaryStatus {
