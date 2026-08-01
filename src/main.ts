@@ -285,6 +285,7 @@ app.innerHTML = `
             <output id="road-snap-status">Endpoint snap · free angle · free curve</output>
           </div>
           <output id="road-profile-summary" aria-live="polite"></output>
+          <section id="road-impact-preview" class="road-impact-preview" aria-live="polite" hidden></section>
           <button type="button" id="apply-road-profile" disabled>Apply profile</button>
         </div>
       </div>
@@ -3762,6 +3763,45 @@ function renderDraft() {
       previewGroup.add(footprint);
     }
   }
+  updateRoadImpactPreview();
+}
+
+function updateRoadImpactPreview() {
+  const preview = document.querySelector<HTMLElement>("#road-impact-preview");
+  if (!preview) return;
+  const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
+  if (cityTool !== "road" || targetId || draft.length < 2) {
+    preview.hidden = true;
+    preview.replaceChildren();
+    return;
+  }
+  const road = currentRoadConfig();
+  const impact = world.roadConstructionImpact(draft, road.profile, road.structure, road.elevationMeters);
+  const statusCopy = impact.status === "ready"
+    ? "Ready to build"
+    : impact.status === "funding"
+      ? "Needs funding"
+      : impact.status === "parcel-conflict"
+        ? "Reroute around parcels"
+        : impact.status === "water-conflict"
+          ? "Use a bridge or tunnel"
+          : "Add another point";
+  const accessCopy = impact.accessible
+    ? `${road.profile.sidewalkWidth}m continuous sidewalks`
+    : road.structure === "surface"
+      ? "Sidewalk width below accessible target"
+      : "No surface frontage or sidewalk access";
+  preview.classList.toggle("blocked", !impact.canBuild);
+  preview.hidden = false;
+  preview.innerHTML = `
+    <header><span>BUILD IMPACT</span><strong>${statusCopy}</strong></header>
+    <div><span>Capital cost</span><strong>$${impact.cost.toLocaleString()}</strong></div>
+    <div><span>New frontage</span><strong>${impact.frontageLots} parcels</strong></div>
+    <div><span>Network</span><strong>${impact.networkConnections} connections · ${impact.roadCrossings} at grade${impact.gradeSeparatedCrossings ? ` · ${impact.gradeSeparatedCrossings} separated` : ""}</strong></div>
+    <div><span>Parcel clearance</span><strong>${impact.parcelConflicts ? `${impact.parcelConflicts} conflicts${impact.developedParcelConflicts ? ` · ${impact.developedParcelConflicts} developed` : ""}` : "Clear"}</strong></div>
+    <div><span>Accessibility</span><strong>${accessCopy}</strong></div>
+    ${impact.waterSections ? `<div><span>Water</span><strong>${impact.waterSections} route sections</strong></div>` : ""}
+  `;
 }
 
 function currentRoadConfig() {
@@ -7092,7 +7132,16 @@ addEventListener("keydown", event => {
       notice(`${utilityName(kind)} connected`);
     } else if (cityTool === "road") {
       const road = currentRoadConfig();
-      const cost = roadConstructionCost(draft, road.profile, road.structure, road.elevationMeters);
+      const impact = world.roadConstructionImpact(draft, road.profile, road.structure, road.elevationMeters);
+      const cost = impact.cost;
+      if (impact.status === "parcel-conflict") {
+        notice(`Reroute around ${impact.parcelConflicts} parcel conflict${impact.parcelConflicts === 1 ? "" : "s"}`);
+        return;
+      }
+      if (impact.status === "water-conflict") {
+        notice("Surface roads cannot cross water · choose a bridge or tunnel");
+        return;
+      }
       if (!world.addRoad(draft, road.width, road.class, road.profile, road.structure, road.elevationMeters)) {
         notice(`The city needs $${cost.toLocaleString()} for this road`);
         return;

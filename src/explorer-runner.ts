@@ -403,6 +403,15 @@ const structureProfile = ROAD_PROFILE_PRESETS.avenue;
 const surfaceStructureCost = roadConstructionCost(structurePoints, structureProfile, "surface", 0);
 const bridgeStructureCost = roadConstructionCost(structurePoints, structureProfile, "bridge", 8);
 const tunnelStructureCost = roadConstructionCost(structurePoints, structureProfile, "tunnel", -12);
+const clearRoadImpact = structureWorld.roadConstructionImpact(structurePoints, structureProfile, "surface", 0);
+check(
+  clearRoadImpact.status === "ready"
+    && clearRoadImpact.canBuild
+    && clearRoadImpact.frontageLots === 2
+    && clearRoadImpact.accessible
+    && clearRoadImpact.cost === surfaceStructureCost,
+  "A clear funded surface road did not produce an accurate build impact preview."
+);
 check(
   surfaceStructureCost < bridgeStructureCost
     && bridgeStructureCost < tunnelStructureCost
@@ -410,12 +419,24 @@ check(
   "Road structure costs did not distinguish surface, bridge, and tunnel construction."
 );
 const bridgeRoad = structureWorld.roads[0];
+const separatedCrossingImpact = structureWorld.roadConstructionImpact(
+  [{ x: 0, z: -40 }, { x: 0, z: 40 }],
+  structureProfile,
+  "surface",
+  0
+);
 check(
   structureWorld.roadStructure(bridgeRoad).structure === "bridge"
     && structureWorld.roadStructure(bridgeRoad).elevationMeters === 8
     && bridgeRoad.developable === false
     && structureWorld.lots.every(lot => lot.roadId !== bridgeRoad.id),
   "Bridge construction did not retain its safe persistent deck height or suppress ground-level frontage."
+);
+check(
+  separatedCrossingImpact.roadCrossings === 0
+    && separatedCrossingImpact.gradeSeparatedCrossings === 1
+    && separatedCrossingImpact.networkConnections === 0,
+  "Road impact preview connected grade-separated structures into an at-grade network."
 );
 const restoredStructureWorld = new World();
 check(
@@ -461,6 +482,40 @@ capacityWorld.addRoad([{ x: -120, z: -20 }, { x: 120, z: -20 }], 3, "street", na
 capacityWorld.addRoad([{ x: -120, z: 20 }, { x: 120, z: 20 }], 24, "arterial", wideProfile);
 const narrowRoad = capacityWorld.roads[0];
 const wideRoad = capacityWorld.roads[1];
+const conflictLot = capacityWorld.lots.find(candidate => candidate.roadId === narrowRoad.id)!;
+const conflictPoints = [
+  { x: conflictLot.center.x - 24, z: conflictLot.center.z },
+  { x: conflictLot.center.x + 24, z: conflictLot.center.z }
+];
+const conflictingRoadImpact = capacityWorld.roadConstructionImpact(conflictPoints, narrowProfile, "surface", 0);
+const roadCountBeforeRejectedImpact = capacityWorld.roads.length;
+check(
+  conflictingRoadImpact.status === "parcel-conflict"
+    && conflictingRoadImpact.parcelConflicts > 0
+    && !conflictingRoadImpact.canBuild
+    && !capacityWorld.addRoad(conflictPoints, 9, "street", narrowProfile)
+    && capacityWorld.roads.length === roadCountBeforeRejectedImpact,
+  "Parcel conflicts were not reported and rejected before road construction."
+);
+const waterImpactWorld = new World();
+waterImpactWorld.applyTemplate("blank");
+waterImpactWorld.areas.push({
+  id: "impact-water",
+  name: "Impact water",
+  kind: "water",
+  points: [{ x: -12, z: -12 }, { x: 12, z: -12 }, { x: 12, z: 12 }, { x: -12, z: 12 }]
+});
+const waterImpactPoints = [{ x: -30, z: 0 }, { x: 30, z: 0 }];
+const surfaceWaterImpact = waterImpactWorld.roadConstructionImpact(waterImpactPoints, narrowProfile, "surface", 0);
+const bridgeWaterImpact = waterImpactWorld.roadConstructionImpact(waterImpactPoints, narrowProfile, "bridge", 8);
+check(
+  surfaceWaterImpact.status === "water-conflict"
+    && !surfaceWaterImpact.canBuild
+    && bridgeWaterImpact.status === "ready"
+    && bridgeWaterImpact.canBuild
+    && !bridgeWaterImpact.accessible,
+  "Water impact preview did not require grade separation or report frontage accessibility."
+);
 capacityWorld.commuteFlows = [{
   id: "road-profile-flow",
   originLotId: "profile-origin",
@@ -3410,6 +3465,10 @@ console.log(JSON.stringify({
   tunnelElevation: structureWorld.roadStructure(bridgeRoad).elevationMeters,
   bridgeCost: bridgeStructureCost,
   tunnelCost: tunnelStructureCost,
+  roadImpactFrontage: clearRoadImpact.frontageLots,
+  roadImpactParcelConflicts: conflictingRoadImpact.parcelConflicts,
+  roadImpactWaterSections: surfaceWaterImpact.waterSections,
+  roadImpactSeparatedCrossings: separatedCrossingImpact.gradeSeparatedCrossings,
   intersections: intersections.length,
   redSignalStop: stoppedTraffic.stopped,
   greenSignalMovement: !movingTraffic.stopped,

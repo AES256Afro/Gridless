@@ -374,7 +374,7 @@ These are the highest-value next slices for reaching the clarity of Cities: Skyl
 - [Complete] Exact endpoint snapping, optional 15-degree angle locking, tangent continuation, parallel alignment, live target, length, and bearing feedback, duplicate protection, Backspace revision, and Escape cancellation are live without a tile grid.
 - [Complete] Support lane count, medians, bike lanes, bus lanes, sidewalks, trees, parking, and speed policy as editable persistent road profiles.
 - [In progress] Surface, bridge, and tunnel levels, costs, supports, portals, retrofits, and migration are live; per-point elevation handles, slope validation, roundabouts, and safe intersection rebuilding remain ahead.
-- Preview demolition, parcel impact, construction cost, accessibility, and traffic consequences before committing.
+- [In progress] Live pre-build impact cards report construction cost, new frontage, network crossings and connections, parcel clearance, water exposure, accessibility, and funding, while commit-time guards reject parcel conflicts and surface roads through water; explicit demolition choices and traffic forecasts remain ahead.
 
 Exit gate: a player can reproduce a recognizable real neighborhood street pattern, then walk and drive every edited junction without visual seams or route breaks.
 

@@ -1524,6 +1524,15 @@ kbd {
 .road-drawing-aids { display: flex; align-items: center; gap: 3px; }
 .road-drawing-aids button { padding: 7px 8px; color: #aab7ad; background: rgba(255,255,255,.045); font-size: 10px; }
 .road-drawing-aids button.active, .road-drawing-aids button[aria-pressed="true"] { color: #172019; background: #f0d980; }
+.road-impact-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; padding: 9px; border: 1px solid rgba(115,198,139,.36); border-radius: 10px; background: rgba(115,198,139,.08); }
+.road-impact-preview[hidden] { display: none; }
+.road-impact-preview.blocked { border-color: rgba(217,108,95,.42); background: rgba(217,108,95,.08); }
+.road-impact-preview header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.road-impact-preview header span, .road-impact-preview div span { display: block; color: #91a196; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.road-impact-preview header strong { color: #8bd5a0; font-size: 11px; }
+.road-impact-preview.blocked header strong { color: #e58d82; }
+.road-impact-preview div { min-width: 0; }
+.road-impact-preview div strong { display: block; margin-top: 2px; color: #e8eee9; font-size: 10px; line-height: 1.25; }
 #road-snap-status { min-width: 128px; color: #b8c4bb; font-size: 9px; }
 #road-profile-summary {
   min-width: 178px;

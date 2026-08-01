@@ -136,6 +136,22 @@ export function roadConstructionCost(
   return Math.max(25_000, Math.round((length * roadWidthForProfile(profile) * 1_350 + featureCost + structureCost) / 1_000) * 1_000);
 }
 
+export type RoadConstructionImpact = {
+  lengthMeters: number;
+  cost: number;
+  frontageLots: number;
+  parcelConflicts: number;
+  developedParcelConflicts: number;
+  roadCrossings: number;
+  gradeSeparatedCrossings: number;
+  networkConnections: number;
+  waterSections: number;
+  accessible: boolean;
+  affordable: boolean;
+  canBuild: boolean;
+  status: "ready" | "funding" | "parcel-conflict" | "water-conflict" | "incomplete";
+};
+
 export type RoadDrawingSnap = {
   point: Point2;
   kind: "free" | "endpoint" | "angle" | "tangent" | "parallel";
@@ -1649,6 +1665,110 @@ export class World {
     return normalizeRoadStructure(road.structure, road.elevationMeters);
   }
 
+  roadConstructionImpact(
+    points: Point2[],
+    authoredProfile: Partial<RoadProfile>,
+    authoredStructure: RoadStructure = "surface",
+    authoredElevationMeters = 0
+  ): RoadConstructionImpact {
+    const profile = normalizeRoadProfile(authoredProfile);
+    const structure = normalizeRoadStructure(authoredStructure, authoredElevationMeters);
+    const lengthMeters = Math.round(routeLength(points));
+    const cost = roadConstructionCost(points, profile, structure.structure, structure.elevationMeters);
+    if (points.length < 2) {
+      return {
+        lengthMeters,
+        cost,
+        frontageLots: 0,
+        parcelConflicts: 0,
+        developedParcelConflicts: 0,
+        roadCrossings: 0,
+        gradeSeparatedCrossings: 0,
+        networkConnections: 0,
+        waterSections: 0,
+        accessible: false,
+        affordable: this.clock.treasury >= cost,
+        canBuild: false,
+        status: "incomplete"
+      };
+    }
+    const width = roadWidthForProfile(profile);
+    const parcelConflicts = this.lots.filter(lot =>
+      distanceToPolyline(lot.center, points) < width / 2 + Math.min(lot.width, lot.depth) * .32
+    );
+    const developedParcelConflicts = parcelConflicts.filter(lot =>
+      lot.zone !== "unassigned" || lot.households > 0 || lot.businesses > 0 || Boolean(lot.homeId)
+    ).length;
+    const waterAreas = this.areas.filter(area => area.kind === "water");
+    const waterSections = points.slice(0, -1).filter((point, index) => {
+      const next = points[index + 1];
+      const sampleCount = Math.max(2, Math.ceil(Math.hypot(next.x - point.x, next.z - point.z) / 10));
+      const samples = Array.from({ length: sampleCount + 1 }, (_, sampleIndex) => ({
+        x: point.x + (next.x - point.x) * sampleIndex / sampleCount,
+        z: point.z + (next.z - point.z) * sampleIndex / sampleCount
+      }));
+      return samples.some(sample => waterAreas.some(area => pointInPolygon(sample, area.points)));
+    }).length;
+    let frontageLots = 0;
+    if (structure.structure === "surface") {
+      const curve = new THREE.CatmullRomCurve3(points.map(point => new THREE.Vector3(point.x, 0, point.z)), false, "centripetal");
+      const count = Math.max(1, Math.floor(curve.getLength() / 28));
+      const candidates: Point2[] = [];
+      for (let index = 1; index < count; index += 1) {
+        const progress = index / count;
+        const center = curve.getPoint(progress);
+        const tangent = curve.getTangent(progress).normalize();
+        for (const side of [-1, 1]) {
+          const offset = width / 2 + 10;
+          const candidate = {
+            x: center.x + tangent.z * side * offset,
+            z: center.z - tangent.x * side * offset
+          };
+          if (this.areas.some(area => (area.kind === "park" || area.kind === "water") && pointInPolygon(candidate, area.points))) continue;
+          if (this.lots.some(lot => Math.hypot(lot.center.x - candidate.x, lot.center.z - candidate.z) < 16)) continue;
+          if (candidates.some(existing => Math.hypot(existing.x - candidate.x, existing.z - candidate.z) < 16)) continue;
+          candidates.push(candidate);
+        }
+      }
+      frontageLots = candidates.length;
+    }
+    const crossingRoads = this.roads.filter(road => polylinesCross(points, road.points));
+    const sameLevel = (road: Road) => {
+      const roadStructure = this.roadStructure(road);
+      return roadStructure.structure === structure.structure
+        && Math.abs(roadStructure.elevationMeters - structure.elevationMeters) < 1;
+    };
+    const roadCrossings = crossingRoads.filter(sameLevel).length;
+    const gradeSeparatedCrossings = crossingRoads.length - roadCrossings;
+    const networkConnections = points.filter(point => this.roads.some(road =>
+      sameLevel(road) && distanceToPolyline(point, road.points) <= 12
+    )).length;
+    const affordable = this.clock.treasury >= cost;
+    const waterConflict = structure.structure === "surface" && waterSections > 0;
+    const status: RoadConstructionImpact["status"] = parcelConflicts.length
+      ? "parcel-conflict"
+      : waterConflict
+        ? "water-conflict"
+        : !affordable
+          ? "funding"
+          : "ready";
+    return {
+      lengthMeters,
+      cost,
+      frontageLots,
+      parcelConflicts: parcelConflicts.length,
+      developedParcelConflicts,
+      roadCrossings,
+      gradeSeparatedCrossings,
+      networkConnections,
+      waterSections,
+      accessible: structure.structure === "surface" && profile.sidewalkWidth >= 1.5,
+      affordable,
+      canBuild: status === "ready",
+      status
+    };
+  }
+
   addRoad(
     points: Point2[],
     width = 10,
@@ -1660,8 +1780,9 @@ export class World {
     if (points.length < 2) return false;
     const profile = normalizeRoadProfile(authoredProfile, roadClass);
     const structure = normalizeRoadStructure(authoredStructure, authoredElevationMeters);
-    const constructionCost = roadConstructionCost(points, profile, structure.structure, structure.elevationMeters);
-    if (this.clock.treasury < constructionCost) return false;
+    const impact = this.roadConstructionImpact(points, profile, structure.structure, structure.elevationMeters);
+    const constructionCost = impact.cost;
+    if (!impact.canBuild) return false;
     this.checkpoint();
     this.clock.treasury -= constructionCost;
     this.roads.push({
@@ -7193,6 +7314,34 @@ function distanceToPolyline(point: Point2, points: Point2[]) {
     distance = Math.min(distance, Math.hypot(point.x - (a.x + progress * dx), point.z - (a.z + progress * dz)));
   }
   return distance;
+}
+
+function polylinesCross(first: Point2[], second: Point2[]) {
+  for (let firstIndex = 0; firstIndex < first.length - 1; firstIndex += 1) {
+    for (let secondIndex = 0; secondIndex < second.length - 1; secondIndex += 1) {
+      if (segmentsCross(first[firstIndex], first[firstIndex + 1], second[secondIndex], second[secondIndex + 1])) return true;
+    }
+  }
+  return false;
+}
+
+function segmentsCross(a: Point2, b: Point2, c: Point2, d: Point2) {
+  const cross = (first: Point2, second: Point2, third: Point2) =>
+    (second.x - first.x) * (third.z - first.z) - (second.z - first.z) * (third.x - first.x);
+  const onSegment = (start: Point2, point: Point2, end: Point2) =>
+    point.x >= Math.min(start.x, end.x) - .001
+    && point.x <= Math.max(start.x, end.x) + .001
+    && point.z >= Math.min(start.z, end.z) - .001
+    && point.z <= Math.max(start.z, end.z) + .001;
+  const firstC = cross(a, b, c);
+  const firstD = cross(a, b, d);
+  const secondA = cross(c, d, a);
+  const secondB = cross(c, d, b);
+  if (Math.abs(firstC) < .001 && onSegment(a, c, b)) return true;
+  if (Math.abs(firstD) < .001 && onSegment(a, d, b)) return true;
+  if (Math.abs(secondA) < .001 && onSegment(c, a, d)) return true;
+  if (Math.abs(secondB) < .001 && onSegment(c, b, d)) return true;
+  return (firstC > 0) !== (firstD > 0) && (secondA > 0) !== (secondB > 0);
 }
 
 function progressInWindow(minute: number, start: number, duration: number) {
