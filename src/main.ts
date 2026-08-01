@@ -35,6 +35,7 @@ import {
   normalizeRoadStructure,
   defaultHomeRoofColor,
   defaultHomeRoofStyle,
+  defaultHomeFoundationStyle,
   homeEntityFloor,
   homeFloorView,
   homeRoomExteriorWalls,
@@ -54,6 +55,7 @@ import {
   type DistrictPolicy,
   type Home,
   type HomeFloorFinish,
+  type HomeFoundationStyle,
   type HomeDoorWidth,
   type HomeFurnitureStyle,
   type HomeFurnitureVariant,
@@ -476,6 +478,12 @@ app.innerHTML = `
       </select>
       <input id="home-roof-color" type="color" aria-label="Roof color" title="Roof color" value="#625044">
       <button id="apply-home-roof" type="button">Apply roof</button>
+      <select id="home-foundation-style" aria-label="Home foundation style">
+        <option value="slab">Slab · $4k</option>
+        <option value="crawlspace">Crawlspace · $6.5k</option>
+        <option value="raised">Raised · $10k</option>
+      </select>
+      <button id="apply-home-foundation" type="button">Apply foundation</button>
       <div class="tool-divider"></div>
       <select id="home-catalog" aria-label="Home object catalog">
         <optgroup label="Living">
@@ -2603,6 +2611,14 @@ function renderWorld() {
         }
       }
       if (lotHome && progress >= 1 && mode === "explore") {
+        const foundation = createHomeFoundation(
+          lot.width * .7,
+          lot.depth * .66,
+          lotHome.foundationStyle ?? defaultHomeFoundationStyle(world.templateId)
+        );
+        foundation.position.set(lot.center.x, 0, lot.center.z);
+        foundation.rotation.y = lot.rotation;
+        worldGroup.add(foundation);
         const roof = createHomeRoof(
           lot.width * .68,
           lot.depth * .64,
@@ -4762,13 +4778,14 @@ function renderHome() {
   homeGroup.position.set(lot.center.x, .2, lot.center.z);
   homeGroup.rotation.y = lot.rotation;
 
-  const foundation = new THREE.Mesh(
-    new THREE.BoxGeometry(lot.width - 1, .18, lot.depth - 1),
-    new THREE.MeshStandardMaterial({ color: 0xcfbf91, roughness: .96 })
+  const foundation = createHomeFoundation(
+    lot.width - 1,
+    lot.depth - 1,
+    home.foundationStyle ?? defaultHomeFoundationStyle(world.templateId),
+    true
   );
-  foundation.position.y = .09;
-  foundation.receiveShadow = true;
   foundation.userData.homeSurface = true;
+  foundation.traverse(object => { object.userData.homeSurface = true; });
   homeGroup.add(foundation);
 
   const entrance = world.accessibilityEntrances.find(
@@ -4911,6 +4928,47 @@ function renderHome() {
     updateRoomEditor(home);
     updateHouseholdSummary(home);
   }
+}
+
+function createHomeFoundation(width: number, depth: number, style: HomeFoundationStyle, cutaway = false) {
+  const group = new THREE.Group();
+  const concrete = new THREE.MeshStandardMaterial({
+    color: style === "raised" ? 0xa6977e : 0xcfbf91,
+    roughness: .96,
+    transparent: cutaway && style !== "slab",
+    opacity: cutaway && style !== "slab" ? .72 : 1
+  });
+  if (style === "slab") {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(width, .18, depth), concrete);
+    slab.position.y = .09;
+    group.add(slab);
+  } else if (style === "crawlspace") {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(width, .42, depth), concrete);
+    base.position.y = .21;
+    group.add(base);
+    const ventMaterial = new THREE.MeshStandardMaterial({ color: 0x34413d, roughness: .82 });
+    for (const x of [-width * .28, width * .28]) {
+      const vent = new THREE.Mesh(new THREE.BoxGeometry(.65, .18, .05), ventMaterial);
+      vent.position.set(x, .24, depth / 2 + .026);
+      group.add(vent);
+    }
+  } else {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(width, .18, depth), concrete);
+    deck.position.y = .66;
+    group.add(deck);
+    for (const x of [-width * .38, 0, width * .38]) {
+      for (const z of [-depth * .38, depth * .38]) {
+        const pier = new THREE.Mesh(new THREE.BoxGeometry(.42, .66, .42), concrete);
+        pier.position.set(x, .33, z);
+        group.add(pier);
+      }
+    }
+  }
+  group.traverse(object => {
+    if (object instanceof THREE.Mesh) object.castShadow = object.receiveShadow = true;
+  });
+  group.userData.homeFoundationStyle = style;
+  return group;
 }
 
 function createHomeRoof(
@@ -5589,6 +5647,8 @@ function updateHomeBuildControls(home: Home | null) {
   const roofStyle = document.querySelector<HTMLSelectElement>("#home-roof-style")!;
   const roofColor = document.querySelector<HTMLInputElement>("#home-roof-color")!;
   const applyRoof = document.querySelector<HTMLButtonElement>("#apply-home-roof")!;
+  const foundationStyle = document.querySelector<HTMLSelectElement>("#home-foundation-style")!;
+  const applyFoundation = document.querySelector<HTMLButtonElement>("#apply-home-foundation")!;
   floorSelect.replaceChildren(...Array.from({ length: home?.floors ?? 1 }, (_, floor) => new Option(`Floor ${floor + 1}`, String(floor))));
   if (home) homeFloor = Math.max(0, Math.min(home.floors - 1, homeFloor));
   floorSelect.value = String(homeFloor);
@@ -5616,6 +5676,15 @@ function updateHomeBuildControls(home: Home | null) {
     applyRoof.textContent = `Apply ${pendingRoofStyle} roof · ${formatHomeCurrency(world.homeRoofCost(pendingRoofStyle))}`;
   } else {
     applyRoof.textContent = "Apply roof";
+  }
+  foundationStyle.disabled = !home;
+  applyFoundation.disabled = !home;
+  if (home && document.activeElement !== foundationStyle) foundationStyle.value = home.foundationStyle ?? defaultHomeFoundationStyle(world.templateId);
+  if (home) {
+    const pendingFoundation = foundationStyle.value as HomeFoundationStyle;
+    applyFoundation.textContent = `Apply ${pendingFoundation} · ${formatHomeCurrency(world.homeFoundationCost(pendingFoundation))}`;
+  } else {
+    applyFoundation.textContent = "Apply foundation";
   }
   move.disabled = !selected;
   rotate.disabled = !selected;
@@ -5717,11 +5786,12 @@ function updateHouseholdSummary(home: Home) {
     const homeCondition = world.homeCondition(home);
     const homeDaylight = world.homeDaylight(home);
     const circulation = homeCirculation(home);
+    const foundation = world.homeFoundationPerformance(home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5742,6 +5812,7 @@ function updateHouseholdSummary(home: Home) {
       <div class="home-wellbeing-overview">
         <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
         <div><span>Roof</span><strong>${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)}</strong></div>
+        <div title="${foundation.protection}% flood protection"><span>Foundation</span><strong>${foundation.style} · ${foundation.residualExposure}% exposure</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -8398,6 +8469,24 @@ document.querySelector("#apply-home-roof")!.addEventListener("click", () => {
   }
   renderWorld();
   notice(`${style === "green" ? "Planted" : `${style[0].toUpperCase()}${style.slice(1)}`} roof applied for ${formatHomeCurrency(cost)}`);
+});
+document.querySelector("#home-foundation-style")!.addEventListener("change", event => {
+  const style = (event.currentTarget as HTMLSelectElement).value as HomeFoundationStyle;
+  document.querySelector<HTMLButtonElement>("#apply-home-foundation")!.textContent = `Apply ${style} · ${formatHomeCurrency(world.homeFoundationCost(style))}`;
+});
+document.querySelector("#apply-home-foundation")!.addEventListener("click", () => {
+  const home = currentHome();
+  const style = (document.querySelector("#home-foundation-style") as HTMLSelectElement).value as HomeFoundationStyle;
+  const cost = world.homeFoundationCost(style);
+  if (!home || !world.setHomeFoundation(home.id, style)) {
+    notice(home && world.homeRemainingBudget(home) < cost
+      ? `${formatHomeCurrency(cost)} needed. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+      : "Choose a different foundation before applying");
+    return;
+  }
+  renderWorld();
+  const performance = world.homeFoundationPerformance(home);
+  notice(`${style[0].toUpperCase()}${style.slice(1)} foundation applied for ${formatHomeCurrency(cost)} · ${performance.residualExposure}% residual flood exposure`);
 });
 document.querySelector("#move-furniture")!.addEventListener("click", () => {
   const home = currentHome();

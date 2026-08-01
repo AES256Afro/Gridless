@@ -1187,6 +1187,7 @@ export type HomeDoor = {
 };
 
 export type HomeRoofStyle = "gable" | "hip" | "flat" | "green";
+export type HomeFoundationStyle = "slab" | "crawlspace" | "raised";
 
 export type Home = {
   id: string;
@@ -1200,6 +1201,7 @@ export type Home = {
   doors?: HomeDoor[];
   roofStyle?: HomeRoofStyle;
   roofColor?: string;
+  foundationStyle?: HomeFoundationStyle;
   designBudget: number;
   designSpent: number;
   householdFunds?: number;
@@ -1314,6 +1316,9 @@ export const HOME_BUILD_COSTS = {
   wideDoor: 400,
   roof: 2_800,
   greenRoof: 2_200,
+  foundation: 4_000,
+  crawlspaceFoundation: 2_500,
+  raisedFoundation: 6_000,
   sofa: 1_400,
   table: 650,
   bed: 1_200,
@@ -1340,6 +1345,12 @@ export function defaultHomeRoofColor(templateId: WorldTemplate["id"]) {
     portland: "#6c4c3d",
     blank: "#625044"
   }[templateId];
+}
+
+export function defaultHomeFoundationStyle(templateId: WorldTemplate["id"]): HomeFoundationStyle {
+  if (templateId === "houston") return "raised";
+  if (templateId === "seattle" || templateId === "portland") return "crawlspace";
+  return "slab";
 }
 
 export const HOUSEHOLD_GATHERING_DEFINITIONS: Record<HouseholdGatheringKind, {
@@ -5002,6 +5013,7 @@ export class World {
       stairs: [],
       roofStyle: defaultHomeRoofStyle(this.templateId),
       roofColor: defaultHomeRoofColor(this.templateId),
+      foundationStyle: defaultHomeFoundationStyle(this.templateId),
       designBudget: 60_000,
       designSpent: HOME_BUILD_COSTS.sofa + HOME_BUILD_COSTS.plant,
       householdFunds: 15_000,
@@ -5398,6 +5410,41 @@ export class World {
     this.checkpoint();
     home.roofStyle = style;
     home.roofColor = normalizedColor;
+    home.designSpent += cost;
+    return true;
+  }
+
+  homeFoundationCost(style: HomeFoundationStyle) {
+    return HOME_BUILD_COSTS.foundation
+      + (style === "crawlspace" ? HOME_BUILD_COSTS.crawlspaceFoundation : style === "raised" ? HOME_BUILD_COSTS.raisedFoundation : 0);
+  }
+
+  homeFoundationPerformance(home: Home) {
+    const style = home.foundationStyle ?? defaultHomeFoundationStyle(this.templateId);
+    const protection = style === "raised" ? .85 : style === "crawlspace" ? .45 : 0;
+    const lot = this.lots.find(candidate => candidate.id === home.lotId);
+    const rawRisk = lot ? this.lotFloodRiskScore(lot) : 0;
+    const residualExposure = Math.round(rawRisk * (1 - protection) * 100);
+    return {
+      style,
+      protection: Math.round(protection * 100),
+      residualExposure,
+      floodRisk: lot ? this.lotFloodRisk(lot) : "none" as FloodRisk
+    };
+  }
+
+  setHomeFoundation(homeId: string, style: HomeFoundationStyle) {
+    const home = this.homes.find(item => item.id === homeId);
+    const styles: HomeFoundationStyle[] = ["slab", "crawlspace", "raised"];
+    const cost = this.homeFoundationCost(style);
+    if (
+      !home
+      || !styles.includes(style)
+      || (home.foundationStyle ?? defaultHomeFoundationStyle(this.templateId)) === style
+      || this.homeRemainingBudget(home) < cost
+    ) return false;
+    this.checkpoint();
+    home.foundationStyle = style;
     home.designSpent += cost;
     return true;
   }
@@ -6111,6 +6158,9 @@ export class World {
         roofColor: /^#[0-9a-f]{6}$/i.test(home.roofColor ?? "")
           ? home.roofColor!.toLowerCase()
           : defaultHomeRoofColor(this.templateId),
+        foundationStyle: home.foundationStyle === "crawlspace" || home.foundationStyle === "raised"
+          ? home.foundationStyle
+          : home.foundationStyle === "slab" ? "slab" : defaultHomeFoundationStyle(this.templateId),
         designBudget: Math.max(0, Math.round(home.designBudget ?? 60_000)),
         designSpent: Math.max(0, Math.round(
           home.designSpent
@@ -6118,6 +6168,7 @@ export class World {
             + (home.windows ?? []).reduce((total, window) => total + this.homeWindowCost(window.glazing), 0)
             + (home.doors ?? []).reduce((total, door) => total + this.homeDoorCost(door.widthKind), 0)
             + (home.roofStyle ? this.homeRoofCost(home.roofStyle) : 0)
+            + (home.foundationStyle ? this.homeFoundationCost(home.foundationStyle) : 0)
         )),
         householdFunds: Math.round(clamp(home.householdFunds ?? 15_000, -100_000, 10_000_000)),
         lastDailyIncome: Math.max(0, Math.round(home.lastDailyIncome ?? 0)),
@@ -6708,8 +6759,9 @@ export class World {
 
   private degradeHomeCondition(home: Home) {
     const occupiedWear = home.residents.length * .003;
+    const floodWear = this.homeFoundationPerformance(home).residualExposure / 100 * .02;
     for (const room of home.rooms) {
-      room.condition = clamp((room.condition ?? 100) - (.014 + occupiedWear), 25, 100);
+      room.condition = clamp((room.condition ?? 100) - (.014 + occupiedWear + floodWear), 25, 100);
     }
     for (const furniture of home.furniture) {
       furniture.condition = clamp((furniture.condition ?? 100) - (.008 + home.residents.length * .002), 20, 100);

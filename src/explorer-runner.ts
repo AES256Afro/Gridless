@@ -59,6 +59,7 @@ import {
   ROAD_PROFILE_PRESETS,
   World,
   defaultHomeRoofStyle,
+  defaultHomeFoundationStyle,
   homeEntityFloor,
   homeFloorView,
   homeRoomExteriorWalls,
@@ -1523,6 +1524,46 @@ check(
     && restoredRoofWorld.homes[0].roofStyle === "green"
     && restoredRoofWorld.homes[0].roofColor === "#486b46",
   "Authored roof design did not survive save and restore."
+);
+const foundationWorld = new World();
+foundationWorld.templateId = "houston";
+foundationWorld.lots = [structuredClone(lot)];
+foundationWorld.areas = [{
+  id: "test-floodplain",
+  name: "Test floodplain",
+  kind: "floodplain",
+  floodRisk: "high",
+  points: [{ x: -50, z: -50 }, { x: 50, z: -50 }, { x: 50, z: 50 }, { x: -50, z: 50 }]
+}];
+foundationWorld.homes = [{ ...structuredClone(interiorHome), foundationStyle: "slab" }];
+const foundationHome = foundationWorld.homes[0];
+const foundationBudget = foundationWorld.homeRemainingBudget(foundationHome);
+check(
+  defaultHomeFoundationStyle("nyc") === "slab"
+    && defaultHomeFoundationStyle("houston") === "raised"
+    && defaultHomeFoundationStyle("portland") === "crawlspace",
+  "Regional home foundation defaults were not deterministic."
+);
+check(
+  foundationWorld.homeFoundationPerformance(foundationHome).residualExposure === 100
+    && foundationWorld.setHomeFoundation(foundationHome.id, "raised")
+    && foundationWorld.homeFoundationPerformance(foundationHome).protection === 85
+    && foundationWorld.homeFoundationPerformance(foundationHome).residualExposure === 15
+    && foundationWorld.homeRemainingBudget(foundationHome) === foundationBudget
+      - HOME_BUILD_COSTS.foundation
+      - HOME_BUILD_COSTS.raisedFoundation,
+  "A raised foundation did not apply its exact cost and flood protection."
+);
+check(
+  !foundationWorld.setHomeFoundation(foundationHome.id, "raised"),
+  "Home Simulator charged for an unchanged foundation."
+);
+const restoredFoundationWorld = new World();
+check(
+  restoredFoundationWorld.restore(foundationWorld.serialize())
+    && restoredFoundationWorld.homes[0].foundationStyle === "raised"
+    && restoredFoundationWorld.homeFoundationPerformance(restoredFoundationWorld.homes[0]).residualExposure === 15,
+  "Authored foundation resilience did not survive save and restore."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -3994,6 +4035,7 @@ console.log(JSON.stringify({
   authoredWindowGlazing: authoredWindowHome.windows?.[0]?.glazing,
   authoredWindowDaylight: authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]),
   authoredRoof: `${restoredRoofWorld.homes[0].roofStyle} ${restoredRoofWorld.homes[0].roofColor}`,
+  authoredFoundation: restoredFoundationWorld.homeFoundationPerformance(restoredFoundationWorld.homes[0]),
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
