@@ -37,6 +37,7 @@ export type StabilityCheckpoint = {
   completedWorkDays: number;
   averageWorkPerformance: number;
   residentMilestones: number;
+  customersPresent: number;
   eventOccurrences: number;
   eventAttendance: number;
   snapshotBytes: number;
@@ -377,6 +378,7 @@ function checkpoint(world: World): StabilityCheckpoint {
       ? Math.round(residents.filter(resident => resident.lastWorkTask).reduce((total, resident) => total + world.residentWorkPerformance(resident), 0) / residents.filter(resident => resident.lastWorkTask).length)
       : 0,
     residentMilestones: residents.reduce((total, resident) => total + (resident.milestones?.length ?? 0), 0),
+    customersPresent: world.lots.reduce((total, lot) => total + world.workplaceActivity(lot).customersPresent, 0),
     eventOccurrences: world.cityEvents.reduce((total, event) => total + event.occurrences, 0),
     eventAttendance: economy.eventAttendance,
     snapshotBytes
@@ -901,6 +903,21 @@ function integrityFailures(world: World) {
   for (const utility of world.utilities) {
     if (utility.condition < 0 || utility.condition > 100) failures.push(`Utility ${utility.id} condition is outside 0 to 100.`);
     if (utility.capacity <= 0 || utility.points.length < 2) failures.push(`Utility ${utility.id} has invalid network geometry or capacity.`);
+  }
+  for (const lot of world.lots.filter(item => item.businesses > 0)) {
+    const activity = world.workplaceActivity(lot);
+    if (
+      !Number.isInteger(activity.coworkersOnShift)
+      || activity.coworkersOnShift < 0
+      || !Number.isInteger(activity.customersPresent)
+      || activity.customersPresent < 0
+      || !Number.isInteger(activity.hourlyCustomerDemand)
+      || activity.hourlyCustomerDemand < 0
+      || !Number.isInteger(activity.servicePressure)
+      || activity.servicePressure < 0
+      || activity.servicePressure > 100
+      || !["Closed", "Crew only", "Quiet", "Steady", "Busy", "Crowded"].includes(activity.label)
+    ) failures.push(`Lot ${lot.id} has invalid workplace activity.`);
   }
   for (const incident of world.incidents) {
     if (!lotIds.has(incident.lotId)) failures.push(`Incident ${incident.id} points to a missing lot.`);

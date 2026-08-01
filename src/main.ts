@@ -657,6 +657,7 @@ const previewGroup = new THREE.Group();
 const homeGroup = new THREE.Group();
 const incidentGroup = new THREE.Group();
 const commuteGroup = new THREE.Group();
+const workplaceActivityGroup = new THREE.Group();
 const streetFurnitureGroup = new THREE.Group();
 const accessibilityGroup = new THREE.Group();
 const accessibleRouteGroup = new THREE.Group();
@@ -677,6 +678,7 @@ scene.add(
   homeGroup,
   incidentGroup,
   commuteGroup,
+  workplaceActivityGroup,
   explorerVehicleGroup,
   transitVehicleGroup,
   transitFleetGroup
@@ -2512,9 +2514,14 @@ function closestActiveWorkplace(point: Point2, maximumDistance: number) {
     .map(lot => ({
       lot,
       workers: world.residentsAtWorkplace(lot.id),
+      activity: world.workplaceActivity(lot),
       distance: Math.hypot(lot.center.x - point.x, lot.center.z - point.z)
     }))
-    .filter(candidate => candidate.workers.length > 0 && candidate.distance <= maximumDistance)
+    .filter(candidate =>
+      candidate.lot.businesses > 0
+      && candidate.distance <= maximumDistance
+      && (candidate.activity.coworkersOnShift > 0 || candidate.activity.customersPresent > 0)
+    )
     .sort((first, second) => first.distance - second.distance)[0];
 }
 
@@ -2808,6 +2815,7 @@ function updateCityStats() {
     : "No populated spatial chunks";
 
   const completedLots = world.lots.filter(lot => world.constructionProgress(lot) >= 1);
+  const customersPresent = completedLots.reduce((total, lot) => total + world.workplaceActivity(lot).customersPresent, 0);
   const residentialLots = completedLots.filter(lot => lot.zone === "residential" || lot.zone === "mixed").length;
   const commercialLots = completedLots.filter(lot => lot.zone === "commercial" || lot.zone === "mixed").length;
   const industrialLots = completedLots.filter(lot => lot.zone === "industrial").length;
@@ -2830,7 +2838,7 @@ function updateCityStats() {
         ? "Available jobs are increasing demand for nearby housing."
         : "Demand reflects current households, jobs, and available land.";
   document.querySelector("#economy-summary")!.textContent =
-    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · taxes ${formatParkingMonthly(residentialTaxRevenue + commercialTaxRevenue + industrialTaxRevenue)} · policies -${formatParkingMonthly(districtPolicyCosts)} · debt -${formatParkingMonthly(debtPayments)} · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
+    `${households.toLocaleString()} households · ${openBusinesses.toLocaleString()}/${businesses.toLocaleString()} businesses open · ${workersOnShift.toLocaleString()}/${jobs.toLocaleString()} jobs on shift · ${customersPresent.toLocaleString()} customers present · taxes ${formatParkingMonthly(residentialTaxRevenue + commercialTaxRevenue + industrialTaxRevenue)} · policies -${formatParkingMonthly(districtPolicyCosts)} · debt -${formatParkingMonthly(debtPayments)} · parking ${parkingRevenue - parkingCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(parkingRevenue - parkingCosts))} · curb ${curbRevenue - curbCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(curbRevenue - curbCosts))} · ${curbDeliveries.toLocaleString()} deliveries · ${curbViolations.toLocaleString()} violations · transit ${transitRevenue - transitCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(transitRevenue - transitCosts))} · ${transitRidership.toLocaleString()} rides · events ${eventRevenue - eventCosts >= 0 ? "+" : "-"}${formatParkingMonthly(Math.abs(eventRevenue - eventCosts))} · ${eventAttendance.toLocaleString()} visits`;
   (document.querySelector("#staffing-policy") as HTMLSelectElement).value = String(world.serviceFunding);
   updateCityAdvisor({
     roads: world.roads.length,
@@ -2922,6 +2930,7 @@ function updateClockDisplay() {
   waterMaterial.color.set(weather.kind === "rain" ? 0x587782 : weather.kind === "snow" ? 0x819aa1 : 0x6e919b);
   renderIncidents();
   renderCommutes();
+  renderWorkplaceActivity();
   updateTrafficSignals();
   if (mode === "explore") updateExplorerContext();
   if (mode === "home" || explorerInteriorHomeId) {
@@ -3217,6 +3226,83 @@ function renderCommutes() {
     traveler.scale.setScalar(active.flow.mode === "car" ? 1 : 1.15);
     commuteGroup.add(traveler);
   });
+}
+
+function createWorkplacePerson(color: number, role: "named" | "coworker" | "customer") {
+  const person = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(.2, .56, 3, 7),
+    new THREE.MeshStandardMaterial({ color, roughness: .82 })
+  );
+  body.position.y = .72;
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(.19, 10, 8),
+    new THREE.MeshStandardMaterial({ color: role === "named" ? 0xd2a778 : 0xbd9470, roughness: .86 })
+  );
+  head.position.y = 1.36;
+  person.add(body, head);
+  person.userData.workplaceRole = role;
+  return person;
+}
+
+function renderWorkplaceActivity() {
+  workplaceActivityGroup.clear();
+  if (mode === "home" || explorerInteriorHomeId) return;
+  const focus = worldRenderFocus();
+  const maximumDistance = mode === "explore" ? 150 : 460;
+  const maximumLots = mode === "explore" ? 28 : 42;
+  const sectorColors = {
+    retail: 0xd69a64,
+    office: 0x7192ad,
+    hospitality: 0xb783aa,
+    industrial: 0x8b8974,
+    community: 0x78a98b
+  };
+  const candidates = world.lots
+    .filter(lot => lot.businesses > 0 && world.constructionProgress(lot) >= 1)
+    .map(lot => ({
+      lot,
+      activity: world.workplaceActivity(lot),
+      distance: Math.hypot(lot.center.x - focus.x, lot.center.z - focus.z)
+    }))
+    .filter(candidate =>
+      candidate.distance <= maximumDistance
+      && (candidate.activity.coworkersOnShift > 0 || candidate.activity.customersPresent > 0)
+    )
+    .sort((first, second) => first.distance - second.distance)
+    .slice(0, maximumLots);
+  for (const { lot, activity } of candidates) {
+    const namedCount = Math.min(activity.namedWorkersOnShift, mode === "explore" ? 2 : 1);
+    const coworkerCount = Math.min(mode === "explore" ? 3 : 1, Math.ceil(activity.coworkersOnShift / 18));
+    const customerCount = Math.min(mode === "explore" ? 4 : 1, Math.ceil(activity.customersPresent / 12));
+    const people = [
+      ...Array.from({ length: namedCount }, () => "named" as const),
+      ...Array.from({ length: coworkerCount }, () => "coworker" as const),
+      ...Array.from({ length: customerCount }, () => "customer" as const)
+    ];
+    people.forEach((role, index) => {
+      const seed = hash(`${lot.id}:${role}:${index}`);
+      const spacing = people.length <= 1 ? 0 : (index / (people.length - 1) - .5) * Math.min(lot.width * .64, 8);
+      const movement = Math.sin(world.clock.elapsedMinutes * .018 + seed) * .42;
+      const local = {
+        x: spacing + movement,
+        z: lot.depth / 2 + 1.45 + (seed % 3) * .42
+      };
+      const position = localToWorld(local, lot);
+      const color = role === "named" ? 0xe6c75f : role === "coworker" ? 0x63849a : sectorColors[activity.sector];
+      const person = createWorkplacePerson(color, role);
+      person.position.set(position.x, .22, position.z);
+      person.rotation.y = lot.rotation + (role === "customer" ? Math.PI : 0);
+      person.userData.workplaceLotId = lot.id;
+      workplaceActivityGroup.add(person);
+    });
+    if (mode === "city" && cityTool === "inspect" && selectedLot?.id === lot.id) {
+      const label = makeLabel(`${activity.label} · ${activity.coworkersOnShift} coworkers · ${activity.customersPresent} customers`);
+      label.position.set(lot.center.x, 13, lot.center.z);
+      label.scale.set(54, 9, 1);
+      workplaceActivityGroup.add(label);
+    }
+  }
 }
 
 function renderCityEvents() {
@@ -4746,6 +4832,8 @@ function updateHouseholdSummary(home: Home) {
           const careerFit = world.residentCareerFit(resident);
           const workplaceFit = world.residentWorkplaceFit(resident);
           const workPerformance = world.residentWorkPerformance(resident);
+          const workplace = world.residentWorkplaceLot(resident);
+          const workplaceActivity = workplace ? world.workplaceActivity(workplace) : undefined;
           const aspirationProgress = world.residentAspirationProgress(resident);
           const caregiverNames = (resident.caregiverIds ?? []).map(id => home.residents.find(candidate => candidate.id === id)?.name).filter(Boolean);
           const personalItems = world.residentPersonalItems(resident);
@@ -4771,7 +4859,7 @@ function updateHouseholdSummary(home: Home) {
                 <b>${ownershipSatisfaction}% belonging</b>
               </div>
               <div class="resident-growth">
-                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · career fit ${careerFit}%${resident.role === "student" ? "" : `<br>${world.residentWorkTaskLabel(resident)} · workplace fit ${workplaceFit}% · performance ${workPerformance}% · ${resident.workDaysCompleted ?? 0} shifts`}</small></span>
+                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · career fit ${careerFit}%${resident.role === "student" ? "" : `<br>${world.residentWorkTaskLabel(resident)} · workplace fit ${workplaceFit}% · performance ${workPerformance}% · ${resident.workDaysCompleted ?? 0} shifts${workplaceActivity ? `<br>${workplaceActivity.label} workplace · ${workplaceActivity.coworkersOnShift} coworkers · ${workplaceActivity.customersPresent} customers present` : ""}`}</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
                 <em>${resident.role === "student" ? "School" : `${careerProgress}%`}</em>
               </div>
@@ -5300,7 +5388,7 @@ function updateExplorerContext() {
   }
   const nearbyWorkplace = closestActiveWorkplace({ x: camera.position.x, z: camera.position.z }, 28);
   if (nearbyWorkplace) {
-    const { lot, workers } = nearbyWorkplace;
+    const { lot, workers, activity } = nearbyWorkplace;
     const workplaceName = lot.anchorBusiness?.name ?? "Neighborhood workplace";
     const workSummary = workers.slice(0, 3).map(({ resident }) =>
       `${resident.name}: ${world.residentWorkTaskLabel(resident)} (${world.residentWorkPerformance(resident)}%)`
@@ -5308,7 +5396,7 @@ function updateExplorerContext() {
     document.querySelector("#panel-kicker")!.textContent = "ACTIVE WORKPLACE";
     document.querySelector("#panel-title")!.textContent = workplaceName;
     document.querySelector("#panel-copy")!.textContent =
-      `${workers.length} named ${workers.length === 1 ? "resident is" : "residents are"} working here now. ${workSummary}. This shift, its performance, and the commute home belong to the persistent city simulation.`;
+      `${activity.label} now: ${activity.coworkersOnShift} coworkers and ${activity.customersPresent} customers present, with ${activity.hourlyCustomerDemand} expected visits per hour. ${workers.length ? `${workers.length} named ${workers.length === 1 ? "resident is" : "residents are"} on shift. ${workSummary}. ` : ""}Transit access, congestion, local population, events, and business hours shape this street activity.`;
     return;
   }
   const nearbyEntrance = closestAccessibilityEntrance(
@@ -5466,11 +5554,18 @@ function renderParcelDetails(lot: Lot) {
     : "";
   const assignedWorkers = world.residentsAssignedToWorkplace(lot.id);
   const activeWorkers = world.residentsAtWorkplace(lot.id);
+  const workplaceActivity = lot.businesses > 0 ? world.workplaceActivity(lot) : undefined;
   const workforce = assignedWorkers.length ? `
     <div class="parcel-autonomy">
       <span>Named workplace roster</span>
       <strong>${activeWorkers.length}/${assignedWorkers.length} on shift now · ${assignedWorkers.map(({ resident }) => `${resident.name}: ${world.residentWorkTaskLabel(resident)} ${world.residentWorkPerformance(resident)}%`).join(" · ")}</strong>
       <small>Residents commute here from persistent households and build career progress through daily tasks.</small>
+    </div>
+  ` : "";
+  const customerActivity = workplaceActivity ? `
+    <div class="parcel-line">
+      <span>Workplace activity</span>
+      <strong>${workplaceActivity.label} · ${workplaceActivity.coworkersOnShift} coworkers · ${workplaceActivity.customersPresent} customers present · ${workplaceActivity.hourlyCustomerDemand} visits/hour · ${workplaceActivity.servicePressure}% service pressure</strong>
     </div>
   ` : "";
   details.innerHTML = `
@@ -5510,6 +5605,7 @@ function renderParcelDetails(lot: Lot) {
     ` : ""}
     ${commute ? `<div class="parcel-commute"><span>Representative commute</span><strong>${flowModeName(commute.mode)} · ${world.estimatedCommuteMinutes(commute)}m · ${Math.round(commute.distance)}m</strong><small>${commute.travelers} travelers to ${commuteDestinationName}${activeCommute ? ` · ${activeCommute.direction === "outbound" ? "Going to work" : "Returning home"}` : ""}</small></div>` : ""}
     ${anchor}
+    ${customerActivity}
     ${workforce}
     <div class="service-pills">${required.map(kind => {
       const covered = isLotCovered(lot, kind);

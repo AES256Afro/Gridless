@@ -243,6 +243,18 @@ export type LotActivity = {
   activeJobs: number;
 };
 
+export type WorkplaceActivity = {
+  sector: BusinessSector;
+  openBusinesses: number;
+  coworkersOnShift: number;
+  namedWorkersAssigned: number;
+  namedWorkersOnShift: number;
+  hourlyCustomerDemand: number;
+  customersPresent: number;
+  servicePressure: number;
+  label: "Closed" | "Crew only" | "Quiet" | "Steady" | "Busy" | "Crowded";
+};
+
 export type ResidentRole = "office" | "service" | "student" | "home";
 export type ResidentLifeStage = "infant" | "toddler" | "child" | "teen" | "young-adult" | "adult" | "elder";
 export type ResidentAspiration = "family" | "mastery" | "community" | "prosperity" | "creative";
@@ -2381,6 +2393,80 @@ export class World {
     const activeJobs = (Object.entries(lot.businessMix) as Array<[BusinessSector, number]>)
       .reduce((total, [sector, count]) => total + Math.round(count * sectorJobs(sector, seed) * sectorOperatingFactor(sector, hour)), 0);
     return { population, atHome, atWorkOrSchool, outInCity, openBusinesses, activeJobs: Math.round(activeJobs * commuteStaffing) };
+  }
+
+  workplaceSector(lot: Lot): BusinessSector {
+    if (lot.anchorBusiness?.sector) return lot.anchorBusiness.sector;
+    return (Object.entries(lot.businessMix) as Array<[BusinessSector, number]>)
+      .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0]))[0]?.[0] ?? "office";
+  }
+
+  workplaceActivity(lot: Lot, minute = this.clock.minute): WorkplaceActivity {
+    const sector = this.workplaceSector(lot);
+    const hour = minute / 60;
+    const openBusinesses = (Object.entries(lot.businessMix) as Array<[BusinessSector, number]>)
+      .reduce((total, [businessSector, count]) => total + openBusinessCount(count, businessSector, hour), 0);
+    const seed = hashString(lot.id);
+    const commuteStaffing = 1 - this.congestionLevel() * .22;
+    const coworkersOnShift = Math.round((Object.entries(lot.businessMix) as Array<[BusinessSector, number]>)
+      .reduce((total, [businessSector, count]) => total + count * sectorJobs(businessSector, seed) * sectorOperatingFactor(businessSector, hour), 0)
+      * commuteStaffing);
+    const assigned = this.residentsAssignedToWorkplace(lot.id);
+    const namedWorkersOnShift = assigned.filter(({ resident }) => {
+      if (resident.currentAction?.directed && resident.currentAction.endsAt > this.clock.elapsedMinutes) return false;
+      if (resident.role === "office") return hour >= 8 && hour < 18;
+      if (resident.role === "service") return hour >= 6 && hour < 15;
+      return false;
+    }).length;
+    const nearbyPopulation = this.lots.reduce((total, candidate) => {
+      const proximity = clamp(1 - distance(lot.center, candidate.center) / 180, 0, 1);
+      return total + this.lotPopulation(candidate) * proximity;
+    }, 0);
+    const transitAccess = this.transitLines.some(line => line.stops.some(stop => distance(stop.position, lot.center) <= 110)) ? 1.18 : 1;
+    const eventDemand = this.activeCityEvents().reduce((total, event) => {
+      const proximity = clamp(1 - distance(event.position, lot.center) / 240, 0, 1);
+      return total + this.cityEventExpectedAttendance(event) * proximity * .035;
+    }, 0);
+    const sectorDemand = {
+      retail: .095,
+      office: .018,
+      hospitality: .13,
+      industrial: .008,
+      community: .052
+    }[sector];
+    const accessFactor = transitAccess * (1 - this.congestionLevel() * .24);
+    const hourlyCustomerDemand = openBusinesses
+      ? Math.max(0, Math.round((openBusinesses * 4 + nearbyPopulation * sectorDemand + eventDemand) * accessFactor))
+      : 0;
+    const dwellFactor = { retail: .42, office: .18, hospitality: .58, industrial: .12, community: .46 }[sector];
+    const customersPresent = Math.round(hourlyCustomerDemand * dwellFactor);
+    const servicePressure = Math.round(clamp(
+      (coworkersOnShift + customersPresent) / Math.max(1, this.lotJobs(lot) * .7 + openBusinesses * 10) * 100,
+      0,
+      100
+    ));
+    const label: WorkplaceActivity["label"] = openBusinesses === 0
+      ? "Closed"
+      : customersPresent === 0 && coworkersOnShift > 0
+        ? "Crew only"
+        : servicePressure >= 86
+          ? "Crowded"
+          : servicePressure >= 68
+            ? "Busy"
+            : servicePressure >= 38
+              ? "Steady"
+              : "Quiet";
+    return {
+      sector,
+      openBusinesses,
+      coworkersOnShift,
+      namedWorkersAssigned: assigned.length,
+      namedWorkersOnShift,
+      hourlyCustomerDemand,
+      customersPresent,
+      servicePressure,
+      label
+    };
   }
 
   serviceStaffing(kind: ServiceKind) {
