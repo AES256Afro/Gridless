@@ -534,6 +534,7 @@ app.innerHTML = `
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
       <div class="home-budget" id="home-circulation">Circulation unavailable</div>
+      <div class="home-budget" id="home-energy">Energy unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
@@ -5726,6 +5727,10 @@ function updateHomeBuildControls(home: Home | null) {
   const circulationElement = document.querySelector<HTMLElement>("#home-circulation")!;
   circulationElement.textContent = circulation ? `Circulation ${circulation.score}% · ${circulation.summary}` : "Circulation unavailable";
   circulationElement.classList.toggle("warning", Boolean(circulation && !circulation.connected));
+  const energy = home ? world.homeEnergyPerformance(home) : null;
+  document.querySelector("#home-energy")!.textContent = energy
+    ? `Energy ${energy.score}% · ${energy.dailyKwh.toFixed(1)} kWh/day · ${formatHomeCurrency(energy.dailyCost)}/day`
+    : "Energy unavailable";
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -5787,11 +5792,12 @@ function updateHouseholdSummary(home: Home) {
     const homeDaylight = world.homeDaylight(home);
     const circulation = homeCirculation(home);
     const foundation = world.homeFoundationPerformance(home);
+    const energy = world.homeEnergyPerformance(home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Energy performance is ${energy.score}% at ${energy.dailyKwh.toFixed(1)} kWh and ${formatHomeCurrency(energy.dailyCost)} per day.${energy.benefits.length ? ` Benefits: ${energy.benefits.join(", ")}.` : ""} Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5813,6 +5819,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
         <div><span>Roof</span><strong>${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)}</strong></div>
         <div title="${foundation.protection}% flood protection"><span>Foundation</span><strong>${foundation.style} · ${foundation.residualExposure}% exposure</strong></div>
+        <div title="Heating ${energy.heating} kWh · cooling ${energy.cooling} kWh · lighting ${energy.lighting} kWh"><span>Energy</span><strong>${energy.score}% · ${formatHomeCurrency(energy.dailyCost)}/day</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
