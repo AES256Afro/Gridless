@@ -134,6 +134,7 @@ The current vertical slice proves:
 - Deterministic room-issue navigation that prioritizes the worst room, switches to its floor, clears unrelated selections, and cycles through every remaining correction from the Home Simulator toolbar
 - A live home inspection that consolidates whole-home readiness and room audits into Passed, Conditional, or Failed results, with ready-room counts, unique correction counts, and one clear next priority
 - Player-recorded home inspection history that retains the latest 12 failed, conditional, or passed results with score, room counts, and corrections through saves, migration, Undo, and Redo
+- Visible inspection trends with improving, declining, steady, or insufficient-history states, signed score change, best score, record count, and failed-to-passed recognition in Home Simulator and parcel evidence
 - Functional-room scoring across sleep, meals, hygiene, relaxation, and study, with visible room-purpose alignment that rewards sensible layouts without blocking unconventional object placement
 - Deterministic one-click starter furnishing for every room purpose, with exact pricing, existing-object recognition, wall and overlap safety, and graceful partial placement when space or design budget is limited
 - Builder-wide Redo after Undo through visible controls, `Cmd/Ctrl+Shift+Z`, or `Ctrl+Y`, with exact state restoration and safe branch invalidation after a new edit

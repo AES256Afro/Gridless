@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals, recordCurrentHomeInspection } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeInspectionTrend, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals, recordCurrentHomeInspection } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -536,6 +536,7 @@ app.innerHTML = `
       <div class="home-budget" id="home-organization">Organization unavailable</div>
       <div class="home-budget" id="home-readiness">Move-in readiness unavailable</div>
       <div class="home-budget" id="home-inspection">Home inspection unavailable</div>
+      <div class="home-budget" id="home-inspection-trend">No inspection history</div>
       <div class="home-budget" id="home-move-in-goals">Move-in goals unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
@@ -5888,6 +5889,12 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Inspection ${inspection.score}% · ${inspection.result} · rooms ${inspection.readyRooms}/${inspection.totalRooms} · ${inspection.corrections} correction${inspection.corrections === 1 ? "" : "s"}`
     : "Home inspection unavailable";
   inspectionElement.classList.toggle("warning", Boolean(inspection && inspection.result !== "Passed"));
+  const inspectionTrend = home ? homeInspectionTrend(home) : null;
+  const inspectionTrendElement = document.querySelector<HTMLElement>("#home-inspection-trend")!;
+  inspectionTrendElement.textContent = inspectionTrend?.latest
+    ? `Inspection trend · ${inspectionTrend.direction}${inspectionTrend.records > 1 ? ` ${inspectionTrend.delta >= 0 ? "+" : ""}${inspectionTrend.delta}` : ""} · best ${inspectionTrend.bestScore}% · ${inspectionTrend.records} record${inspectionTrend.records === 1 ? "" : "s"}`
+    : "No inspection history";
+  inspectionTrendElement.classList.toggle("warning", inspectionTrend?.direction === "Declining");
   approveMoveIn.disabled = !home || !readiness?.ready || Boolean(moveInAuthorization?.active);
   approveMoveIn.textContent = moveInAuthorization?.active
     ? `Move-in approved · ${moveInAuthorization.approvedScore}%`
@@ -6021,6 +6028,7 @@ function updateHouseholdSummary(home: Home) {
     const moveInGoals = homeMoveInGoals(world, home);
     const roomReadiness = home.rooms.map(room => assessRoomReadiness(world, home, room));
     const inspection = inspectHome(world, home);
+    const inspectionTrend = homeInspectionTrend(home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${homeRoomLabel(room)} on Floor ${homeEntityFloor(room) + 1}`);
@@ -6058,6 +6066,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>First night</span><strong>${home.firstNightAt !== undefined ? `Complete · +${home.firstNightComfortGain ?? 0} comfort` : "Not begun"}</strong></div>
         <div title="${roomReadiness.flatMap(result => result.issues).join(" · ") || "Every room passes its live purpose, access, daylight, condition, clearance, and egress checks."}"><span>Ready rooms</span><strong>${roomReadiness.filter(result => result.status === "Ready").length}/${roomReadiness.length}</strong></div>
         <div title="${inspection.priority}"><span>Home inspection</span><strong>${inspection.score}% · ${inspection.result}</strong></div>
+        <div title="${inspectionTrend.failedToPassed ? "This home has improved from a failed inspection to a pass." : "Record inspections before and after improvements to establish a trend."}"><span>Inspection history</span><strong>${inspectionTrend.records} · ${inspectionTrend.direction}${inspectionTrend.records > 1 ? ` ${inspectionTrend.delta >= 0 ? "+" : ""}${inspectionTrend.delta}` : ""}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
