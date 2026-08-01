@@ -1,5 +1,5 @@
 import { homeCirculation, homeSafetyAudit, type HomeSafetyIssue } from "./interiors";
-import type { Home, HomeMoveInGoalKind, HomeSpaceDeficit, World } from "./world";
+import { HOME_FURNITURE_SIZE, homeEntityFloor, homeRoomLabel, type Home, type HomeMoveInGoalKind, type HomeRoom, type HomeSpaceDeficit, type World } from "./world";
 
 export type HomeReadinessStatus = "Move-in ready" | "Nearly ready" | "Needs work" | "Unsafe";
 
@@ -42,6 +42,85 @@ export type HomeMoveInAuthorization = {
   approvedScore?: number;
   reason: string;
 };
+
+export type RoomReadiness = {
+  score: number;
+  status: "Ready" | "Improve" | "Needs work" | "Unsafe";
+  components: {
+    purpose: number;
+    access: number;
+    daylight: number;
+    condition: number;
+    clearFloor: number;
+    egress: number;
+  };
+  issues: string[];
+  strengths: string[];
+};
+
+const ROOM_PURPOSE_REQUIREMENTS: Record<string, { kinds: Home["furniture"][number]["kind"][]; recommendation: string }> = {
+  "Living room": { kinds: ["sofa"], recommendation: "Add a sofa for household relaxation and social time." },
+  Bedroom: { kinds: ["bed"], recommendation: "Add a bed so this room can support sleep and a resident claim." },
+  Kitchen: { kinds: ["fridge"], recommendation: "Add a fridge so the room can support household meals." },
+  Bathroom: { kinds: ["shower"], recommendation: "Add a shower so the room can support hygiene." },
+  Study: { kinds: ["desk"], recommendation: "Add a desk so the room can support work and study." },
+  "Dining room": { kinds: ["table"], recommendation: "Add a table so the household can share meals." },
+  Nursery: { kinds: ["bed"], recommendation: "Add a bed so the nursery can support a young resident." },
+  Studio: { kinds: ["bed", "desk"], recommendation: "Add a bed and desk so the studio supports both rest and work." }
+};
+
+export function assessRoomReadiness(world: World, home: Home, room: HomeRoom): RoomReadiness {
+  const floor = homeEntityFloor(room);
+  const furniture = home.furniture.filter(item =>
+    homeEntityFloor(item) === floor
+    && Math.abs(item.x - room.x) <= room.width / 2
+    && Math.abs(item.z - room.z) <= room.depth / 2
+  );
+  const requirement = ROOM_PURPOSE_REQUIREMENTS[room.kind];
+  const presentKinds = new Set(furniture.map(item => item.kind));
+  const purpose = requirement
+    ? Math.round(requirement.kinds.filter(kind => presentKinds.has(kind)).length / requirement.kinds.length * 100)
+    : 100;
+  const circulation = homeCirculation(home);
+  const access = circulation.unreachableRoomIds.includes(room.id) ? 0 : 100;
+  const daylight = world.roomDaylight(home, room);
+  const condition = world.roomCondition(room);
+  const roomArea = Math.max(1, room.width * room.depth);
+  const occupiedArea = furniture.reduce((total, item) => {
+    const size = HOME_FURNITURE_SIZE[item.kind];
+    return total + size.width * size.depth;
+  }, 0);
+  const clearFloor = Math.round(Math.max(0, 1 - occupiedArea / roomArea) * 100);
+  const sleeping = room.kind === "Bedroom" || room.kind === "Nursery" || room.kind === "Studio";
+  const missingEgress = homeSafetyAudit(home).issues.some(issue => issue.kind === "sleep-egress" && issue.roomIds.includes(room.id));
+  const egress = sleeping && missingEgress ? 0 : 100;
+  const score = Math.round(
+    purpose * .3 + access * .22 + daylight * .13 + condition * .13 + clearFloor * .1 + egress * .12
+  );
+  const issues = [
+    access === 0 ? "Connect this room to the home entry with an interior doorway." : undefined,
+    egress === 0 ? "Add an escape window at least 0.9m wide." : undefined,
+    purpose < 100 ? requirement?.recommendation : undefined,
+    daylight < 45 ? "Add or enlarge an exterior window to improve daylight." : undefined,
+    clearFloor < 62 ? "Move or remove furnishings to restore a clear walking path." : undefined,
+    condition < 72 ? "Renovate the room before relying on it every day." : undefined
+  ].filter((issue): issue is string => Boolean(issue));
+  const status = access === 0 || egress === 0
+    ? "Unsafe"
+    : score >= 82 && !issues.length
+      ? "Ready"
+      : score >= 68
+        ? "Improve"
+        : "Needs work";
+  const strengths = [
+    purpose === 100 ? `${homeRoomLabel(room)} supports its purpose` : undefined,
+    access === 100 ? "Connected to the exit path" : undefined,
+    daylight >= 70 ? "Strong daylight" : undefined,
+    clearFloor >= 75 ? "Comfortable clear floor" : undefined,
+    condition >= 90 ? "Excellent condition" : undefined
+  ].filter((strength): strength is string => Boolean(strength));
+  return { score, status, components: { purpose, access, daylight, condition, clearFloor, egress }, issues, strengths };
+}
 
 function safetyPriority(issue: HomeSafetyIssue): HomeReadinessPriority {
   return {
