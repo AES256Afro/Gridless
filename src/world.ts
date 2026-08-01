@@ -129,6 +129,59 @@ export type Area = {
   points: Point2[];
 };
 
+export type TaxCategory = "residential" | "commercial" | "industrial";
+
+export type TaxPolicy = Record<TaxCategory, number>;
+
+export type DistrictPolicy = "recycling" | "school-boost" | "heavy-traffic-ban" | "small-business-grants";
+
+export type MunicipalBond = {
+  id: string;
+  originalPrincipal: number;
+  balance: number;
+  annualInterestRate: number;
+  monthlyPayment: number;
+  monthsRemaining: number;
+  issuedAt: number;
+};
+
+export const DISTRICT_POLICY_DEFINITIONS: Record<DistrictPolicy, {
+  label: string;
+  monthlyCost: number;
+  effect: string;
+}> = {
+  recycling: {
+    label: "Mandatory recycling",
+    monthlyCost: 55_000,
+    effect: "Cleaner streets and stronger neighborhood value"
+  },
+  "school-boost": {
+    label: "School boost",
+    monthlyCost: 120_000,
+    effect: "More education support and household wellbeing"
+  },
+  "heavy-traffic-ban": {
+    label: "Heavy traffic ban",
+    monthlyCost: 35_000,
+    effect: "Less neighborhood noise with reduced freight access"
+  },
+  "small-business-grants": {
+    label: "Small business grants",
+    monthlyCost: 95_000,
+    effect: "Higher commercial capacity and local land value"
+  }
+};
+
+const SUPPORTED_TAX_RATES = [5, 8, 10, 12, 15, 18, 20];
+
+function normalizeTaxRate(rate: number) {
+  const bounded = clamp(rate, 5, 20);
+  return SUPPORTED_TAX_RATES.reduce(
+    (closest, candidate) => Math.abs(candidate - bounded) < Math.abs(closest - bounded) ? candidate : closest,
+    10
+  );
+}
+
 export type WorldTemplate = {
   id: "nyc" | "blank";
   name: string;
@@ -692,6 +745,9 @@ export type WorldSnapshot = {
   utilities?: UtilityLine[];
   clock?: SimulationClock;
   serviceFunding?: number;
+  taxPolicy?: TaxPolicy;
+  districtPolicies?: Record<string, DistrictPolicy[]>;
+  municipalBonds?: MunicipalBond[];
   incidents?: CityIncident[];
   utilityFailures?: UtilityFailure[];
   commuteFlows?: CommuteFlow[];
@@ -717,6 +773,11 @@ export type CityEconomy = {
   monthlyRevenue: number;
   monthlyCosts: number;
   monthlyBalance: number;
+  residentialTaxRevenue: number;
+  commercialTaxRevenue: number;
+  industrialTaxRevenue: number;
+  districtPolicyCosts: number;
+  debtPayments: number;
   parkingRevenue: number;
   parkingCosts: number;
   transitRevenue: number;
@@ -779,6 +840,9 @@ export class World {
   utilities: UtilityLine[] = [];
   clock: SimulationClock = { year: 1, month: 1, day: 1, minute: 8 * 60, treasury: 25_000_000, elapsedMinutes: 0 };
   serviceFunding = .85;
+  taxPolicy: TaxPolicy = { residential: 10, commercial: 10, industrial: 10 };
+  districtPolicies: Record<string, DistrictPolicy[]> = {};
+  municipalBonds: MunicipalBond[] = [];
   incidents: CityIncident[] = [];
   utilityFailures: UtilityFailure[] = [];
   commuteFlows: CommuteFlow[] = [];
@@ -859,6 +923,9 @@ export class World {
       utilities: this.utilities,
       clock: this.clock,
       serviceFunding: this.serviceFunding,
+      taxPolicy: this.taxPolicy,
+      districtPolicies: this.districtPolicies,
+      municipalBonds: this.municipalBonds,
       incidents: this.incidents,
       utilityFailures: this.utilityFailures,
       commuteFlows: this.commuteFlows,
@@ -1744,6 +1811,136 @@ export class World {
     return true;
   }
 
+  setTaxRate(category: TaxCategory, rate: number) {
+    if (!(["residential", "commercial", "industrial"] as TaxCategory[]).includes(category)) return false;
+    const normalized = normalizeTaxRate(rate);
+    if (this.taxPolicy[category] === normalized) return false;
+    this.checkpoint();
+    this.taxPolicy[category] = normalized;
+    return true;
+  }
+
+  districtForLot(lot: Lot) {
+    return this.areas.find(area => area.kind === "district" && pointInPolygon(lot.center, area.points));
+  }
+
+  districtPoliciesForLot(lot: Lot) {
+    const district = this.districtForLot(lot);
+    return district ? this.districtPolicies[district.id] ?? [] : [];
+  }
+
+  setDistrictPolicy(areaId: string, policy: DistrictPolicy, enabled: boolean) {
+    const district = this.areas.find(area => area.id === areaId && area.kind === "district");
+    if (!district || !DISTRICT_POLICY_DEFINITIONS[policy]) return false;
+    const current = this.districtPolicies[areaId] ?? [];
+    const hasPolicy = current.includes(policy);
+    if (hasPolicy === enabled) return false;
+    this.checkpoint();
+    const next = enabled
+      ? [...current, policy]
+      : current.filter(candidate => candidate !== policy);
+    if (next.length) this.districtPolicies[areaId] = next;
+    else delete this.districtPolicies[areaId];
+    return true;
+  }
+
+  districtPolicyMonthlyCost() {
+    return Object.values(this.districtPolicies).reduce(
+      (total, policies) => total + policies.reduce(
+        (districtTotal, policy) => districtTotal + DISTRICT_POLICY_DEFINITIONS[policy].monthlyCost,
+        0
+      ),
+      0
+    );
+  }
+
+  issueMunicipalBond(amount: number) {
+    const supportedAmounts = [5_000_000, 15_000_000, 40_000_000];
+    if (!supportedAmounts.includes(amount) || this.municipalBonds.length >= 3) return undefined;
+    const annualInterestRate = amount >= 40_000_000 ? .062 : amount >= 15_000_000 ? .052 : .044;
+    const monthsRemaining = 120;
+    const monthlyRate = annualInterestRate / 12;
+    const monthlyPayment = Math.round(amount * monthlyRate / (1 - Math.pow(1 + monthlyRate, -monthsRemaining)));
+    this.checkpoint();
+    const bond: MunicipalBond = {
+      id: crypto.randomUUID(),
+      originalPrincipal: amount,
+      balance: amount,
+      annualInterestRate,
+      monthlyPayment,
+      monthsRemaining,
+      issuedAt: this.clock.elapsedMinutes
+    };
+    this.municipalBonds.push(bond);
+    this.clock.treasury += amount;
+    return bond;
+  }
+
+  repayMunicipalDebt(amount: number) {
+    const payment = Math.round(Math.max(0, amount));
+    const totalDebt = this.municipalBonds.reduce((total, bond) => total + bond.balance, 0);
+    if (!payment || payment > this.clock.treasury || !totalDebt) return false;
+    this.checkpoint();
+    this.clock.treasury -= Math.min(payment, totalDebt);
+    let remaining = Math.min(payment, totalDebt);
+    for (const bond of this.municipalBonds) {
+      const applied = Math.min(remaining, bond.balance);
+      bond.balance = Math.max(0, bond.balance - applied);
+      remaining -= applied;
+      if (remaining <= 0) break;
+    }
+    this.municipalBonds = this.municipalBonds.filter(bond => bond.balance > 0);
+    return true;
+  }
+
+  municipalDebtPayment() {
+    return this.municipalBonds.reduce((total, bond) => total + Math.min(
+      bond.monthlyPayment,
+      bond.balance * (1 + bond.annualInterestRate / 12)
+    ), 0);
+  }
+
+  taxRateForLot(lot: Lot) {
+    if (lot.zone === "industrial") return this.taxPolicy.industrial;
+    if (lot.zone === "commercial" || lot.zone === "civic") return this.taxPolicy.commercial;
+    if (lot.zone === "mixed") return (this.taxPolicy.residential + this.taxPolicy.commercial) / 2;
+    return this.taxPolicy.residential;
+  }
+
+  lotLandValue(lot: Lot, totalPopulation?: number, effectiveStaffing?: number) {
+    const population = totalPopulation ?? Math.max(1, this.lots.reduce((total, candidate) => total + this.lotPopulation(candidate), 0));
+    const staffing = effectiveStaffing ?? this.effectiveStaffing();
+    const utility = this.lotUtilityReliability(lot, population, staffing);
+    const neighborhood = this.lotNeighborhoodSupport(lot, population, staffing);
+    const parkDistance = this.areas
+      .filter(area => area.kind === "park")
+      .reduce((closest, park) => Math.min(closest, distance(lot.center, polygonCenter(park.points))), Number.POSITIVE_INFINITY);
+    const parkAccess = Number.isFinite(parkDistance) ? clamp(1 - parkDistance / 420, 0, 1) : 0;
+    const road = this.roads.find(candidate => candidate.id === lot.roadId);
+    const traffic = road ? this.roadTrafficPressure(road) : 0;
+    const roadProfile = road ? this.roadProfile(road) : ROAD_PROFILE_PRESETS.street;
+    const noise = clamp((roadProfile.speedLimitKph - 20) / 80 + traffic * .65, 0, 1);
+    const policies = this.districtPoliciesForLot(lot);
+    const policyBonus = (policies.includes("recycling") ? 3 : 0)
+      + (policies.includes("school-boost") ? 5 : 0)
+      + (policies.includes("heavy-traffic-ban") ? 4 : 0)
+      + (policies.includes("small-business-grants") ? 3 : 0);
+    const taxPenalty = Math.max(0, this.taxRateForLot(lot) - 10) * 1.4;
+    const industrialPenalty = lot.zone === "industrial" ? 11 : 0;
+    return Math.round(clamp(
+      22
+      + utility * .22
+      + neighborhood * .25
+      + parkAccess * 22
+      - noise * 14
+      - taxPenalty
+      - industrialPenalty
+      + policyBonus,
+      0,
+      100
+    ));
+  }
+
   constructionProgress(lot: Lot) {
     if (lot.constructionStartedAt === undefined || !lot.constructionDuration) return 1;
     return Math.max(0, Math.min(1, (this.clock.elapsedMinutes - lot.constructionStartedAt) / lot.constructionDuration));
@@ -1812,8 +2009,18 @@ export class World {
       0
     );
     const activeEvents = this.activeCityEvents().length;
-    const monthlyRevenue = population * 118
-      + businesses * 4_800
+    const industrialBusinesses = completedLots
+      .filter(lot => lot.zone === "industrial")
+      .reduce((total, lot) => total + lot.businesses, 0);
+    const commercialBusinesses = Math.max(0, businesses - industrialBusinesses);
+    const residentialTaxRevenue = Math.round(population * 118 * this.taxPolicy.residential / 10);
+    const commercialTaxRevenue = Math.round(commercialBusinesses * 4_800 * this.taxPolicy.commercial / 10);
+    const industrialTaxRevenue = Math.round(industrialBusinesses * 4_800 * this.taxPolicy.industrial / 10);
+    const districtPolicyCosts = this.districtPolicyMonthlyCost();
+    const debtPayments = Math.round(this.municipalDebtPayment());
+    const monthlyRevenue = residentialTaxRevenue
+      + commercialTaxRevenue
+      + industrialTaxRevenue
       + parkingRevenue
       + transitRevenue
       + curbRevenue
@@ -1821,7 +2028,7 @@ export class World {
     const monthlyCosts = this.services.reduce(
       (total, service) => total + service.monthlyCost * (.4 + this.serviceFunding * .6),
       0
-    ) + parkingCosts + transitCosts + curbCosts + eventCosts;
+    ) + parkingCosts + transitCosts + curbCosts + eventCosts + districtPolicyCosts + debtPayments;
     return {
       completedLots: completedLots.length,
       households,
@@ -1835,6 +2042,11 @@ export class World {
       monthlyRevenue,
       monthlyCosts,
       monthlyBalance: monthlyRevenue - monthlyCosts,
+      residentialTaxRevenue,
+      commercialTaxRevenue,
+      industrialTaxRevenue,
+      districtPolicyCosts,
+      debtPayments,
       parkingRevenue,
       parkingCosts,
       transitRevenue,
@@ -2594,14 +2806,18 @@ export class World {
 
   lotWellbeing(lot: Lot, totalPopulation?: number, effectiveStaffing?: number) {
     const home = this.homes.find(item => item.lotId === lot.id);
-    if (home?.residents.length) return this.homeWellbeing(home);
+    const policies = this.districtPoliciesForLot(lot);
+    const policyBonus = (policies.includes("school-boost") ? 4 : 0)
+      + (policies.includes("recycling") ? 2 : 0)
+      + (policies.includes("heavy-traffic-ban") ? 2 : 0);
+    if (home?.residents.length) return Math.round(clamp(this.homeWellbeing(home) + policyBonus, 0, 100));
     const utility = this.lotUtilityReliability(lot, totalPopulation, effectiveStaffing);
     const neighborhood = this.lotNeighborhoodSupport(lot, totalPopulation, effectiveStaffing);
     const commute = this.commuteForLot(lot);
     const commuteBurden = commute
       ? clamp((this.estimatedCommuteMinutes(commute) - 12) * 1.7 + this.congestionLevel() * 20, 0, 100)
       : 18;
-    return Math.round(clamp(45 + utility * .23 + neighborhood * .18 - commuteBurden * .12, 0, 100));
+    return Math.round(clamp(45 + utility * .23 + neighborhood * .18 - commuteBurden * .12 + policyBonus, 0, 100));
   }
 
   cityWellbeing() {
@@ -2659,6 +2875,7 @@ export class World {
         this.clock.day = 1;
         this.clock.month += 1;
         this.clock.treasury += monthlyBalance;
+        this.settleMunicipalDebt();
         monthChanged = true;
         if (this.clock.month > 12) {
           this.clock.month = 1;
@@ -2694,6 +2911,16 @@ export class World {
     this.updateResidentActions();
     this.updateResidentNeeds(minutes);
     return monthChanged;
+  }
+
+  private settleMunicipalDebt() {
+    for (const bond of this.municipalBonds) {
+      const interest = bond.balance * bond.annualInterestRate / 12;
+      const payment = Math.min(bond.monthlyPayment, bond.balance + interest);
+      bond.balance = Math.max(0, bond.balance - Math.max(0, payment - interest));
+      bond.monthsRemaining = Math.max(0, bond.monthsRemaining - 1);
+    }
+    this.municipalBonds = this.municipalBonds.filter(bond => bond.balance >= 1 && bond.monthsRemaining > 0);
   }
 
   private updateParkingActivity(elapsedMinute: number) {
@@ -2820,6 +3047,9 @@ export class World {
     this.utilities = [];
     this.clock = { year: 1, month: 1, day: 1, minute: 8 * 60, treasury: 25_000_000, elapsedMinutes: 0 };
     this.serviceFunding = .85;
+    this.taxPolicy = { residential: 10, commercial: 10, industrial: 10 };
+    this.districtPolicies = {};
+    this.municipalBonds = [];
     this.incidents = [];
     this.utilityFailures = [];
     this.commuteFlows = [];
@@ -3386,6 +3616,41 @@ export class World {
     this.clock = clone(snapshot.clock ?? { year: 1, month: 1, day: 1, minute: 8 * 60, treasury: 25_000_000, elapsedMinutes: 0 });
     this.clock.elapsedMinutes ??= 0;
     this.serviceFunding = snapshot.serviceFunding ?? .85;
+    this.taxPolicy = {
+      residential: normalizeTaxRate(snapshot.taxPolicy?.residential ?? 10),
+      commercial: normalizeTaxRate(snapshot.taxPolicy?.commercial ?? 10),
+      industrial: normalizeTaxRate(snapshot.taxPolicy?.industrial ?? 10)
+    };
+    const districtIds = new Set(this.areas.filter(area => area.kind === "district").map(area => area.id));
+    this.districtPolicies = Object.fromEntries(
+      Object.entries(snapshot.districtPolicies ?? {})
+        .filter(([areaId]) => districtIds.has(areaId))
+        .map(([areaId, policies]) => [
+          areaId,
+          Array.isArray(policies)
+            ? [...new Set(policies)].filter(policy => Boolean(DISTRICT_POLICY_DEFINITIONS[policy]))
+            : []
+        ])
+        .filter(([, policies]) => policies.length)
+    );
+    this.municipalBonds = clone(Array.isArray(snapshot.municipalBonds) ? snapshot.municipalBonds : [])
+      .filter(bond =>
+        typeof bond.id === "string"
+        && bond.id.length > 0
+        && Number.isFinite(bond.originalPrincipal)
+        && bond.originalPrincipal > 0
+        && Number.isFinite(bond.balance)
+        && bond.balance > 0
+        && Number.isFinite(bond.annualInterestRate)
+        && bond.annualInterestRate > 0
+        && bond.annualInterestRate <= .15
+        && Number.isFinite(bond.monthlyPayment)
+        && bond.monthlyPayment > 0
+        && Number.isInteger(bond.monthsRemaining)
+        && bond.monthsRemaining > 0
+        && bond.monthsRemaining <= 360
+      )
+      .slice(0, 3);
     this.incidents = clone(snapshot.incidents ?? []);
     this.utilityFailures = clone(snapshot.utilityFailures ?? []);
     this.commuteFlows = clone(snapshot.commuteFlows ?? []);
@@ -3660,7 +3925,11 @@ export class World {
       const seed = hashString(lot.id);
       const localWellbeing = this.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
       const attractiveness = clamp(cityAttractiveness * .72 + localWellbeing * .28, .15, 1);
-      const householdTarget = targetHouseholds(lot.zone, seed);
+      const householdTaxFactor = clamp(1 - (this.taxPolicy.residential - 10) * .025, .72, 1.12);
+      const businessTaxRate = lot.zone === "industrial" ? this.taxPolicy.industrial : this.taxPolicy.commercial;
+      const businessTaxFactor = clamp(1 - (businessTaxRate - 10) * .025, .72, 1.12);
+      const policies = this.districtPoliciesForLot(lot);
+      const householdTarget = Math.round(targetHouseholds(lot.zone, seed) * householdTaxFactor);
       if (lot.households < householdTarget) {
         const moves = Math.min(householdTarget - lot.households, Math.max(1, Math.floor(1 + attractiveness * 3)));
         lot.households += moves;
@@ -3671,7 +3940,9 @@ export class World {
         activity.households -= moves;
       }
 
-      const businessTarget = targetBusinesses(lot.zone, seed);
+      const grantFactor = policies.includes("small-business-grants") ? 1.14 : 1;
+      const freightFactor = policies.includes("heavy-traffic-ban") && lot.zone === "industrial" ? .82 : 1;
+      const businessTarget = Math.round(targetBusinesses(lot.zone, seed) * businessTaxFactor * grantFactor * freightFactor);
       if (lot.businesses < businessTarget && attractiveness > .38) {
         lot.businesses += 1;
         activity.businesses += 1;
