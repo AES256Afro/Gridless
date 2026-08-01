@@ -1207,6 +1207,7 @@ export type Home = {
   householdFunds?: number;
   lastDailyIncome?: number;
   lastDailyExpenses?: number;
+  lastDailyUtilityCost?: number;
   discretionarySpent?: number;
   lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
   gatherings?: HouseholdGathering[];
@@ -5019,6 +5020,7 @@ export class World {
       householdFunds: 15_000,
       lastDailyIncome: 0,
       lastDailyExpenses: 0,
+      lastDailyUtilityCost: 0,
       discretionarySpent: 0,
       residents: [],
       relationships: []
@@ -5555,6 +5557,35 @@ export class World {
     const funds = this.homeHouseholdFunds(home);
     const dailyNet = this.homeDailyNet(home);
     return Math.round(clamp(48 + funds / 420 + dailyNet * .1, 0, 100));
+  }
+
+  homeEnergyPerformance(home: Home) {
+    const weather = this.weather();
+    const area = Math.max(1, home.rooms.reduce((total, room) => total + room.width * room.depth, 0));
+    const daylight = this.homeDaylight(home);
+    const roofStyle = home.roofStyle ?? defaultHomeRoofStyle(this.templateId);
+    const foundationStyle = home.foundationStyle ?? defaultHomeFoundationStyle(this.templateId);
+    const roofHeatingFactor = roofStyle === "green" ? .76 : roofStyle === "gable" || roofStyle === "hip" ? .9 : 1;
+    const roofCoolingFactor = roofStyle === "green" ? .58 : roofStyle === "gable" || roofStyle === "hip" ? .86 : 1;
+    const foundationFactor = foundationStyle === "crawlspace" ? .88 : foundationStyle === "raised" ? .94 : 1;
+    const authoredWindowWidth = (home.windows ?? []).reduce((total, window) => total + window.width, 0);
+    const privacyWidth = (home.windows ?? []).filter(window => window.glazing === "privacy").reduce((total, window) => total + window.width, 0);
+    const windowFactor = 1 + authoredWindowWidth / area * .42 - privacyWidth / area * .12;
+    const heating = Math.max(0, 18 - weather.temperatureC) * area * .035 * roofHeatingFactor * foundationFactor * windowFactor;
+    const cooling = Math.max(0, weather.temperatureC - 23) * area * .045 * roofCoolingFactor * windowFactor;
+    const lighting = (100 - daylight) / 100 * home.rooms.length * 3.8;
+    const base = home.rooms.length * 2.4 + home.residents.length * 1.5;
+    const dailyKwh = Math.round((base + heating + cooling + lighting) * 10) / 10;
+    const dailyCost = Math.max(1, Math.round(dailyKwh * .18));
+    const intensity = dailyKwh / area;
+    const score = Math.round(clamp(100 - intensity * 38 + daylight * .18 + (roofStyle === "green" ? 8 : 0), 0, 100));
+    const benefits = [
+      roofStyle === "green" ? "planted roof reduces seasonal load" : undefined,
+      daylight >= 70 ? "strong daylight reduces lighting demand" : undefined,
+      privacyWidth > 0 ? "privacy glazing moderates solar gain" : undefined,
+      foundationStyle === "crawlspace" ? "crawlspace moderates ground transfer" : undefined
+    ].filter((benefit): benefit is string => Boolean(benefit));
+    return { score, dailyKwh, dailyCost, heating: Math.round(heating * 10) / 10, cooling: Math.round(cooling * 10) / 10, lighting: Math.round(lighting * 10) / 10, benefits };
   }
 
   roomCondition(room: HomeRoom) {
@@ -6173,6 +6204,7 @@ export class World {
         householdFunds: Math.round(clamp(home.householdFunds ?? 15_000, -100_000, 10_000_000)),
         lastDailyIncome: Math.max(0, Math.round(home.lastDailyIncome ?? 0)),
         lastDailyExpenses: Math.max(0, Math.round(home.lastDailyExpenses ?? 0)),
+        lastDailyUtilityCost: Math.max(0, Math.round(home.lastDailyUtilityCost ?? 0)),
         discretionarySpent: Math.max(0, Math.round(home.discretionarySpent ?? 0)),
         lastPurchase: home.lastPurchase && RESIDENT_PURCHASES[home.lastPurchase.kind]
           ? {
@@ -6733,14 +6765,17 @@ export class World {
         const workedToday = this.residentDailySchedule(resident, Math.max(0, this.clock.elapsedMinutes - 1)).workingToday;
         return total + (workedToday ? this.residentDailyWage(resident) : 0);
       }, 0);
+      const energy = this.homeEnergyPerformance(home);
       const expenses = Math.round(
         home.residents.length * 32
         + home.rooms.length * (home.residents.length ? 12 : 4)
         + home.furniture.length * 2
+        + energy.dailyCost
         + Math.max(0, 100 - utilityReliability) * .8
       );
       home.lastDailyIncome = income;
       home.lastDailyExpenses = expenses;
+      home.lastDailyUtilityCost = energy.dailyCost;
       home.householdFunds = Math.round(clamp(this.homeHouseholdFunds(home) + income - expenses, -100_000, 10_000_000));
       for (const resident of home.residents) {
         if ((resident.lifetimeDays ?? 0) % 7 !== 0) continue;

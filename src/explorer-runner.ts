@@ -1565,6 +1565,43 @@ check(
     && restoredFoundationWorld.homeFoundationPerformance(restoredFoundationWorld.homes[0]).residualExposure === 15,
   "Authored foundation resilience did not survive save and restore."
 );
+const energyWorld = new World();
+energyWorld.templateId = "seattle";
+energyWorld.clock.month = 1;
+energyWorld.lots = [structuredClone(lot)];
+const inefficientEnergyHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "inefficient-energy-home",
+  roofStyle: "flat",
+  foundationStyle: "slab",
+  windows: []
+};
+const efficientEnergyHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "efficient-energy-home",
+  roofStyle: "green",
+  foundationStyle: "crawlspace",
+  windows: [
+    { id: "energy-window-1", roomId: "living-room", floor: 0, orientation: "z", side: "negative", boundary: -3, center: -1, width: 1.3, glazing: "clear" },
+    { id: "energy-window-2", roomId: "living-room", floor: 0, orientation: "z", side: "negative", boundary: -3, center: 1, width: 1.3, glazing: "clear" },
+    { id: "energy-window-3", roomId: "bedroom", floor: 0, orientation: "z", side: "positive", boundary: 3, center: 6, width: 1.3, glazing: "privacy" }
+  ]
+};
+const inefficientEnergy = energyWorld.homeEnergyPerformance(inefficientEnergyHome);
+const efficientEnergy = energyWorld.homeEnergyPerformance(efficientEnergyHome);
+check(
+  efficientEnergy.dailyKwh < inefficientEnergy.dailyKwh
+    && efficientEnergy.score > inefficientEnergy.score
+    && efficientEnergy.benefits.includes("planted roof reduces seasonal load"),
+  "Climate-aware roof, foundation, glazing, and daylight choices did not reduce energy demand."
+);
+energyWorld.homes = [efficientEnergyHome];
+energyWorld.advanceMinutes(1_440, 0);
+check(
+  efficientEnergyHome.lastDailyUtilityCost === energyWorld.homeEnergyPerformance(efficientEnergyHome).dailyCost
+    && (efficientEnergyHome.lastDailyExpenses ?? 0) >= (efficientEnergyHome.lastDailyUtilityCost ?? 0),
+  "Home energy demand did not settle into the household daily utility bill."
+);
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
@@ -2385,18 +2422,20 @@ check(
   "A legacy resident did not receive safe personality, preference, outfit, inventory, and ownership migration."
 );
 residentCreatorHome.residents[0].careerXp = 38;
+const residentCreatorEnergyCost = residentCreatorWorld.homeEnergyPerformance(residentCreatorHome).dailyCost;
 residentCreatorWorld.advanceMinutes(24 * 60, 0);
 check(
   residentCreatorWorld.residentCareerLevel(residentCreatorHome.residents[0]) === 2
     && residentCreatorWorld.residentCareerTitle(residentCreatorHome.residents[0]) === "Apprentice · Civic planning"
     && residentCreatorWorld.residentSkills(residentCreatorHome.residents[0]).communication === 1
     && residentCreatorHome.lastDailyIncome === 275
-    && residentCreatorHome.lastDailyExpenses === 132
-    && residentCreatorWorld.homeHouseholdFunds(residentCreatorHome) === 15_143,
+    && residentCreatorHome.lastDailyExpenses === 132 + residentCreatorEnergyCost
+    && residentCreatorHome.lastDailyUtilityCost === residentCreatorEnergyCost
+    && residentCreatorWorld.homeHouseholdFunds(residentCreatorHome) === 15_143 - residentCreatorEnergyCost,
   "A completed workday did not advance career skills or settle household finances."
 );
 check(
-  residentCreatorWorld.snapshot().homes[0].householdFunds === 15_143,
+  residentCreatorWorld.snapshot().homes[0].householdFunds === 15_143 - residentCreatorEnergyCost,
   "Household finances were omitted from the world snapshot."
 );
 
@@ -4036,6 +4075,11 @@ console.log(JSON.stringify({
   authoredWindowDaylight: authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]),
   authoredRoof: `${restoredRoofWorld.homes[0].roofStyle} ${restoredRoofWorld.homes[0].roofColor}`,
   authoredFoundation: restoredFoundationWorld.homeFoundationPerformance(restoredFoundationWorld.homes[0]),
+  homeEnergyComparison: {
+    inefficient: inefficientEnergy,
+    efficient: efficientEnergy,
+    settledDailyUtilityCost: efficientEnergyHome.lastDailyUtilityCost
+  },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
