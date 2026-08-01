@@ -1861,6 +1861,37 @@ check(
     && lifeCycleWorld.residentsAssignedToWorkplace(samiraWorkplace!.id).some(({ resident }) => resident.id === samira.id),
   "A completed workday did not create a valid physical workplace task and performance record."
 );
+const noonWorkplaceActivity = lifeCycleWorld.workplaceActivity(samiraWorkplace!, 12 * 60);
+const retailProbe = {
+  ...structuredClone(samiraWorkplace!),
+  id: "retail-activity-probe",
+  businesses: 10,
+  businessMix: { retail: 10, office: 0, hospitality: 0, industrial: 0, community: 0 },
+  anchorBusiness: { name: "Activity Market", sector: "retail" as const, jobs: 18 }
+};
+const industrialProbe = {
+  ...structuredClone(samiraWorkplace!),
+  id: "industrial-activity-probe",
+  businesses: 10,
+  businessMix: { retail: 0, office: 0, hospitality: 0, industrial: 10, community: 0 },
+  anchorBusiness: { name: "Activity Works", sector: "industrial" as const, jobs: 26 }
+};
+const openRetailActivity = lifeCycleWorld.workplaceActivity(retailProbe, 12 * 60);
+const closedRetailActivity = lifeCycleWorld.workplaceActivity(retailProbe, 3 * 60);
+const industrialActivity = lifeCycleWorld.workplaceActivity(industrialProbe, 12 * 60);
+check(
+  noonWorkplaceActivity.namedWorkersAssigned >= 1
+    && noonWorkplaceActivity.namedWorkersOnShift >= 1
+    && noonWorkplaceActivity.coworkersOnShift > 0
+    && openRetailActivity.customersPresent > 0
+    && openRetailActivity.hourlyCustomerDemand > industrialActivity.hourlyCustomerDemand
+    && closedRetailActivity.openBusinesses === 0
+    && closedRetailActivity.customersPresent === 0
+    && closedRetailActivity.label === "Closed"
+    && openRetailActivity.servicePressure >= 0
+    && openRetailActivity.servicePressure <= 100,
+  "Workplace coworkers or sector, schedule, and customer activity did not respond deterministically."
+);
 check(
   lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "promotion")
     && lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "career-branch")
@@ -2897,6 +2928,10 @@ console.log(JSON.stringify({
   careerWorkTask: samira.lastWorkTask,
   careerPerformance: samira.workPerformance,
   completedWorkShifts: samira.workDaysCompleted,
+  workplaceCoworkers: noonWorkplaceActivity.coworkersOnShift,
+  workplaceCustomers: openRetailActivity.customersPresent,
+  workplaceCustomerDemand: openRetailActivity.hourlyCustomerDemand,
+  closedWorkplaceLabel: closedRetailActivity.label,
   lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
   latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
