@@ -208,7 +208,7 @@ app.innerHTML = `
         <option value="chicago">Chicago foundation</option>
         <option value="houston">Houston foundation</option>
         <option value="seattle">Seattle foundation</option>
-        <option disabled>Portland foundation · planned</option>
+        <option value="portland">Portland foundation</option>
         <option value="blank">Blank region</option>
       </select>
       <button id="apply-template">Start new region</button>
@@ -2957,6 +2957,22 @@ function renderTerrain() {
       terrainGroup.add(label);
       continue;
     }
+    if (area.kind === "growth-boundary") {
+      const boundary = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(area.points.map(point => new THREE.Vector3(point.x, .18, point.z))),
+        new THREE.LineBasicMaterial({
+          color: cityView === "environment" ? 0xf0d980 : 0xb8c88c,
+          transparent: true,
+          opacity: cityView === "environment" ? .95 : .48
+        })
+      );
+      terrainGroup.add(boundary);
+      const center = area.points.reduce((sum, point) => ({ x: sum.x + point.x / area.points.length, z: sum.z + point.z / area.points.length }), { x: 0, z: 0 });
+      const label = makeLabel(area.name);
+      label.position.set(center.x, 8, Math.max(...area.points.map(point => point.z)) - 12);
+      terrainGroup.add(label);
+      continue;
+    }
     const shape = new THREE.Shape();
     area.points.forEach((point, index) => index === 0 ? shape.moveTo(point.x, point.z) : shape.lineTo(point.x, point.z));
     shape.closePath();
@@ -5625,11 +5641,12 @@ function updateCityViewPanel() {
     const moderateRisk = world.lots.filter(lot => world.lotFloodRisk(lot) === "moderate").length;
     const steep = world.lots.filter(lot => world.lotTerrainSlope(lot) === "steep").length;
     const moderateSlope = world.lots.filter(lot => world.lotTerrainSlope(lot) === "moderate").length;
+    const outsideGrowthBoundary = world.lots.filter(lot => world.lotGrowthBoundaryStatus(lot) === "outside").length;
     legendCopy.textContent = "High exposure · lower exposure";
     setPanel(
       "ENVIRONMENT VIEW",
-      `${highRisk + steep} high-constraint parcels`,
-      `${highRisk} parcels have high flood exposure, ${moderateRisk} have moderate flood exposure, ${steep} occupy steep terrain, and ${moderateSlope} occupy moderate slopes. Regional constraints remain editable, but apply explicit land-value pressure so open space, resilience, and corridor choices have visible tradeoffs.`,
+      `${highRisk + steep + outsideGrowthBoundary} high-constraint parcels`,
+      `${highRisk} parcels have high flood exposure, ${moderateRisk} have moderate flood exposure, ${steep} occupy steep terrain, ${moderateSlope} occupy moderate slopes, and ${outsideGrowthBoundary} sit beyond an urban growth boundary. Regional constraints remain editable, but apply explicit land-value pressure so open space, resilience, and corridor choices have visible tradeoffs.`,
       "Red|High flood or steep slope;Amber|Moderate constraint;Green|Outside mapped constraint;Inspect|Review parcel"
     );
   } else if (cityView === "development") {

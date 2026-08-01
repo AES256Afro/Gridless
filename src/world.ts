@@ -126,7 +126,7 @@ function normalizeRoadRecord(road: Road): Road {
 export type Area = {
   id: string;
   name: string;
-  kind: "land" | "park" | "water" | "floodplain" | "slope" | "district";
+  kind: "land" | "park" | "water" | "floodplain" | "slope" | "growth-boundary" | "district";
   floodRisk?: "moderate" | "high";
   terrainSlope?: "moderate" | "steep";
   points: Point2[];
@@ -134,6 +134,7 @@ export type Area = {
 
 export type FloodRisk = "none" | "moderate" | "high";
 export type TerrainSlope = "flat" | "moderate" | "steep";
+export type GrowthBoundaryStatus = "inside" | "outside";
 
 export type TaxCategory = "residential" | "commercial" | "industrial";
 
@@ -189,7 +190,7 @@ function normalizeTaxRate(rate: number) {
 }
 
 export type WorldTemplate = {
-  id: "nyc" | "chicago" | "houston" | "seattle" | "blank";
+  id: "nyc" | "chicago" | "houston" | "seattle" | "portland" | "blank";
   name: string;
   description: string;
   roads: Road[];
@@ -1997,7 +1998,17 @@ export class World {
   }
 
   lotEnvironmentalConstraintScore(lot: Lot) {
-    return Math.max(this.lotFloodRiskScore(lot), this.lotTerrainSlopeScore(lot));
+    return Math.max(
+      this.lotFloodRiskScore(lot),
+      this.lotTerrainSlopeScore(lot),
+      this.lotGrowthBoundaryStatus(lot) === "outside" ? .7 : 0
+    );
+  }
+
+  lotGrowthBoundaryStatus(lot: Lot): GrowthBoundaryStatus {
+    const boundary = this.areas.find(area => area.kind === "growth-boundary");
+    if (!boundary) return "inside";
+    return pointInPolygon(lot.center, boundary.points) ? "inside" : "outside";
   }
 
   districtPoliciesForLot(lot: Lot) {
@@ -2107,6 +2118,7 @@ export class World {
     const floodRiskPenalty = floodRisk === "high" ? 14 : floodRisk === "moderate" ? 7 : 0;
     const terrainSlope = this.lotTerrainSlope(lot);
     const terrainPenalty = terrainSlope === "steep" ? 9 : terrainSlope === "moderate" ? 4 : 0;
+    const growthBoundaryPenalty = this.lotGrowthBoundaryStatus(lot) === "outside" ? 10 : 0;
     return Math.round(clamp(
       22
       + utility * .22
@@ -2117,6 +2129,7 @@ export class World {
       - industrialPenalty
       - floodRiskPenalty
       - terrainPenalty
+      - growthBoundaryPenalty
       + policyBonus,
       0,
       100
@@ -5762,6 +5775,13 @@ function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number
     if (x > -195 && x < 35 && z > -205 && z < 45) return "commercial";
     if (z < -250 && x < -150) return "industrial";
     if ((x > -25 && x < 175 && z > -90 && z < 175) || (z > 225 && Math.abs(x) < 230)) return "mixed";
+    return "residential";
+  }
+  if (templateId === "portland") {
+    if (Math.abs(x) > 405 || z < -365 || z > 370) return "unassigned";
+    if (x > -255 && x < -55 && z > -225 && z < 55) return "commercial";
+    if (x > 35 && x < 245 && z > -100 && z < 180) return "industrial";
+    if ((x > 55 && z > 210) || (x > 45 && z < -55 && z > -270) || (x < -55 && Math.abs(z) < 225)) return "mixed";
     return "residential";
   }
   if (templateId === "chicago") {
