@@ -5772,8 +5772,12 @@ function updateRoomEditor(home: Home | null) {
   claimSelect.disabled = !roomCapacity || !home.residents.length;
   claimSelect.value = assignedIds[0] ?? "";
   const assignedNames = assignedIds.map(id => home.residents.find(resident => resident.id === id)?.name).filter(Boolean);
+  const assignedFits = assignedIds
+    .map(id => home.residents.find(resident => resident.id === id))
+    .filter((resident): resident is Resident => Boolean(resident))
+    .map(resident => world.residentRoomFit(home, resident).score);
   document.querySelector("#room-claim-status")!.textContent = roomCapacity
-    ? `${assignedNames.length}/${roomCapacity} claimed · ${assignedNames.join(", ") || "unassigned"}`
+    ? `${assignedNames.length}/${roomCapacity} claimed · ${assignedNames.join(", ") || "unassigned"}${assignedFits.length ? ` · ${Math.round(assignedFits.reduce((total, score) => total + score, 0) / assignedFits.length)}% fit` : ""}`
     : "Add a bed to a Bedroom, Nursery, or Studio";
   const assignButton = document.querySelector<HTMLButtonElement>("#assign-room-resident")!;
   assignButton.disabled = !roomCapacity || !home.residents.length;
@@ -5947,6 +5951,7 @@ function updateHouseholdSummary(home: Home) {
           const personalItems = world.residentPersonalItems(resident);
           const ownedFurniture = world.residentOwnedFurniture(home, resident);
           const ownershipSatisfaction = world.residentOwnershipSatisfaction(home, resident);
+          const personalRoom = world.residentRoomFit(home, resident);
           const outfitStyle = world.residentOutfitStyle(resident);
           const outfitPalette = world.residentOutfitPalette(resident);
           const outfitColors = world.residentOutfitColors(resident);
@@ -5980,6 +5985,10 @@ function updateHouseholdSummary(home: Home) {
               <div class="resident-belongings">
                 <span><strong>${world.residentFavoritePastimeLabel(resident)} · ${world.residentDecorPreferenceLabel(resident)} home</strong><small>${personalItems.length ? personalItems.map(item => RESIDENT_PERSONAL_ITEM_DEFINITIONS[item.kind].label).join(" · ") : "No personal collection yet"} · ${ownedFurniture.length} owned ${ownedFurniture.length === 1 ? "furnishing" : "furnishings"}</small></span>
                 <b>${ownershipSatisfaction}% belonging</b>
+              </div>
+              <div class="resident-belongings">
+                <span><strong>${personalRoom.room ? `${personalRoom.room.kind} · Floor ${homeEntityFloor(personalRoom.room) + 1}` : "No personal room"}</strong><small>${personalRoom.factors.join(" · ")}</small></span>
+                <b>${personalRoom.score}% room fit</b>
               </div>
               <div class="resident-growth">
                 <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · career fit ${careerFit}%${resident.role === "student" ? "" : `<br>${world.residentWorkTaskLabel(resident)} · workplace fit ${workplaceFit}% · performance ${workPerformance}% · ${resident.workDaysCompleted ?? 0} shifts${workplaceActivity ? `<br>${workplaceActivity.label} workplace · ${workplaceActivity.coworkersOnShift} coworkers · ${workplaceActivity.customersPresent} customers present` : ""}`}</small></span>

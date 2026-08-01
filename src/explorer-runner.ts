@@ -1656,6 +1656,22 @@ check(
     && restoredClaimWorld.homePrivacy(restoredClaimWorld.homes[0]) === 65,
   "Resident room claims did not survive save and restore."
 );
+const fittedResident = roomClaimHome.residents[0];
+fittedResident.decorPreference = "light";
+roomClaimHome.furniture.filter(item => item.x < 4).forEach(item => { item.style = "dark"; });
+const mismatchedPersonalRoom = roomClaimWorld.residentRoomFit(roomClaimHome, fittedResident);
+roomClaimHome.furniture.filter(item => item.x < 4).forEach(item => {
+  item.style = "light";
+  item.ownerResidentId = fittedResident.id;
+});
+const fittedPersonalRoom = roomClaimWorld.residentRoomFit(roomClaimHome, fittedResident);
+check(
+  fittedPersonalRoom.score > mismatchedPersonalRoom.score
+    && fittedPersonalRoom.room?.id === "room-a"
+    && fittedPersonalRoom.factors.some(factor => factor.includes("decor fit"))
+    && fittedPersonalRoom.factors.some(factor => factor.includes("owned furnishings")),
+  "Resident decor preference and owned belongings did not improve personal-room fit."
+);
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
@@ -4136,7 +4152,9 @@ console.log(JSON.stringify({
   },
   bedroomPrivacy: {
     score: restoredClaimWorld.homePrivacy(restoredClaimWorld.homes[0]),
-    roomAResidents: restoredClaimWorld.homes[0].rooms.find(room => room.id === "room-a")?.assignedResidentIds
+    roomAResidents: restoredClaimWorld.homes[0].rooms.find(room => room.id === "room-a")?.assignedResidentIds,
+    mismatchFit: mismatchedPersonalRoom.score,
+    personalizedFit: fittedPersonalRoom.score
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
