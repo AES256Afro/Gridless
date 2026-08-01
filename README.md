@@ -34,6 +34,7 @@ The current vertical slice proves:
 - Named-district recycling, school support, heavy-traffic bans, and small-business grants with explicit recurring costs plus local wellbeing, land-value, commercial-capacity, and freight-access effects
 - A live land-value planning view derived from utilities, neighborhood services, parks, road speed and traffic noise, zoning, tax pressure, and district policy
 - A regional Environment view with visible floodplains, moderate and steep terrain, an urban growth boundary, parcel exposure counts, editable constraint-bearing development, and explicit land-value pressure
+- Neighborhood Voices that translate live district utilities, wellbeing, traffic, land value, park access, environmental exposure, jobs, outages, and policies into prioritized resident feedback with one-click district focus and evidence views
 - Parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
 - Persistent power, water, fire, health, and school facilities with coverage radii, operating costs, municipal balance, and demand feedback

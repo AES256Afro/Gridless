@@ -21,6 +21,7 @@ import {
 import { detectStreetIntersections, trafficSignalState } from "./streets";
 import { soundscapeProfile } from "./soundscape";
 import { buildingArchitecture } from "./architecture";
+import { neighborhoodPulse } from "./neighborhood";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity } from "./activity";
@@ -104,6 +105,56 @@ check(
       && profile.heightScale <= 1.55
     ),
   "Regional architecture kits did not retain distinct, bounded massing and roof options."
+);
+const outagePulse = neighborhoodPulse({
+  districtId: "utility-test",
+  districtName: "Utility Test",
+  population: 900,
+  jobs: 420,
+  wellbeing: 58,
+  utilityReliability: 34,
+  trafficPressure: .28,
+  landValue: 52,
+  parkAccess: 70,
+  environmentalExposure: 5,
+  activeOutages: 2,
+  policyCount: 1
+});
+const trafficPulse = neighborhoodPulse({
+  districtId: "traffic-test",
+  districtName: "Traffic Test",
+  population: 1200,
+  jobs: 850,
+  wellbeing: 72,
+  utilityReliability: 96,
+  trafficPressure: .91,
+  landValue: 74,
+  parkAccess: 82,
+  environmentalExposure: 2,
+  activeOutages: 0,
+  policyCount: 2
+});
+const supportedPulse = neighborhoodPulse({
+  districtId: "supported-test",
+  districtName: "Supported Test",
+  population: 800,
+  jobs: 500,
+  wellbeing: 84,
+  utilityReliability: 97,
+  trafficPressure: .16,
+  landValue: 82,
+  parkAccess: 90,
+  environmentalExposure: 3,
+  activeOutages: 0,
+  policyCount: 2
+});
+check(
+  outagePulse.status === "critical"
+    && outagePulse.focusView === "utilities"
+    && trafficPulse.focusView === "traffic"
+    && supportedPulse.status === "positive"
+    && supportedPulse.score > trafficPulse.score,
+  "Neighborhood voices did not prioritize localized conditions and positive outcomes."
 );
 
 let activityHistory: ReturnType<typeof recordActivity> = [];
@@ -3601,6 +3652,12 @@ console.log(JSON.stringify({
     heightScale: Number(profile.heightScale.toFixed(2))
   })),
   architectureRoofStyles: [...regionalRoofStyles].sort(),
+  neighborhoodVoices: [outagePulse, trafficPulse, supportedPulse].map(pulse => ({
+    district: pulse.districtName,
+    status: pulse.status,
+    focus: pulse.focusView,
+    score: pulse.score
+  })),
   localizedSoundCue: emergencyStreetSound.focus,
   shelteredEmergencyLevel: shelteredEmergencySound.emergency,
   roadSamples: paths[0].points.length,
