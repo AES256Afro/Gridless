@@ -630,6 +630,7 @@ kbd {
   font-weight: 700;
   white-space: nowrap;
 }
+.home-budget.warning { color: #ef9a8d; }
 .household-summary {
   overflow: hidden;
   max-width: 190px;

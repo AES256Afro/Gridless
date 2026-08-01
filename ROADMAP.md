@@ -389,6 +389,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 
 - [Complete] Rooms and furnishings retain bounded persistent condition, age through occupancy and object use, visibly fade in 3D, influence home quality and resident satisfaction, and can be repaired or renovated from household funds.
 - [In progress] Foundations, floor levels, walls, automatic exterior entrances, stairs, cutaway roofs, player-authored exterior windows, and player-authored interior doorways are live. Windows snap to valid outside wall segments, preserve clear or privacy glazing, and drive bounded daylight. Doorways snap between adjacent rooms, offer standard and wide access, and immediately control traversable wall openings. Both opening types charge construction cost, support selection and partial-refund removal, migrate older procedural layouts safely, and render identically in Home Simulator and Explorer. Manual wall and roof editing remains ahead.
+- [Complete] A whole-home circulation graph connects rooms through the authored doorway schedule and valid stair links, reports unreachable rooms by floor, measures the share of wide-access openings, and exposes one bounded score with actionable evidence in both Home Simulator and the city parcel inspector.
 - Add copy, multi-select, eyedropper, room duplication, search, favorites, recolors, and object variants.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 
