@@ -530,6 +530,7 @@ app.innerHTML = `
       <button id="repair-furniture" disabled>Repair</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
+      <button id="auto-assign-rooms" type="button">Smart assign rooms</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
@@ -5641,6 +5642,7 @@ function updateHomeBuildControls(home: Home | null) {
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const repair = document.querySelector<HTMLButtonElement>("#repair-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
+  const autoAssignRooms = document.querySelector<HTMLButtonElement>("#auto-assign-rooms")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
@@ -5710,6 +5712,7 @@ function updateHomeBuildControls(home: Home | null) {
   repair.disabled = !selected || !repairCost;
   addResident.disabled = !home || home.residents.length >= 8;
   addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
+  autoAssignRooms.disabled = !home?.residents.length || !home.rooms.some(room => world.roomResidentCapacity(home, room) > 0);
   homeNameInput.disabled = !home;
   document.querySelector<HTMLButtonElement>("#rename-home")!.disabled = !home;
   if (home && document.activeElement !== homeNameInput) homeNameInput.value = home.name;
@@ -8706,6 +8709,17 @@ document.querySelector("#delete-room")!.addEventListener("click", () => {
   notice(`${room.kind} removed. Exclusive furnishings were sold automatically.`);
 });
 document.querySelector("#add-resident")!.addEventListener("click", openResidentCreator);
+document.querySelector("#auto-assign-rooms")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home) return;
+  const result = world.autoAssignResidentRooms(home.id);
+  if (!result.assigned) {
+    notice("Add beds to Bedroom, Nursery, or Studio rooms before smart assignment");
+    return;
+  }
+  renderWorld();
+  notice(`${result.assigned} resident${result.assigned === 1 ? "" : "s"} matched to personal rooms · ${result.unassigned} unassigned · ${result.privacy}% privacy`);
+});
 document.querySelector("#resident-creator-close")!.addEventListener("click", closeResidentCreator);
 document.querySelector("#resident-creator-cancel")!.addEventListener("click", closeResidentCreator);
 document.querySelector("#resident-creator")!.addEventListener("click", event => {

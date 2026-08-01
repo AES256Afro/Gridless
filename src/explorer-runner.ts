@@ -1672,6 +1672,15 @@ check(
     && fittedPersonalRoom.factors.some(factor => factor.includes("owned furnishings")),
   "Resident decor preference and owned belongings did not improve personal-room fit."
 );
+const smartAssignment = roomClaimWorld.autoAssignResidentRooms(roomClaimHome.id);
+check(
+  smartAssignment.assigned === 2
+    && smartAssignment.unassigned === 0
+    && smartAssignment.privacy === 100
+    && roomClaimWorld.residentRoom(roomClaimHome, "privacy-a")?.id === "room-a"
+    && roomClaimWorld.residentRoom(roomClaimHome, "privacy-b")?.id === "room-b",
+  "Smart room assignment did not maximize resident fit and household privacy deterministically."
+);
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
@@ -4154,7 +4163,8 @@ console.log(JSON.stringify({
     score: restoredClaimWorld.homePrivacy(restoredClaimWorld.homes[0]),
     roomAResidents: restoredClaimWorld.homes[0].rooms.find(room => room.id === "room-a")?.assignedResidentIds,
     mismatchFit: mismatchedPersonalRoom.score,
-    personalizedFit: fittedPersonalRoom.score
+    personalizedFit: fittedPersonalRoom.score,
+    smartAssignment
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
