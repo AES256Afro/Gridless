@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1832,6 +1832,8 @@ safeHome.windows = [
 const safeAudit = homeSafetyAudit(safeHome);
 const unsafeRoomReadiness = assessRoomReadiness(roomClaimWorld, unsafeHome, unsafeHome.rooms[1]);
 const safeRoomReadiness = assessRoomReadiness(roomClaimWorld, safeHome, safeHome.rooms[0]);
+const firstUnsafeRoomIssue = nextRoomReadinessIssue(roomClaimWorld, unsafeHome);
+const cycledUnsafeRoomIssue = nextRoomReadinessIssue(roomClaimWorld, unsafeHome, firstUnsafeRoomIssue?.room.id);
 const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
 const safeReadiness = assessHomeReadiness(roomClaimWorld, safeHome);
 const moveInApprovalWorld = new World();
@@ -1869,6 +1871,12 @@ check(
     && safeRoomReadiness.components.purpose === 100
     && safeRoomReadiness.issues.length === 0,
   "Room readiness did not explain and resolve purpose, access, or sleeping-room egress failures."
+);
+check(
+  firstUnsafeRoomIssue?.room.id === "room-b"
+    && cycledUnsafeRoomIssue?.room.id === "room-a"
+    && nextRoomReadinessIssue(roomClaimWorld, safeHome) === undefined,
+  "Room issue navigation did not prioritize the worst room, cycle deterministically, or finish when all rooms were ready."
 );
 check(
   unsafeReadiness.status === "Unsafe"
@@ -4507,6 +4515,7 @@ console.log(JSON.stringify({
   homeMoveInGoals: { unsafe: unsafeMoveInGoals, corrected: correctedMoveInGoals },
   homeFirstNight: { residents: firstNight.residents, comfortGain: firstNight.comfortGain, action: safeHome.residents[0].currentAction?.kind },
   roomReadiness: { unsafe: unsafeRoomReadiness, safe: safeRoomReadiness },
+  roomIssueNavigation: [firstUnsafeRoomIssue?.room.id, cycledUnsafeRoomIssue?.room.id],
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,

@@ -122,6 +122,21 @@ export function assessRoomReadiness(world: World, home: Home, room: HomeRoom): R
   return { score, status, components: { purpose, access, daylight, condition, clearFloor, egress }, issues, strengths };
 }
 
+export function nextRoomReadinessIssue(world: World, home: Home, afterRoomId?: string) {
+  const statusOrder: Record<RoomReadiness["status"], number> = { Unsafe: 0, "Needs work": 1, Improve: 2, Ready: 3 };
+  const issues = home.rooms
+    .map(room => ({ room, readiness: assessRoomReadiness(world, home, room) }))
+    .filter(item => item.readiness.status !== "Ready")
+    .sort((first, second) =>
+      statusOrder[first.readiness.status] - statusOrder[second.readiness.status]
+      || first.readiness.score - second.readiness.score
+      || first.room.id.localeCompare(second.room.id)
+    );
+  if (!issues.length) return undefined;
+  const currentIndex = issues.findIndex(item => item.room.id === afterRoomId);
+  return issues[(currentIndex + 1) % issues.length];
+}
+
 function safetyPriority(issue: HomeSafetyIssue): HomeReadinessPriority {
   return {
     kind: "safety",

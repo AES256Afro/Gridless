@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -523,6 +523,7 @@ app.innerHTML = `
       <button id="approve-home-move-in" type="button" disabled>Approve move-in</button>
       <button id="pin-home-move-in-goals" type="button" disabled>Track move-in goals</button>
       <button id="begin-home-first-night" type="button" disabled>Begin first night</button>
+      <button id="next-room-issue" type="button" disabled>Next room issue</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
@@ -5738,6 +5739,7 @@ function updateHomeBuildControls(home: Home | null) {
   const approveMoveIn = document.querySelector<HTMLButtonElement>("#approve-home-move-in")!;
   const pinMoveInGoals = document.querySelector<HTMLButtonElement>("#pin-home-move-in-goals")!;
   const beginFirstNight = document.querySelector<HTMLButtonElement>("#begin-home-first-night")!;
+  const nextRoomIssue = document.querySelector<HTMLButtonElement>("#next-room-issue")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
@@ -5896,6 +5898,9 @@ function updateHomeBuildControls(home: Home | null) {
   beginFirstNight.textContent = home?.firstNightAt !== undefined
     ? `First night complete · +${home.firstNightComfortGain ?? 0} comfort`
     : moveInAuthorization?.active ? "Begin first night" : "Approve home before first night";
+  const roomIssueCount = home?.rooms.filter(room => assessRoomReadiness(world, home, room).status !== "Ready").length ?? 0;
+  nextRoomIssue.disabled = !roomIssueCount;
+  nextRoomIssue.textContent = roomIssueCount ? `Next room issue · ${roomIssueCount}` : "All rooms ready";
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -8960,6 +8965,23 @@ document.querySelector("#room-kind")!.addEventListener("change", event => {
   if (!home || !room || !world.setRoomKind(home.id, room.id, kind)) return;
   renderWorld();
   notice(`Room purpose changed to ${kind}`);
+});
+document.querySelector("#next-room-issue")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home) return;
+  const next = nextRoomReadinessIssue(world, home, selectedRoomId ?? undefined);
+  if (!next) {
+    notice("Every room passes its readiness checks");
+    return;
+  }
+  selectedRoomId = next.room.id;
+  selectedFurnitureId = null;
+  selectedFurnitureIds.clear();
+  selectedHomeWindowId = null;
+  selectedHomeDoorId = null;
+  homeFloor = homeEntityFloor(next.room);
+  renderWorld();
+  notice(`${homeRoomLabel(next.room)} · ${next.readiness.status} at ${next.readiness.score}% · ${next.readiness.issues[0]}`);
 });
 function applyRoomName() {
   const home = currentHome();
