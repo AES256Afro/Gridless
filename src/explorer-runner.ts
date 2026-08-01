@@ -28,6 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
+import { assessHomeReadiness } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1829,6 +1830,8 @@ safeHome.windows = [
   { id: "safety-window-b", roomId: "room-b", floor: 0, orientation: "z", side: "negative", boundary: -3, center: 6, width: 1.3, glazing: "clear" }
 ];
 const safeAudit = homeSafetyAudit(safeHome);
+const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
+const safeReadiness = assessHomeReadiness(roomClaimWorld, safeHome);
 check(
   !unsafeAudit.safe
     && unsafeAudit.egressCoverage === 0
@@ -1838,6 +1841,15 @@ check(
     && safeAudit.egressCoverage === 100
     && safeAudit.score > unsafeAudit.score,
   "Whole-home safety auditing did not respond to connected wide egress and escape windows."
+);
+check(
+  unsafeReadiness.status === "Unsafe"
+    && unsafeReadiness.blockers.some(priority => priority.kind === "safety")
+    && safeReadiness.ready
+    && safeReadiness.status === "Move-in ready"
+    && safeReadiness.score > unsafeReadiness.score
+    && safeReadiness.components.space === equippedSpacePlan.score,
+  "Move-in readiness did not combine household safety, space, and home performance into a blocking decision."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -4344,6 +4356,7 @@ console.log(JSON.stringify({
   },
   homeOrganization: { crowded: crowdedOrganization, organized: organizedOrganization },
   homeSafetyAudit: { unsafe: unsafeAudit, safe: safeAudit },
+  homeReadiness: { unsafe: unsafeReadiness, safe: safeReadiness },
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,
