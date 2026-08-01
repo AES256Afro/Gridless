@@ -189,6 +189,22 @@ export function recordCurrentHomeInspection(world: World, home: Home) {
   };
 }
 
+export function homeInspectionTrend(home: Home) {
+  const records = home.inspections ?? [];
+  const latest = records.at(-1);
+  const previous = records.at(-2);
+  const delta = latest && previous ? latest.score - previous.score : 0;
+  const direction = records.length < 2 ? "Not enough history" : delta > 0 ? "Improving" : delta < 0 ? "Declining" : "Steady";
+  return {
+    records: records.length,
+    latest,
+    delta,
+    direction,
+    bestScore: records.length ? Math.max(...records.map(record => record.score)) : undefined,
+    failedToPassed: records.some(record => record.result === "Failed") && records.some(record => record.result === "Passed")
+  };
+}
+
 function safetyPriority(issue: HomeSafetyIssue): HomeReadinessPriority {
   return {
     kind: "safety",

@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals, recordCurrentHomeInspection } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeInspectionTrend, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals, recordCurrentHomeInspection } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1845,6 +1845,7 @@ inspectionHistoryHome.doors = structuredClone(safeHome.doors);
 inspectionHistoryHome.windows = structuredClone(safeHome.windows);
 const recordedPassedInspection = recordCurrentHomeInspection(inspectionHistoryWorld, inspectionHistoryHome);
 const restoredInspectionHistoryWorld = new World();
+const improvingInspectionTrend = homeInspectionTrend(inspectionHistoryHome);
 const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
 const safeReadiness = assessHomeReadiness(roomClaimWorld, safeHome);
 const moveInApprovalWorld = new World();
@@ -1908,6 +1909,14 @@ check(
     && restoredInspectionHistoryWorld.restore(inspectionHistoryWorld.serialize())
     && restoredInspectionHistoryWorld.homes[0].inspections?.length === 2,
   "Home inspection history did not preserve a bounded failed-to-passed record through save and restore."
+);
+check(
+  improvingInspectionTrend.records === 2
+    && improvingInspectionTrend.direction === "Improving"
+    && improvingInspectionTrend.delta === 23
+    && improvingInspectionTrend.bestScore === 92
+    && improvingInspectionTrend.failedToPassed,
+  "Home inspection trend did not explain a recorded failed-to-passed improvement."
 );
 check(
   unsafeReadiness.status === "Unsafe"
@@ -4549,6 +4558,7 @@ console.log(JSON.stringify({
   roomIssueNavigation: [firstUnsafeRoomIssue?.room.id, cycledUnsafeRoomIssue?.room.id],
   homeInspection: { failed: failedHomeInspection, passed: passedHomeInspection },
   homeInspectionHistory: inspectionHistoryHome.inspections,
+  homeInspectionTrend: improvingInspectionTrend,
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,
