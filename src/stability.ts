@@ -664,6 +664,7 @@ function integrityFailures(world: World) {
     if (home.residents.length > 8) failures.push(`Home ${home.id} exceeds the supported eight named residents.`);
     for (const room of home.rooms) {
       if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
+      if (room.name !== undefined && (room.name.length < 2 || room.name.length > 32 || !/^[\p{L}\p{N} .'-]+$/u.test(room.name))) failures.push(`Room ${room.id} has an invalid custom name.`);
       if (!Number.isInteger(homeEntityFloor(room)) || homeEntityFloor(room) < 0 || homeEntityFloor(room) >= home.floors) {
         failures.push(`Room ${room.id} is assigned to an invalid floor.`);
       }

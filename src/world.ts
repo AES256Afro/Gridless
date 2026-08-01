@@ -1167,6 +1167,7 @@ export type HomeRoomKind = typeof HOME_ROOM_KINDS[number];
 export type HomeRoom = {
   id: string;
   kind: string;
+  name?: string;
   x: number;
   z: number;
   width: number;
@@ -1178,6 +1179,10 @@ export type HomeRoom = {
   lastRenovatedAt?: number;
   assignedResidentIds?: string[];
 };
+
+export function homeRoomLabel(room: HomeRoom) {
+  return room.name?.trim() || room.kind;
+}
 
 export type HomeStair = {
   id: string;
@@ -5337,6 +5342,17 @@ export class World {
     return true;
   }
 
+  setRoomName(homeId: string, roomId: string, value: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    const name = value.trim().replace(/\s+/g, " ");
+    if (!home || !room || name.length < 2 || name.length > 32 || !/^[\p{L}\p{N} .'-]+$/u.test(name)) return false;
+    if (name === room.name) return true;
+    this.checkpoint();
+    room.name = name;
+    return true;
+  }
+
   roomResidentCapacity(home: Home, room: HomeRoom) {
     if (room.kind !== "Bedroom" && room.kind !== "Nursery" && room.kind !== "Studio") return 0;
     return home.furniture.filter(item =>
@@ -6584,6 +6600,10 @@ export class World {
         floors: normalizedFloors,
         rooms: (home.rooms ?? []).map(room => ({
           ...room,
+          name: (() => {
+            const name = room.name?.trim().replace(/\s+/g, " ");
+            return name && name.length >= 2 && name.length <= 32 && /^[\p{L}\p{N} .'-]+$/u.test(name) ? name : undefined;
+          })(),
           floor: Math.round(clamp(room.floor ?? 0, 0, normalizedFloors - 1)),
           floorFinish: room.floorFinish ?? "oak",
           wallFinish: room.wallFinish ?? "warm-white",

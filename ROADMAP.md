@@ -401,6 +401,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] Household organization gives residents, personal collections, and material pastimes a storage demand. Bookcases, desks, tables, and kitchen storage provide capacity, clear floor area limits congestion, and the resulting clutter score contributes to home quality with visible advice.
 - [Complete] A whole-home safety audit scores ground-floor entry, room circulation, stair continuity, sleeping-room escape windows, clear floor area, and mobility-sensitive egress. Critical hazards and exact corrections appear at home and parcel scales.
 - [Complete] One-click room duplication finds the nearest valid adjacent footprint, preserves purpose, size, finishes, and furnishings, clears resident claims and ownership, charges the exact shell-plus-furnishing cost, and reverts as one Undo operation.
+- [Complete] Rooms support safe custom names that persist through saves and Undo or Redo, then replace generic purpose labels in Home Simulator selection, resident claims, circulation and safety evidence, and City Explorer wayfinding.
 - Add multi-select, eyedropper, search, and favorites. Recolors and object variants are already live.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 

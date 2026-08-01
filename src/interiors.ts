@@ -2,6 +2,7 @@ import {
   HOME_FURNITURE_SIZE,
   homeFloorView,
   homeRoomExteriorWalls,
+  homeRoomLabel,
   homeSharedWallSegments,
   type AccessibilityEntrance,
   type Home,
@@ -201,7 +202,7 @@ export function homeSafetyAudit(home: Home): HomeSafetyAudit {
   if (circulation.unreachableRoomIds.length) issues.push({
     kind: "circulation",
     severity: "critical",
-    label: `${circulation.unreachableRoomIds.length} room${circulation.unreachableRoomIds.length === 1 ? " is" : "s are"} cut off from the exit path`,
+    label: `${home.rooms.filter(room => circulation.unreachableRoomIds.includes(room.id)).map(homeRoomLabel).join(", ")} ${circulation.unreachableRoomIds.length === 1 ? "is" : "are"} cut off from the exit path`,
     recommendation: "Add interior doorways until every room connects to the ground-floor entry.",
     roomIds: circulation.unreachableRoomIds
   });
@@ -218,10 +219,14 @@ export function homeSafetyAudit(home: Home): HomeSafetyAudit {
     ? homeRoomExteriorWalls(home, room).some(wall => wall.end - wall.start >= 1)
     : home.windows.some(window => window.roomId === room.id && window.width >= .9));
   const sleepingWithoutEgress = sleepingRooms.filter(room => !sleepingRoomsWithWindow.includes(room));
+  const sleepingWithoutEgressNames = sleepingWithoutEgress.map(homeRoomLabel);
+  const sleepingWithoutEgressLabel = sleepingWithoutEgressNames.length <= 1
+    ? sleepingWithoutEgressNames[0] ?? "Sleeping room"
+    : `${sleepingWithoutEgressNames.slice(0, -1).join(", ")} and ${sleepingWithoutEgressNames.at(-1)}`;
   if (sleepingWithoutEgress.length) issues.push({
     kind: "sleep-egress",
     severity: "important",
-    label: `${sleepingWithoutEgress.length} sleeping room${sleepingWithoutEgress.length === 1 ? " has" : "s have"} no usable escape window`,
+    label: `${sleepingWithoutEgressLabel} ${sleepingWithoutEgress.length === 1 ? "has" : "have"} no usable escape window`,
     recommendation: "Add a window at least 0.9m wide to every Bedroom, Nursery, and Studio.",
     roomIds: sleepingWithoutEgress.map(room => room.id)
   });
