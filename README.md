@@ -68,6 +68,7 @@ The current vertical slice proves:
 - Procedural city massing
 - One-key transition between planning and first-person exploration, with continuous spline-generated curbs, sidewalks, road markings, and intersection-aware sidewalk entry
 - Scale-aware street rendering: true intersections receive clean layered junction caps, while dense crosswalk, signal, window, and building-shadow detail is reserved for Explorer so the planning view remains legible without depth-fighting artifacts
+- Authoritative road build-impact previews with live cost, frontage yield, network connections, crossings, parcel clearance, water exposure, accessibility, funding state, and commit-time protection against parcel or surface-water conflicts
 - A focused City Builder command deck with Build, Zones, Services, Mobility, Events, and Views workspaces; each exposes only the relevant tools and settings instead of compressing the entire simulation into one toolbar
 - A persistent `?` field guide that explains City Builder, City Explorer, Home Simulator, shared history, saves, and the most important controls without leaving the live world
 - A live four-step starter journey that recognizes zoning, municipal service, street exploration, and meaningful home edits, then routes unfinished goals directly to the right scale and tool
