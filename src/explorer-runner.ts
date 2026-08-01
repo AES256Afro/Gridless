@@ -51,6 +51,7 @@ import {
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
   RESIDENT_PERSONALITY_AXES,
+  RESIDENT_WORK_TASK_DEFINITIONS,
   ROAD_PROFILE_PRESETS,
   World,
   homeEntityFloor,
@@ -1742,6 +1743,7 @@ check(
 const lifeCycleWorld = new World();
 const lifeCycleHome = structuredClone(interiorHome);
 lifeCycleHome.id = "life-cycle-home";
+lifeCycleHome.lotId = lifeCycleWorld.lots.find(item => item.zone === "residential" || item.zone === "mixed")?.id ?? lifeCycleWorld.lots[0].id;
 lifeCycleHome.name = "Generational household";
 lifeCycleHome.residents = [];
 lifeCycleHome.relationships = [];
@@ -1841,6 +1843,20 @@ check(
     && lifeCycleWorld.residentAspirationProgress(samira) === 10,
   "Career progression did not unlock a deterministic branch or advance mastery."
 );
+const samiraWorkplace = lifeCycleWorld.residentWorkplaceLot(samira);
+const devonWorkplace = lifeCycleWorld.residentWorkplaceLot(devon);
+check(
+  Boolean(samiraWorkplace)
+    && Boolean(devonWorkplace)
+    && samira.workDaysCompleted === 1
+    && devon.workDaysCompleted === 1
+    && RESIDENT_WORK_TASK_DEFINITIONS[samira.lastWorkTask!].track === "civic"
+    && RESIDENT_WORK_TASK_DEFINITIONS[devon.lastWorkTask!].track === "creative"
+    && lifeCycleWorld.residentWorkPerformance(samira) >= 0
+    && lifeCycleWorld.residentWorkPerformance(samira) <= 100
+    && lifeCycleWorld.residentsAssignedToWorkplace(samiraWorkplace!.id).some(({ resident }) => resident.id === samira.id),
+  "A completed workday did not create a valid physical workplace task and performance record."
+);
 lifeCycleWorld.clock.minute = 20 * 60;
 const familyProgressBeforeConversation = lifeCycleWorld.residentAspirationProgress(kai);
 check(
@@ -1858,10 +1874,18 @@ check(
     && restoredLifeCycleWorld.homes[0].residents[2].generation === 2
     && restoredLifeCycleWorld.homes[0].residents[2].caregiverIds?.length === 2
     && restoredLifeCycleWorld.homes[0].residents[0].careerBranch === samira.careerBranch
+    && restoredLifeCycleWorld.homes[0].residents[0].lastWorkTask === samira.lastWorkTask
+    && restoredLifeCycleWorld.homes[0].residents[0].workPerformance === samira.workPerformance
+    && restoredLifeCycleWorld.homes[0].residents[0].workDaysCompleted === 1
     && restoredLifeCycleWorld.residentAspirationProgress(restoredLifeCycleWorld.homes[0].residents[2]) === familyProgressBeforeConversation + 4,
-  "Life stage, lineage, career branch, or aspiration state was lost during persistence."
+  "Life stage, lineage, career, workplace, or aspiration state was lost during persistence."
 );
 const legacyLifeSnapshot = lifeCycleWorld.snapshot();
+const legacyWorker = legacyLifeSnapshot.homes[0].residents[0];
+legacyWorker.lastWorkTask = "prep-service";
+legacyWorker.workPerformance = 999;
+legacyWorker.workDaysCompleted = -4;
+legacyWorker.lastWorkDayAt = lifeCycleWorld.clock.elapsedMinutes + 9_999;
 const legacyDependent = legacyLifeSnapshot.homes[0].residents[2];
 delete legacyDependent.lifeStage;
 delete legacyDependent.generation;
@@ -1873,6 +1897,7 @@ legacyDependent.lastLifeStageChangeAt = lifeCycleWorld.clock.elapsedMinutes + 9_
 const migratedLifeWorld = new World();
 const migratedLifeRestored = migratedLifeWorld.restore(JSON.stringify(legacyLifeSnapshot));
 const migratedDependent = migratedLifeWorld.homes[0]?.residents[2];
+const migratedWorker = migratedLifeWorld.homes[0]?.residents[0];
 check(
   migratedLifeRestored
     && migratedLifeWorld.residentLifeStage(migratedDependent) === "child"
@@ -1880,8 +1905,12 @@ check(
     && (migratedDependent.lastLifeStageChangeAt ?? 0) <= migratedLifeWorld.clock.elapsedMinutes
     && migratedDependent.generation === 2
     && migratedDependent.caregiverIds?.length === 2
+    && migratedWorker.lastWorkTask === undefined
+    && migratedWorker.workPerformance === undefined
+    && migratedWorker.workDaysCompleted === 0
+    && (migratedWorker.lastWorkDayAt ?? 0) <= migratedLifeWorld.clock.elapsedMinutes
     && migratedLifeWorld.relationshipBetween(migratedLifeWorld.homes[0], migratedDependent.id, migratedDependent.caregiverIds[0])!.score >= 78,
-  "A legacy dependent did not receive safe life-stage and caregiver migration."
+  "Legacy resident life-stage, caregiver, or workplace fields did not receive safe migration."
 );
 residentCreatorHome.householdFunds = -50_000;
 residentCreatorHome.lastDailyIncome = 0;
@@ -2846,6 +2875,10 @@ console.log(JSON.stringify({
   caregiverCount: kai.caregiverIds?.length,
   inheritedPersonality: inheritedPersonality.cleanliness,
   careerBranch: samira.careerBranch,
+  careerWorkplace: samiraWorkplace?.anchorBusiness?.name,
+  careerWorkTask: samira.lastWorkTask,
+  careerPerformance: samira.workPerformance,
+  completedWorkShifts: samira.workDaysCompleted,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
   personalInventory: personalResident.inventory?.map(item => item.kind),
   ownedFurniture: personalWorld.residentOwnedFurniture(personalHome, personalResident).length,

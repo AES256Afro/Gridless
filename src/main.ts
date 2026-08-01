@@ -2507,6 +2507,17 @@ function closestParkingFacility(point: Point2, maximumDistance: number) {
     .sort((a, b) => a.distance - b.distance)[0];
 }
 
+function closestActiveWorkplace(point: Point2, maximumDistance: number) {
+  return world.lots
+    .map(lot => ({
+      lot,
+      workers: world.residentsAtWorkplace(lot.id),
+      distance: Math.hypot(lot.center.x - point.x, lot.center.z - point.z)
+    }))
+    .filter(candidate => candidate.workers.length > 0 && candidate.distance <= maximumDistance)
+    .sort((first, second) => first.distance - second.distance)[0];
+}
+
 function closestCurbFacility(point: Point2, maximumDistance: number) {
   return world.parking
     .filter(facility => facility.kind === "curb")
@@ -4733,6 +4744,8 @@ function updateHouseholdSummary(home: Home) {
           const careerProgress = Math.round(world.residentCareerProgress(resident) * 100);
           const personality = world.residentPersonality(resident);
           const careerFit = world.residentCareerFit(resident);
+          const workplaceFit = world.residentWorkplaceFit(resident);
+          const workPerformance = world.residentWorkPerformance(resident);
           const aspirationProgress = world.residentAspirationProgress(resident);
           const caregiverNames = (resident.caregiverIds ?? []).map(id => home.residents.find(candidate => candidate.id === id)?.name).filter(Boolean);
           const personalItems = world.residentPersonalItems(resident);
@@ -4757,7 +4770,7 @@ function updateHouseholdSummary(home: Home) {
                 <b>${ownershipSatisfaction}% belonging</b>
               </div>
               <div class="resident-growth">
-                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · fit ${careerFit}%</small></span>
+                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · career fit ${careerFit}%${resident.role === "student" ? "" : `<br>${world.residentWorkTaskLabel(resident)} · workplace fit ${workplaceFit}% · performance ${workPerformance}% · ${resident.workDaysCompleted ?? 0} shifts`}</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
                 <em>${resident.role === "student" ? "School" : `${careerProgress}%`}</em>
               </div>
@@ -5272,6 +5285,19 @@ function updateExplorerContext() {
       `${definition.label} with ${world.cityEventExpectedAttendance(event).toLocaleString()} attendees. ${world.cityEventStatus(event)} · ${event.closureRoadIds?.length ?? 0} closed roads · ${affectedCurbs} nearby curbs under event control · ${Math.round(world.cityEventTrafficPressure() * 100)}% city event traffic pressure.${temporaryLine ? ` ${temporaryLine.name} is running every ${world.transitEffectiveHeadway(temporaryLine)} minutes for the event.` : ""}`;
     return;
   }
+  const nearbyWorkplace = closestActiveWorkplace({ x: camera.position.x, z: camera.position.z }, 28);
+  if (nearbyWorkplace) {
+    const { lot, workers } = nearbyWorkplace;
+    const workplaceName = lot.anchorBusiness?.name ?? "Neighborhood workplace";
+    const workSummary = workers.slice(0, 3).map(({ resident }) =>
+      `${resident.name}: ${world.residentWorkTaskLabel(resident)} (${world.residentWorkPerformance(resident)}%)`
+    ).join(" · ");
+    document.querySelector("#panel-kicker")!.textContent = "ACTIVE WORKPLACE";
+    document.querySelector("#panel-title")!.textContent = workplaceName;
+    document.querySelector("#panel-copy")!.textContent =
+      `${workers.length} named ${workers.length === 1 ? "resident is" : "residents are"} working here now. ${workSummary}. This shift, its performance, and the commute home belong to the persistent city simulation.`;
+    return;
+  }
   const nearbyEntrance = closestAccessibilityEntrance(
     { x: camera.position.x, z: camera.position.z },
     12
@@ -5421,6 +5447,15 @@ function renderParcelDetails(lot: Lot) {
   const anchor = lot.anchorBusiness
     ? `<div class="parcel-anchor"><span>Neighborhood anchor</span><strong>${lot.anchorBusiness.name}</strong><small>${businessLabels[lot.anchorBusiness.sector]} · ${lot.anchorBusiness.jobs} jobs · ${world.businessIsOpen(lot.anchorBusiness.sector) ? "Open now" : "Closed now"}</small></div>`
     : "";
+  const assignedWorkers = world.residentsAssignedToWorkplace(lot.id);
+  const activeWorkers = world.residentsAtWorkplace(lot.id);
+  const workforce = assignedWorkers.length ? `
+    <div class="parcel-autonomy">
+      <span>Named workplace roster</span>
+      <strong>${activeWorkers.length}/${assignedWorkers.length} on shift now · ${assignedWorkers.map(({ resident }) => `${resident.name}: ${world.residentWorkTaskLabel(resident)} ${world.residentWorkPerformance(resident)}%`).join(" · ")}</strong>
+      <small>Residents commute here from persistent households and build career progress through daily tasks.</small>
+    </div>
+  ` : "";
   details.innerHTML = `
     <div class="parcel-metrics">
       <div><span>Residents</span><strong>${world.lotPopulation(lot).toLocaleString()}</strong></div>
@@ -5458,6 +5493,7 @@ function renderParcelDetails(lot: Lot) {
     ` : ""}
     ${commute ? `<div class="parcel-commute"><span>Representative commute</span><strong>${flowModeName(commute.mode)} · ${world.estimatedCommuteMinutes(commute)}m · ${Math.round(commute.distance)}m</strong><small>${commute.travelers} travelers to ${commuteDestinationName}${activeCommute ? ` · ${activeCommute.direction === "outbound" ? "Going to work" : "Returning home"}` : ""}</small></div>` : ""}
     ${anchor}
+    ${workforce}
     <div class="service-pills">${required.map(kind => {
       const covered = isLotCovered(lot, kind);
       const staffing = Math.round(world.serviceStaffing(kind) * 100);

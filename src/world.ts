@@ -247,6 +247,22 @@ export type ResidentRole = "office" | "service" | "student" | "home";
 export type ResidentLifeStage = "infant" | "toddler" | "child" | "teen" | "young-adult" | "adult" | "elder";
 export type ResidentAspiration = "family" | "mastery" | "community" | "prosperity" | "creative";
 export type ResidentCareerTrack = "civic" | "enterprise" | "hospitality" | "care" | "creative";
+export type ResidentWorkTask =
+  | "review-permits"
+  | "coordinate-street-upgrade"
+  | "inspect-service-coverage"
+  | "analyze-operations"
+  | "meet-clients"
+  | "plan-expansion"
+  | "prep-service"
+  | "lead-shift"
+  | "resolve-guest-issue"
+  | "complete-rounds"
+  | "coordinate-care"
+  | "support-family"
+  | "develop-commission"
+  | "refine-portfolio"
+  | "deliver-project";
 export type ResidentPastime = "reading" | "gardening" | "cooking" | "socializing" | "relaxing";
 export type ResidentPersonalItemKind = "book-set" | "garden-kit" | "recipe-box" | "game-set" | "comfort-kit";
 
@@ -341,6 +357,10 @@ export type Resident = {
   skills?: ResidentSkills;
   careerLevel?: number;
   careerXp?: number;
+  lastWorkTask?: ResidentWorkTask;
+  workPerformance?: number;
+  workDaysCompleted?: number;
+  lastWorkDayAt?: number;
 };
 
 export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits"> & {
@@ -392,7 +412,44 @@ export const RESIDENT_CAREER_TRACK_DEFINITIONS: Record<ResidentCareerTrack, {
   enterprise: { label: "Enterprise", role: "office", primarySkills: ["communication", "creativity"], baseWage: 205, wageStep: 48, branches: ["Operations", "Strategy"] },
   hospitality: { label: "Hospitality", role: "service", primarySkills: ["practical", "communication"], baseWage: 145, wageStep: 34, branches: ["Culinary", "Guest experience"] },
   care: { label: "Care services", role: "service", primarySkills: ["wellness", "communication"], baseWage: 165, wageStep: 38, branches: ["Clinical care", "Community wellness"] },
-  creative: { label: "Creative practice", role: "home", primarySkills: ["creativity", "communication"], baseWage: 110, wageStep: 31, branches: ["Studio artist", "Independent media"] }
+  creative: { label: "Creative practice", role: "office", primarySkills: ["creativity", "communication"], baseWage: 110, wageStep: 31, branches: ["Studio artist", "Independent media"] }
+};
+
+export const RESIDENT_WORK_TASK_DEFINITIONS: Record<ResidentWorkTask, {
+  label: string;
+  track: ResidentCareerTrack;
+}> = {
+  "review-permits": { label: "Review development permits", track: "civic" },
+  "coordinate-street-upgrade": { label: "Coordinate a street upgrade", track: "civic" },
+  "inspect-service-coverage": { label: "Inspect service coverage", track: "civic" },
+  "analyze-operations": { label: "Analyze business operations", track: "enterprise" },
+  "meet-clients": { label: "Meet with clients", track: "enterprise" },
+  "plan-expansion": { label: "Plan a business expansion", track: "enterprise" },
+  "prep-service": { label: "Prepare for service", track: "hospitality" },
+  "lead-shift": { label: "Lead the service shift", track: "hospitality" },
+  "resolve-guest-issue": { label: "Resolve a guest issue", track: "hospitality" },
+  "complete-rounds": { label: "Complete care rounds", track: "care" },
+  "coordinate-care": { label: "Coordinate a care plan", track: "care" },
+  "support-family": { label: "Support a local family", track: "care" },
+  "develop-commission": { label: "Develop a client commission", track: "creative" },
+  "refine-portfolio": { label: "Refine the studio portfolio", track: "creative" },
+  "deliver-project": { label: "Deliver a creative project", track: "creative" }
+};
+
+const RESIDENT_WORK_TASKS_BY_TRACK: Record<ResidentCareerTrack, [ResidentWorkTask, ResidentWorkTask, ResidentWorkTask]> = {
+  civic: ["review-permits", "coordinate-street-upgrade", "inspect-service-coverage"],
+  enterprise: ["analyze-operations", "meet-clients", "plan-expansion"],
+  hospitality: ["prep-service", "lead-shift", "resolve-guest-issue"],
+  care: ["complete-rounds", "coordinate-care", "support-family"],
+  creative: ["develop-commission", "refine-portfolio", "deliver-project"]
+};
+
+const CAREER_WORKPLACE_SECTORS: Record<ResidentCareerTrack, [BusinessSector, BusinessSector]> = {
+  civic: ["community", "office"],
+  enterprise: ["office", "industrial"],
+  hospitality: ["hospitality", "retail"],
+  care: ["community", "hospitality"],
+  creative: ["retail", "office"]
 };
 
 export const RESIDENT_PASTIME_DEFINITIONS: Record<ResidentPastime, {
@@ -2402,6 +2459,41 @@ export class World {
     return `${100 + hashString(destination.id) % 900} ${road}`;
   }
 
+  residentWorkplaceLot(resident: Resident) {
+    return this.lots.find(lot => lot.id === resident.destinationLotId);
+  }
+
+  residentsAssignedToWorkplace(lotId: string) {
+    return this.homes.flatMap(home => home.residents
+      .filter(resident => resident.destinationLotId === lotId)
+      .map(resident => ({ home, resident }))
+    );
+  }
+
+  residentsAtWorkplace(lotId: string) {
+    return this.residentsAssignedToWorkplace(lotId)
+      .filter(({ resident }) => this.residentStatus(resident) === "At work");
+  }
+
+  residentWorkplaceFit(resident: Resident) {
+    const workplace = this.residentWorkplaceLot(resident);
+    if (!workplace) return 0;
+    const sector = workplace.anchorBusiness?.sector;
+    if (!sector) return workplace.businesses > 0 ? 55 : 0;
+    const preferred = CAREER_WORKPLACE_SECTORS[this.residentCareerTrack(resident)];
+    return sector === preferred[0] ? 100 : sector === preferred[1] ? 82 : 52;
+  }
+
+  residentWorkTaskLabel(resident: Resident) {
+    return resident.lastWorkTask
+      ? RESIDENT_WORK_TASK_DEFINITIONS[resident.lastWorkTask]?.label ?? "Work task unavailable"
+      : "First shift not completed";
+  }
+
+  residentWorkPerformance(resident: Resident) {
+    return Math.round(clamp(resident.workPerformance ?? 0, 0, 100));
+  }
+
   residentStatus(resident: Home["residents"][number]) {
     const hour = this.clock.minute / 60;
     if (
@@ -4051,6 +4143,19 @@ export class World {
         normalizedResident.careerBranch = resident.careerBranch && availableBranches.includes(resident.careerBranch)
           ? resident.careerBranch
           : undefined;
+        const workTask = resident.lastWorkTask
+          ? RESIDENT_WORK_TASK_DEFINITIONS[resident.lastWorkTask]
+          : undefined;
+        normalizedResident.lastWorkTask = workTask?.track === normalizedResident.careerTrack
+          ? resident.lastWorkTask
+          : undefined;
+        normalizedResident.workPerformance = normalizedResident.lastWorkTask
+          ? Math.round(clamp(resident.workPerformance ?? 0, 0, 100))
+          : undefined;
+        normalizedResident.workDaysCompleted = Math.max(0, Math.round(resident.workDaysCompleted ?? 0));
+        normalizedResident.lastWorkDayAt = resident.lastWorkDayAt === undefined
+          ? undefined
+          : Math.round(clamp(resident.lastWorkDayAt, 0, savedElapsedMinutes));
         return normalizedResident;
       });
       const residentIds = new Set(residents.map(resident => resident.id));
@@ -4548,6 +4653,22 @@ export class World {
         const startingLevel = this.residentCareerLevel(resident);
         let level = startingLevel;
         const skillAverage = primarySkills.reduce((total, skill) => total + resident.skills![skill], 0) / primarySkills.length;
+        const workplace = this.residentWorkplaceLot(resident);
+        if (workplace && workplace.businesses > 0) {
+          const tasks = RESIDENT_WORK_TASKS_BY_TRACK[resident.careerTrack];
+          const day = Math.floor(this.clock.elapsedMinutes / 1_440);
+          resident.lastWorkTask = tasks[hashString(`${resident.id}:${resident.careerBranch ?? "foundation"}:${day}`) % tasks.length];
+          resident.workPerformance = Math.round(clamp(
+            this.residentCareerFit(resident) * .42
+            + skillAverage * .28
+            + this.residentWorkplaceFit(resident) * .22
+            + (100 - this.residentCommuteBurden(resident)) * .08,
+            0,
+            100
+          ));
+          resident.workDaysCompleted = Math.max(0, Math.round(resident.workDaysCompleted ?? 0)) + 1;
+          resident.lastWorkDayAt = this.clock.elapsedMinutes;
+        }
         let xp = Math.max(0, resident.careerXp ?? 0) + 4 + Math.floor(skillAverage / 25);
         while (level < 10 && xp >= level * 40) {
           xp -= level * 40;
