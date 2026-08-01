@@ -479,6 +479,7 @@ app.innerHTML = `
         <option value="">Shared household</option>
       </select>
       <button id="sell-furniture" disabled>Sell</button>
+      <button id="repair-furniture" disabled>Repair</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
@@ -503,6 +504,8 @@ app.innerHTML = `
         <option value="clay">Clay · $10/m²</option>
         <option value="slate">Slate · $12/m²</option>
       </select></label>
+      <span id="room-condition">Pristine · 100%</span>
+      <button id="renovate-room">Renovate</button>
       <button id="furnish-room">Furnish room</button>
       <button id="delete-room">Delete room</button>
     </div>
@@ -4485,11 +4488,14 @@ function renderHome() {
   for (const room of floorHome.rooms) {
     const floorFinish = room.floorFinish ?? "oak";
     const wallFinish = room.wallFinish ?? "warm-white";
+    const roomWear = (100 - world.roomCondition(room)) / 100;
+    const wornFloorColor = new THREE.Color(homeFloorColors[floorFinish]).lerp(new THREE.Color(0x625b50), roomWear * .38);
+    const wornWallColor = new THREE.Color(homeWallColors[wallFinish]).lerp(new THREE.Color(0x777066), roomWear * .3);
     const selected = mode === "home" && room.id === selectedRoomId;
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(room.width, room.depth),
       new THREE.MeshStandardMaterial({
-        color: selected ? new THREE.Color(homeFloorColors[floorFinish]).lerp(new THREE.Color(0xf0d980), .28) : homeFloorColors[floorFinish],
+        color: selected ? wornFloorColor.clone().lerp(new THREE.Color(0xf0d980), .28) : wornFloorColor,
         emissive: selected ? 0x7b6b2b : 0x000000,
         emissiveIntensity: selected ? .16 : 0,
         roughness: floorFinish === "tile" ? .55 : floorFinish === "concrete" ? .94 : .82,
@@ -4514,7 +4520,7 @@ function renderHome() {
       light.position.set(room.x, 2.55, room.z);
       homeGroup.add(light);
     }
-    addHomeRoomWalls(floorHome, room, exteriorDoorway, homeWallColors[wallFinish]);
+    addHomeRoomWalls(floorHome, room, exteriorDoorway, wornWallColor.getHex());
   }
 
   for (const item of floorHome.furniture) homeGroup.add(createFurniture(item));
@@ -4874,6 +4880,16 @@ function createFurniture(item: Home["furniture"][number]) {
       }
     }
   }
+  const wear = (100 - world.furnitureCondition(item)) / 100;
+  if (wear > 0) {
+    group.traverse(child => {
+      if (!(child instanceof THREE.Mesh) || !(child.material instanceof THREE.MeshStandardMaterial)) return;
+      const material = child.material.clone();
+      material.color.lerp(new THREE.Color(0x665e55), wear * .34);
+      material.roughness = Math.min(1, material.roughness + wear * .18);
+      child.material = material;
+    });
+  }
   group.traverse(child => {
     if (child instanceof THREE.Mesh) child.castShadow = child.receiveShadow = true;
   });
@@ -5068,6 +5084,7 @@ function updateHomeBuildControls(home: Home | null) {
   const tint = document.querySelector<HTMLInputElement>("#furniture-tint")!;
   const owner = document.querySelector<HTMLSelectElement>("#furniture-owner")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
+  const repair = document.querySelector<HTMLButtonElement>("#repair-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
@@ -5095,6 +5112,8 @@ function updateHomeBuildControls(home: Home | null) {
   owner.disabled = !selected || !home?.residents.length;
   owner.value = selected?.ownerResidentId ?? "";
   sell.disabled = !selected;
+  const repairCost = selected ? world.furnitureRepairCost(selected) : 0;
+  repair.disabled = !selected || !repairCost;
   addResident.disabled = !home || home.residents.length >= 8;
   addResident.textContent = home && home.residents.length >= 8 ? "Household full · 8" : "+ Resident";
   homeNameInput.disabled = !home;
@@ -5106,6 +5125,11 @@ function updateHomeBuildControls(home: Home | null) {
   sell.textContent = selected
     ? `Sell ${selected.kind} · ${formatHomeCurrency(HOME_BUILD_COSTS[selected.kind] * .5)}`
     : "Sell";
+  repair.textContent = selected
+    ? repairCost
+      ? `Repair ${world.furnitureCondition(selected)}% · ${formatHomeCurrency(repairCost)}`
+      : "Pristine · 100%"
+    : "Repair";
   document.querySelector("#home-budget")!.textContent = home
     ? `Floor ${homeFloor + 1} of ${home.floors} · ${formatHomeCurrency(world.homeRemainingBudget(home))} left`
     : "Design budget unavailable";
@@ -5116,7 +5140,13 @@ function updateRoomEditor(home: Home | null) {
   const room = home?.rooms.find(item => item.id === selectedRoomId) ?? null;
   editor.classList.toggle("visible", Boolean(mode === "home" && room));
   if (!home || !room) return;
+  const roomCondition = world.roomCondition(room);
+  const renovationCost = world.roomRenovationCost(room);
   document.querySelector("#room-editor-title")!.textContent = `${room.kind} · ${room.width.toFixed(1)} × ${room.depth.toFixed(1)}m`;
+  document.querySelector("#room-condition")!.textContent = `${world.homeConditionLabel(roomCondition)} · ${roomCondition}%`;
+  const renovate = document.querySelector<HTMLButtonElement>("#renovate-room")!;
+  renovate.disabled = !renovationCost;
+  renovate.textContent = renovationCost ? `Renovate · ${formatHomeCurrency(renovationCost)}` : "Pristine · 100%";
   const kindSelect = document.querySelector<HTMLSelectElement>("#room-kind")!;
   if (![...kindSelect.options].some(option => option.value === room.kind)) {
     kindSelect.add(new Option(room.kind, room.kind));
@@ -5160,8 +5190,9 @@ function updateHouseholdSummary(home: Home) {
     const gatheringCopy = activeGathering
       ? ` ${world.householdGatheringLabel(activeGathering)} is underway with ${activeGathering.guestCount} visitors.`
       : "";
+    const homeCondition = world.homeCondition(home);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5182,6 +5213,7 @@ function updateHouseholdSummary(home: Home) {
       <div class="home-wellbeing-overview">
         <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
+        <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Utilities</span><strong>${utility}%</strong></div>
         <div><span>Neighborhood</span><strong>${neighborhood}%</strong></div>
         <div><span>Entrance</span><strong>${entrance ? entranceAccessLabel(entrance) : "Not connected"}</strong></div>
@@ -7588,6 +7620,19 @@ document.querySelector("#sell-furniture")!.addEventListener("click", () => {
   renderWorld();
   notice(`${item.kind[0].toUpperCase()}${item.kind.slice(1)} sold for ${formatHomeCurrency(refund)}`);
 });
+document.querySelector("#repair-furniture")!.addEventListener("click", () => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  if (!home || !item) return;
+  const result = world.repairFurniture(home.id, item.id);
+  if (!result.ok) {
+    renderHome();
+    notice(result.reason);
+    return;
+  }
+  renderWorld();
+  notice(`${homeFurnitureLabel(item.kind)} repaired for ${formatHomeCurrency(result.cost)}`);
+});
 document.querySelector("#room-kind")!.addEventListener("change", event => {
   const home = currentHome();
   const room = home?.rooms.find(item => item.id === selectedRoomId);
@@ -7627,6 +7672,19 @@ document.querySelector("#room-wall-finish")!.addEventListener("change", event =>
   }
   renderWorld();
   notice(`${room.kind} walls updated for ${formatHomeCurrency(cost)}`);
+});
+document.querySelector("#renovate-room")!.addEventListener("click", () => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  if (!home || !room) return;
+  const result = world.renovateRoom(home.id, room.id);
+  if (!result.ok) {
+    renderHome();
+    notice(result.reason);
+    return;
+  }
+  renderWorld();
+  notice(`${room.kind} renovated for ${formatHomeCurrency(result.cost)}`);
 });
 document.querySelector("#furnish-room")!.addEventListener("click", () => {
   const home = currentHome();

@@ -1295,6 +1295,57 @@ check(
     && furniturePlacementWorld.snapshot().homes[0].rooms.find(room => room.id === studio.id)?.kind === "Study",
   "Room finishes or purpose were omitted from the world snapshot."
 );
+const maintenanceHome = furniturePlacementWorld.homes[0];
+const repairTable = maintenanceHome.furniture.find(item => item.id === "interior-table")!;
+repairTable.condition = 40;
+studio.condition = 50;
+maintenanceHome.householdFunds = 0;
+const expectedFurnitureRepair = furniturePlacementWorld.furnitureRepairCost(repairTable);
+const expectedRoomRenovation = furniturePlacementWorld.roomRenovationCost(studio);
+check(
+  !furniturePlacementWorld.repairFurniture(maintenanceHome.id, repairTable.id).ok
+    && furniturePlacementWorld.furnitureCondition(repairTable) === 40,
+  "An unaffordable furniture repair changed the furnishing or household funds."
+);
+maintenanceHome.householdFunds = 10_000;
+check(
+  expectedFurnitureRepair === 164
+    && furniturePlacementWorld.repairFurniture(maintenanceHome.id, repairTable.id).ok
+    && furniturePlacementWorld.furnitureCondition(repairTable) === 100
+    && furniturePlacementWorld.homeHouseholdFunds(maintenanceHome) === 10_000 - expectedFurnitureRepair,
+  "Furniture repair did not restore condition or debit the exact household cost."
+);
+check(
+  expectedRoomRenovation === 150
+    && furniturePlacementWorld.renovateRoom(maintenanceHome.id, studio.id).ok
+    && furniturePlacementWorld.roomCondition(studio) === 100
+    && furniturePlacementWorld.homeHouseholdFunds(maintenanceHome) === 10_000 - expectedFurnitureRepair - expectedRoomRenovation,
+  "Room renovation did not restore condition or debit the exact household cost."
+);
+furniturePlacementWorld.advanceMinutes(90 * 24 * 60, 0);
+check(
+  furniturePlacementWorld.furnitureCondition(repairTable) < 100
+    && furniturePlacementWorld.roomCondition(studio) < 100
+    && furniturePlacementWorld.homeCondition(maintenanceHome) < 100,
+  "Daily occupancy and furnishing use did not create persistent home wear."
+);
+const wornHomeSnapshot = furniturePlacementWorld.serialize();
+const restoredWornHomeWorld = new World();
+check(
+  restoredWornHomeWorld.restore(wornHomeSnapshot)
+    && restoredWornHomeWorld.homeCondition(restoredWornHomeWorld.homes[0]) === furniturePlacementWorld.homeCondition(maintenanceHome),
+  "Room and furniture condition did not survive save and restore."
+);
+const legacyConditionSnapshot = JSON.parse(wornHomeSnapshot);
+delete legacyConditionSnapshot.homes[0].rooms[0].condition;
+legacyConditionSnapshot.homes[0].furniture[0].condition = 500;
+const migratedConditionWorld = new World();
+check(
+  migratedConditionWorld.restore(JSON.stringify(legacyConditionSnapshot))
+    && migratedConditionWorld.roomCondition(migratedConditionWorld.homes[0].rooms[0]) === 100
+    && migratedConditionWorld.furnitureCondition(migratedConditionWorld.homes[0].furniture[0]) === 100,
+  "Legacy or unsafe home condition values did not migrate into the supported range."
+);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", studio.x, studio.z),
   "Home Simulator could not furnish a newly drawn room."
@@ -3395,6 +3446,9 @@ console.log(JSON.stringify({
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
+  homeCondition: furniturePlacementWorld.homeCondition(maintenanceHome),
+  furnitureRepairCost: expectedFurnitureRepair,
+  roomRenovationCost: expectedRoomRenovation,
   interiorWallCollision: wallMove.blocked,
   interiorAccessGate: entryStatus.allowed,
   multiFloorHomeFloors: restoredMultiFloorWorld.homes[0].floors,
