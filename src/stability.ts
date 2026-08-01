@@ -3,6 +3,8 @@ import {
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
   RESIDENT_LIFE_STAGES,
+  RESIDENT_PASTIME_DEFINITIONS,
+  RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
   RESIDENT_PERSONALITY_AXES,
   MAX_HOME_FLOORS,
@@ -153,7 +155,7 @@ export function createStabilityScenario() {
     floors: 1,
     rooms: [{ id: "stability-room", kind: "Living space", x: 0, z: 0, width: 8, depth: 7 }],
     furniture: [
-      { id: "stability-sofa", kind: "sofa", x: -1.5, z: 0, rotation: 0 },
+      { id: "stability-sofa", kind: "sofa", x: -1.5, z: 0, rotation: 0, style: "natural", ownerResidentId: "stability-resident" },
       { id: "stability-table", kind: "table", x: 1.5, z: 0, rotation: 0 },
       { id: "stability-bed", kind: "bed", x: -1.5, z: 2, rotation: 0 },
       { id: "stability-plant", kind: "plant", x: 2.5, z: 2, rotation: 0 }
@@ -165,6 +167,9 @@ export function createStabilityScenario() {
       name: "Avery",
       age: "adult",
       role: "home",
+      decorPreference: "natural",
+      favoritePastime: "relaxing",
+      inventory: [{ id: "stability-books", kind: "book-set", acquiredAt: 0 }],
       energy: 82,
       social: 68,
       comfort: 74,
@@ -567,6 +572,7 @@ function integrityFailures(world: World) {
     for (const item of home.furniture) {
       if (!VALID_HOME_FURNITURE.has(item.kind)) failures.push(`Furniture ${item.id} has an unknown catalog kind.`);
       if (!VALID_HOME_FURNITURE_STYLES.has(item.style ?? "natural")) failures.push(`Furniture ${item.id} has an invalid style.`);
+      if (item.ownerResidentId && !residentIds.has(item.ownerResidentId)) failures.push(`Furniture ${item.id} has a missing resident owner.`);
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
         failures.push(`Furniture ${item.id} has an invalid rotation.`);
       }
@@ -611,6 +617,27 @@ function integrityFailures(world: World) {
       if (RESIDENT_PERSONALITY_AXES.some(axis =>
         !Number.isInteger(personality[axis]) || personality[axis] < 0 || personality[axis] > 100
       )) failures.push(`Resident ${resident.id} has an invalid personality matrix.`);
+      const decorPreference = world.residentDecorPreference(resident);
+      const pastime = world.residentFavoritePastime(resident);
+      const personalItems = world.residentPersonalItems(resident);
+      if (!VALID_HOME_FURNITURE_STYLES.has(decorPreference)) failures.push(`Resident ${resident.id} has an invalid decor preference.`);
+      if (!RESIDENT_PASTIME_DEFINITIONS[pastime]) failures.push(`Resident ${resident.id} has an invalid favorite pastime.`);
+      if (
+        personalItems.length > Object.keys(RESIDENT_PERSONAL_ITEM_DEFINITIONS).length
+        || new Set(personalItems.map(item => item.id)).size !== personalItems.length
+        || new Set(personalItems.map(item => item.kind)).size !== personalItems.length
+        || personalItems.some(item =>
+          !item.id
+          || !RESIDENT_PERSONAL_ITEM_DEFINITIONS[item.kind]
+          || !Number.isInteger(item.acquiredAt)
+          || item.acquiredAt < 0
+          || item.acquiredAt > world.clock.elapsedMinutes
+        )
+      ) failures.push(`Resident ${resident.id} has an invalid personal inventory.`);
+      const ownershipSatisfaction = world.residentOwnershipSatisfaction(home, resident);
+      if (!Number.isInteger(ownershipSatisfaction) || ownershipSatisfaction < 0 || ownershipSatisfaction > 100) {
+        failures.push(`Resident ${resident.id} has invalid belonging satisfaction.`);
+      }
       const lifeStage = world.residentLifeStage(resident);
       const stageDuration = RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].durationDays;
       if (

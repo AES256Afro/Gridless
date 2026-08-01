@@ -1183,6 +1183,10 @@ check(
     age: "adult",
     role: "office",
     traits: ["creative", "organized"],
+    aspiration: "mastery",
+    careerTrack: "civic",
+    decorPreference: "dark",
+    favoritePastime: "reading",
     personality: {
       cleanliness: 88,
       spontaneity: 34,
@@ -1199,8 +1203,69 @@ check(
     && residentCreatorHome.residents[0].traits.join(",") === "creative,organized"
     && residentCreatorHome.residents[0].personality?.cleanliness === 88
     && residentCreatorHome.residents[0].personality?.emotionality === 28
+    && residentCreatorWorld.residentDecorPreference(residentCreatorHome.residents[0]) === "dark"
+    && residentCreatorWorld.residentFavoritePastime(residentCreatorHome.residents[0]) === "reading"
     && residentCreatorHome.name === "Morgan Lee's household",
   "Resident creator did not preserve the authored profile or household name."
+);
+const personalWorld = new World();
+const personalHome = structuredClone(residentCreatorHome);
+personalHome.id = "personal-home";
+personalHome.householdFunds = 15_000;
+personalHome.discretionarySpent = 0;
+personalWorld.homes = [personalHome];
+const personalResident = personalHome.residents[0];
+check(
+  personalWorld.addFurniture(personalHome.id, "plant", -2, 1),
+  "Resident belongings fixture could not place its owned pastime furnishing."
+);
+const personalFurniture = personalHome.furniture.find(item => item.kind === "plant")!;
+const initialOwnershipSatisfaction = personalWorld.residentOwnershipSatisfaction(personalHome, personalResident);
+check(
+  personalWorld.buyResidentPersonalItem(personalHome.id, personalResident.id, "book-set").ok
+    && personalWorld.homeHouseholdFunds(personalHome) === 14_920
+    && personalHome.discretionarySpent === 80
+    && personalResident.inventory?.[0].kind === "book-set"
+    && personalWorld.residentSkills(personalResident).creativity === 3
+    && personalWorld.residentAspirationProgress(personalResident) === 5,
+  "A personal collection purchase did not debit funds or update inventory, skills, and aspiration."
+);
+check(
+  !personalWorld.buyResidentPersonalItem(personalHome.id, personalResident.id, "book-set").ok
+    && personalResident.inventory?.length === 1
+    && personalWorld.homeHouseholdFunds(personalHome) === 14_920,
+  "A duplicate personal item was purchased or charged twice."
+);
+check(
+  !personalWorld.setFurnitureOwner(personalHome.id, personalFurniture.id, "missing-resident")
+    && personalWorld.setFurnitureOwner(personalHome.id, personalFurniture.id, personalResident.id)
+    && personalWorld.setFurnitureStyle(personalHome.id, personalFurniture.id, "dark")
+    && personalWorld.residentOwnedFurniture(personalHome, personalResident).length === 1
+    && personalWorld.residentOwnershipSatisfaction(personalHome, personalResident) > initialOwnershipSatisfaction,
+  "Furniture ownership, preferred style, or belonging satisfaction did not update correctly."
+);
+personalWorld.clock.minute = 20 * 60;
+personalResident.favoritePastime = "gardening";
+personalResident.energy = 100;
+personalResident.social = 100;
+personalResident.comfort = 100;
+personalResident.health = 80;
+personalResident.stress = 50;
+personalWorld.advanceMinutes(1, 0);
+check(
+  personalResident.currentAction?.kind === "tend-plants"
+    && personalResident.currentAction.targetFurnitureId === personalFurniture.id,
+  "Favorite-pastime autonomy did not prefer the resident's owned matching furnishing."
+);
+personalResident.favoritePastime = "reading";
+const restoredPersonalWorld = new World();
+check(
+  restoredPersonalWorld.restore(personalWorld.serialize())
+    && restoredPersonalWorld.homes[0].furniture.find(item => item.id === personalFurniture.id)?.ownerResidentId === personalResident.id
+    && restoredPersonalWorld.homes[0].residents[0].inventory?.[0].kind === "book-set"
+    && restoredPersonalWorld.residentDecorPreference(restoredPersonalWorld.homes[0].residents[0]) === "dark"
+    && restoredPersonalWorld.residentFavoritePastime(restoredPersonalWorld.homes[0].residents[0]) === "reading",
+  "Personal preferences, inventory, or furniture ownership was lost during persistence."
 );
 check(
   !residentCreatorWorld.addResident(residentCreatorHome.id, {
@@ -1290,15 +1355,30 @@ check(
   "The personality matrix did not influence career fit."
 );
 const legacyPersonalitySnapshot = residentCreatorWorld.snapshot();
-delete legacyPersonalitySnapshot.homes[0].residents[0].personality;
+const legacyPersonalityResident = legacyPersonalitySnapshot.homes[0].residents[0];
+delete legacyPersonalityResident.personality;
+delete legacyPersonalityResident.decorPreference;
+delete legacyPersonalityResident.favoritePastime;
+legacyPersonalityResident.inventory = [
+  { id: "legacy-books", kind: "book-set", acquiredAt: 99_999 },
+  { id: "duplicate-books", kind: "book-set", acquiredAt: 99_999 },
+  { id: "legacy-books", kind: "garden-kit", acquiredAt: 99_999 }
+];
+legacyPersonalitySnapshot.homes[0].furniture[0].ownerResidentId = "missing-resident";
 const personalityMigrationWorld = new World();
 check(
   personalityMigrationWorld.restore(JSON.stringify(legacyPersonalitySnapshot))
     && personalityMigrationWorld.snapshot().homes[0].residents[0].personality !== undefined
     && Object.values(personalityMigrationWorld.snapshot().homes[0].residents[0].personality!).every(value =>
       Number.isInteger(value) && value >= 0 && value <= 100
-    ),
-  "A legacy resident did not receive a safe deterministic personality matrix."
+    )
+    && personalityMigrationWorld.residentDecorPreference(personalityMigrationWorld.homes[0].residents[0]) === "colorful"
+    && personalityMigrationWorld.residentFavoritePastime(personalityMigrationWorld.homes[0].residents[0]) === "cooking"
+    && personalityMigrationWorld.homes[0].residents[0].inventory?.length === 2
+    && new Set(personalityMigrationWorld.homes[0].residents[0].inventory?.map(item => item.id)).size === 2
+    && personalityMigrationWorld.homes[0].residents[0].inventory?.[0].acquiredAt === 0
+    && personalityMigrationWorld.homes[0].furniture[0].ownerResidentId === undefined,
+  "A legacy resident did not receive safe personality, preference, inventory, and ownership migration."
 );
 residentCreatorHome.residents[0].careerXp = 38;
 residentCreatorWorld.advanceMinutes(24 * 60, 0);
@@ -2424,6 +2504,9 @@ console.log(JSON.stringify({
   inheritedPersonality: inheritedPersonality.cleanliness,
   careerBranch: samira.careerBranch,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
+  personalInventory: personalResident.inventory?.map(item => item.kind),
+  ownedFurniture: personalWorld.residentOwnedFurniture(personalHome, personalResident).length,
+  belongingSatisfaction: personalWorld.residentOwnershipSatisfaction(personalHome, personalResident),
   directResidentAction: directControlHome.residents[0].lastActionKind,
   directedActionsCompleted: directControlHome.residents[0].completedActions,
   controlledResidentEnergy: directControlHome.residents[0].energy,
