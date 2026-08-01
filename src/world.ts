@@ -6123,17 +6123,36 @@ export class World {
 
   moveFurnitureGroup(homeId: string, furnitureIds: string[], anchorId: string, x: number, z: number) {
     const home = this.homes.find(item => item.id === homeId);
+    if (!home) return false;
+    const preview = this.previewFurnitureGroupMove(home, furnitureIds, anchorId, x, z);
+    if (!preview.ok) return false;
+    this.checkpoint();
+    for (const placement of preview.placements) {
+      const item = home.furniture.find(candidate => candidate.id === placement.id)!;
+      item.x = placement.x;
+      item.z = placement.z;
+    }
+    return true;
+  }
+
+  previewFurnitureGroupMove(home: Home, furnitureIds: string[], anchorId: string, x: number, z: number) {
     const ids = [...new Set(furnitureIds)];
-    const selected = ids.map(id => home?.furniture.find(item => item.id === id));
-    const anchor = home?.furniture.find(item => item.id === anchorId);
-    if (!home || !anchor || !ids.includes(anchorId) || !ids.length || selected.some(item => !item)) return false;
+    const selected = ids.map(id => home.furniture.find(item => item.id === id));
+    const anchor = home.furniture.find(item => item.id === anchorId);
+    if (!anchor || !ids.includes(anchorId) || !ids.length || selected.some(item => !item)) {
+      return { ok: false, reason: "The furnishing selection is no longer available.", placements: [] as Array<{ id: string; x: number; z: number }> };
+    }
     const floor = homeEntityFloor(anchor);
-    if (selected.some(item => homeEntityFloor(item!) !== floor)) return false;
+    if (selected.some(item => homeEntityFloor(item!) !== floor)) {
+      return { ok: false, reason: "Grouped furnishings must stay on the same floor.", placements: [] as Array<{ id: string; x: number; z: number }> };
+    }
     const dx = x - anchor.x;
     const dz = z - anchor.z;
-    if (Math.abs(dx) < .001 && Math.abs(dz) < .001) return false;
+    if (Math.abs(dx) < .001 && Math.abs(dz) < .001) {
+      return { ok: false, reason: "Choose a different position.", placements: [] as Array<{ id: string; x: number; z: number }> };
+    }
     const workingHome: Home = { ...home, furniture: home.furniture.filter(item => !ids.includes(item.id)) };
-    const placements = selected.map(item => ({ item: item!, x: item!.x + dx, z: item!.z + dz }));
+    const placements = selected.map(item => ({ id: item!.id, item: item!, x: item!.x + dx, z: item!.z + dz }));
     for (const placement of placements) {
       if (!this.canPlaceFurniture(
         workingHome,
@@ -6143,15 +6162,14 @@ export class World {
         placement.item.rotation,
         undefined,
         floor
-      )) return false;
+      )) return { ok: false, reason: "The group would cross a room boundary or overlap another furnishing.", placements: placements.map(({ id, x: nextX, z: nextZ }) => ({ id, x: nextX, z: nextZ })) };
       workingHome.furniture.push({ ...placement.item, x: placement.x, z: placement.z });
     }
-    this.checkpoint();
-    for (const placement of placements) {
-      placement.item.x = placement.x;
-      placement.item.z = placement.z;
-    }
-    return true;
+    return {
+      ok: true,
+      reason: `${placements.length} furnishing${placements.length === 1 ? "" : "s"} fit at this position.`,
+      placements: placements.map(({ id, x: nextX, z: nextZ }) => ({ id, x: nextX, z: nextZ }))
+    };
   }
 
   homeRemainingBudget(home: Home) {
