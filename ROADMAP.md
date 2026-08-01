@@ -397,6 +397,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] Every claimed personal room receives a resident-specific fit score from room purpose, privacy, daylight, condition, decor preference, owned furnishings, and personal collections. The exact factors appear on resident and room cards, while the score replaces part of generic comfort in wellbeing so personalized spaces have a real life-simulation consequence.
 - [Complete] Smart room assignment evaluates every resident-room pairing against life stage, bed capacity, decor preference, owned belongings, daylight, condition, and resulting privacy. It applies a deterministic best-fit household plan in one Undo-safe checkpoint and reports assigned, unassigned, and privacy outcomes immediately.
 - [Complete] Household space planning compares beds, shower capacity, work surfaces, social seats, and total room area with the actual household. A bounded score and severity-ranked, life-stage-aware recommendations appear in both the Home Simulator toolbar and parcel evidence.
+- [Complete] A whole-home safety audit scores ground-floor entry, room circulation, stair continuity, sleeping-room escape windows, clear floor area, and mobility-sensitive egress. Critical hazards and exact corrections appear at home and parcel scales.
 - Add copy, multi-select, eyedropper, room duplication, search, favorites, recolors, and object variants.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 

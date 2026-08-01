@@ -1,6 +1,7 @@
 import {
   HOME_FURNITURE_SIZE,
   homeFloorView,
+  homeRoomExteriorWalls,
   homeSharedWallSegments,
   type AccessibilityEntrance,
   type Home,
@@ -40,6 +41,23 @@ export type HomeCirculation = {
   accessibleWidthShare: number;
   score: number;
   summary: string;
+};
+
+export type HomeSafetyIssue = {
+  kind: "entry" | "circulation" | "stairs" | "sleep-egress" | "clearance" | "accessible-egress";
+  severity: "advisory" | "important" | "critical";
+  label: string;
+  recommendation: string;
+  roomIds: string[];
+};
+
+export type HomeSafetyAudit = {
+  score: number;
+  safe: boolean;
+  egressCoverage: number;
+  circulationScore: number;
+  clearanceShare: number;
+  issues: HomeSafetyIssue[];
 };
 
 export type FurnitureInteraction = {
@@ -166,6 +184,83 @@ export function homeCirculation(home: Home): HomeCirculation {
     summary: connected
       ? `${reachable.size} of ${home.rooms.length} rooms connected · ${accessibleWidthShare}% wide-access openings`
       : `${unreachableRoomIds.length} unreachable room${unreachableRoomIds.length === 1 ? "" : "s"} · ${accessibleWidthShare}% wide-access openings`
+  };
+}
+
+export function homeSafetyAudit(home: Home): HomeSafetyAudit {
+  const circulation = homeCirculation(home);
+  const issues: HomeSafetyIssue[] = [];
+  const groundFloorRooms = home.rooms.filter(room => Math.round(room.floor ?? 0) === 0);
+  if (!groundFloorRooms.length) issues.push({
+    kind: "entry",
+    severity: "critical",
+    label: "No ground-floor entry room",
+    recommendation: "Add a ground-floor room connected to the street entrance.",
+    roomIds: []
+  });
+  if (circulation.unreachableRoomIds.length) issues.push({
+    kind: "circulation",
+    severity: "critical",
+    label: `${circulation.unreachableRoomIds.length} room${circulation.unreachableRoomIds.length === 1 ? " is" : "s are"} cut off from the exit path`,
+    recommendation: "Add interior doorways until every room connects to the ground-floor entry.",
+    roomIds: circulation.unreachableRoomIds
+  });
+  const missingStairLinks = Math.max(0, home.floors - 1 - (home.stairs ?? []).length);
+  if (missingStairLinks) issues.push({
+    kind: "stairs",
+    severity: "critical",
+    label: `${missingStairLinks} floor transition${missingStairLinks === 1 ? "" : "s"} lack stairs`,
+    recommendation: "Add stairs between every occupied floor before residents move upstairs.",
+    roomIds: home.rooms.filter(room => Math.round(room.floor ?? 0) > 0).map(room => room.id)
+  });
+  const sleepingRooms = home.rooms.filter(room => room.kind === "Bedroom" || room.kind === "Nursery" || room.kind === "Studio");
+  const sleepingRoomsWithWindow = sleepingRooms.filter(room => home.windows === undefined
+    ? homeRoomExteriorWalls(home, room).some(wall => wall.end - wall.start >= 1)
+    : home.windows.some(window => window.roomId === room.id && window.width >= .9));
+  const sleepingWithoutEgress = sleepingRooms.filter(room => !sleepingRoomsWithWindow.includes(room));
+  if (sleepingWithoutEgress.length) issues.push({
+    kind: "sleep-egress",
+    severity: "important",
+    label: `${sleepingWithoutEgress.length} sleeping room${sleepingWithoutEgress.length === 1 ? " has" : "s have"} no usable escape window`,
+    recommendation: "Add a window at least 0.9m wide to every Bedroom, Nursery, and Studio.",
+    roomIds: sleepingWithoutEgress.map(room => room.id)
+  });
+  const totalRoomArea = Math.max(1, home.rooms.reduce((total, room) => total + room.width * room.depth, 0));
+  const furnitureArea = home.furniture.reduce((total, item) => {
+    const size = HOME_FURNITURE_SIZE[item.kind];
+    return total + size.width * size.depth;
+  }, 0);
+  const clearanceShare = Math.round(Math.max(0, 1 - furnitureArea / totalRoomArea) * 100);
+  if (clearanceShare < 62) issues.push({
+    kind: "clearance",
+    severity: clearanceShare < 50 ? "critical" : "important",
+    label: `Only ${clearanceShare}% of floor area remains clear`,
+    recommendation: "Move or remove furnishings to keep continuous walking and emergency paths clear.",
+    roomIds: home.rooms.map(room => room.id)
+  });
+  const hasMobilitySensitiveResident = home.residents.some(resident => {
+    const stage = resident.lifeStage ?? (resident.age === "child" ? "child" : "adult");
+    return stage === "infant" || stage === "toddler" || stage === "child" || stage === "elder";
+  });
+  if (hasMobilitySensitiveResident && circulation.doorwayCount > 0 && circulation.accessibleWidthShare < 100) issues.push({
+    kind: "accessible-egress",
+    severity: "advisory",
+    label: "Some household escape routes use standard-width openings",
+    recommendation: "Upgrade interior doorways to wide openings for children, elders, and assisted evacuation.",
+    roomIds: home.rooms.map(room => room.id)
+  });
+  const egressCoverage = sleepingRooms.length ? Math.round(sleepingRoomsWithWindow.length / sleepingRooms.length * 100) : 100;
+  const penalty = issues.reduce((total, issue) => total + (issue.severity === "critical" ? 25 : issue.severity === "important" ? 12 : 6), 0);
+  const score = Math.round(Math.max(0, Math.min(100,
+    100 - penalty - Math.max(0, 70 - circulation.score) * .2 - Math.max(0, 62 - clearanceShare) * .2
+  )));
+  return {
+    score,
+    safe: !issues.some(issue => issue.severity === "critical" || issue.severity === "important"),
+    egressCoverage,
+    circulationScore: circulation.score,
+    clearanceShare,
+    issues
   };
 }
 
