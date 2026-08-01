@@ -58,6 +58,17 @@ export type RoomReadiness = {
   strengths: string[];
 };
 
+export type HomeInspection = {
+  score: number;
+  result: "Passed" | "Conditional" | "Failed";
+  readyRooms: number;
+  totalRooms: number;
+  unsafeRooms: number;
+  corrections: number;
+  priority: string;
+  summary: string;
+};
+
 const ROOM_PURPOSE_REQUIREMENTS: Record<string, { kinds: Home["furniture"][number]["kind"][]; recommendation: string }> = {
   "Living room": { kinds: ["sofa"], recommendation: "Add a sofa for household relaxation and social time." },
   Bedroom: { kinds: ["bed"], recommendation: "Add a bed so this room can support sleep and a resident claim." },
@@ -135,6 +146,31 @@ export function nextRoomReadinessIssue(world: World, home: Home, afterRoomId?: s
   if (!issues.length) return undefined;
   const currentIndex = issues.findIndex(item => item.room.id === afterRoomId);
   return issues[(currentIndex + 1) % issues.length];
+}
+
+export function inspectHome(world: World, home: Home): HomeInspection {
+  const readiness = assessHomeReadiness(world, home);
+  const rooms = home.rooms.map(room => ({ room, readiness: assessRoomReadiness(world, home, room) }));
+  const readyRooms = rooms.filter(item => item.readiness.status === "Ready").length;
+  const unsafeRooms = rooms.filter(item => item.readiness.status === "Unsafe").length;
+  const roomScore = rooms.length
+    ? rooms.reduce((total, item) => total + item.readiness.score, 0) / rooms.length
+    : 0;
+  const score = Math.round(readiness.score * .6 + roomScore * .4);
+  const roomIssues = rooms.flatMap(item => item.readiness.issues);
+  const corrections = new Set([...readiness.priorities.map(item => item.recommendation), ...roomIssues]).size;
+  const nextRoom = nextRoomReadinessIssue(world, home);
+  const priority = readiness.blockers[0]?.recommendation
+    ?? nextRoom?.readiness.issues[0]
+    ?? readiness.priorities[0]?.recommendation
+    ?? "No corrective work remains.";
+  const result = !readiness.ready || unsafeRooms ? "Failed" : readyRooms === rooms.length ? "Passed" : "Conditional";
+  const summary = result === "Passed"
+    ? `${home.name} passes at ${score}% with ${readyRooms} of ${rooms.length} rooms ready.`
+    : result === "Conditional"
+      ? `${home.name} is move-in ready, but ${rooms.length - readyRooms} room${rooms.length - readyRooms === 1 ? " needs" : "s need"} improvement.`
+      : `${home.name} fails inspection with ${unsafeRooms} unsafe room${unsafeRooms === 1 ? "" : "s"} and ${corrections} correction${corrections === 1 ? "" : "s"}.`;
+  return { score, result, readyRooms, totalRooms: rooms.length, unsafeRooms, corrections, priority, summary };
 }
 
 function safetyPriority(issue: HomeSafetyIssue): HomeReadinessPriority {
