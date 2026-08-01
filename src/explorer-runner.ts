@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1840,6 +1840,14 @@ const activeMoveInAuthorization = homeMoveInAuthorization(moveInApprovalWorld, s
 const suspendedMoveInHome = structuredClone(safeHome);
 suspendedMoveInHome.doors = [];
 const suspendedMoveInAuthorization = homeMoveInAuthorization(moveInApprovalWorld, suspendedMoveInHome);
+moveInApprovalWorld.homes = [unsafeHome];
+const pinnedMoveInGoals = pinSuggestedHomeMoveInGoals(moveInApprovalWorld, unsafeHome);
+const unsafeMoveInGoals = homeMoveInGoals(moveInApprovalWorld, unsafeHome);
+const correctedGoalHome = { ...structuredClone(safeHome), moveInGoalKinds: unsafeHome.moveInGoalKinds, moveInGoalsPinnedAt: unsafeHome.moveInGoalsPinnedAt };
+const correctedMoveInGoals = homeMoveInGoals(moveInApprovalWorld, correctedGoalHome);
+const restoredMoveInGoalWorld = new World();
+const restoredMoveInGoals = restoredMoveInGoalWorld.restore(moveInApprovalWorld.serialize());
+moveInApprovalWorld.homes = [safeHome];
 check(
   !unsafeAudit.safe
     && unsafeAudit.egressCoverage === 0
@@ -1870,6 +1878,15 @@ check(
     && restoredMoveInApprovalWorld.restore(moveInApprovalWorld.serialize())
     && restoredMoveInApprovalWorld.homes[0].moveInApprovedScore === safeReadiness.score,
   "Move-in approval did not block unsafe homes, persist, or suspend after a new readiness failure."
+);
+check(
+  pinnedMoveInGoals.ok
+    && unsafeMoveInGoals.some(goal => goal.kind === "safety" && !goal.complete)
+    && correctedMoveInGoals.some(goal => goal.kind === "safety" && goal.complete)
+    && correctedMoveInGoals.some(goal => goal.kind === "organization" && !goal.complete)
+    && restoredMoveInGoals
+    && restoredMoveInGoalWorld.homes[0].moveInGoalKinds?.length === pinnedMoveInGoals.kinds.length,
+  "Pinned move-in goals did not persist or complete from corrected live home evidence."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -4460,6 +4477,7 @@ console.log(JSON.stringify({
   roomDrawingPreview: { valid: validRoomPreview, overlap: overlappingRoomPreview.reason, outside: outsideRoomPreview.reason },
   homeReadiness: { unsafe: unsafeReadiness, safe: safeReadiness },
   homeMoveInDecision: { approved: activeMoveInAuthorization, suspended: suspendedMoveInAuthorization },
+  homeMoveInGoals: { unsafe: unsafeMoveInGoals, corrected: correctedMoveInGoals },
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,

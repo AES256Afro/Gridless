@@ -1222,6 +1222,8 @@ export type HomeDoor = {
 
 export type HomeRoofStyle = "gable" | "hip" | "flat" | "green";
 export type HomeFoundationStyle = "slab" | "crawlspace" | "raised";
+export const HOME_MOVE_IN_GOAL_KINDS = ["safety", "space", "organization", "energy", "privacy", "condition"] as const;
+export type HomeMoveInGoalKind = typeof HOME_MOVE_IN_GOAL_KINDS[number];
 
 export type Home = {
   id: string;
@@ -1245,6 +1247,8 @@ export type Home = {
   discretionarySpent?: number;
   moveInApprovedAt?: number;
   moveInApprovedScore?: number;
+  moveInGoalKinds?: HomeMoveInGoalKind[];
+  moveInGoalsPinnedAt?: number;
   lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
   gatherings?: HouseholdGathering[];
   residents: Resident[];
@@ -4966,6 +4970,17 @@ export class World {
     return true;
   }
 
+  setHomeMoveInGoals(homeId: string, kinds: HomeMoveInGoalKind[]) {
+    const home = this.homes.find(item => item.id === homeId);
+    const normalized = [...new Set(kinds)].filter(kind => HOME_MOVE_IN_GOAL_KINDS.includes(kind)).slice(0, 3);
+    if (!home || !normalized.length || normalized.length !== new Set(kinds).size) return false;
+    if ((home.moveInGoalKinds ?? []).join(",") === normalized.join(",")) return false;
+    this.checkpoint();
+    home.moveInGoalKinds = normalized;
+    home.moveInGoalsPinnedAt = this.clock.elapsedMinutes;
+    return true;
+  }
+
   moveResidentToHome(sourceHomeId: string, residentId: string, destinationHomeId: string) {
     const source = this.homes.find(home => home.id === sourceHomeId);
     const destination = this.homes.find(home => home.id === destinationHomeId);
@@ -6936,6 +6951,10 @@ export class World {
         moveInApprovedScore: home.moveInApprovedScore === undefined
           ? undefined
           : Math.round(clamp(home.moveInApprovedScore, 82, 100)),
+        moveInGoalKinds: [...new Set(home.moveInGoalKinds ?? [])].filter(kind => HOME_MOVE_IN_GOAL_KINDS.includes(kind)).slice(0, 3),
+        moveInGoalsPinnedAt: home.moveInGoalsPinnedAt === undefined
+          ? undefined
+          : Math.round(clamp(home.moveInGoalsPinnedAt, 0, savedElapsedMinutes)),
         lastPurchase: home.lastPurchase && RESIDENT_PURCHASES[home.lastPurchase.kind]
           ? {
               ...home.lastPurchase,

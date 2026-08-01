@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -521,6 +521,7 @@ app.innerHTML = `
       <button id="add-resident">+ Resident</button>
       <button id="auto-assign-rooms" type="button">Smart assign rooms</button>
       <button id="approve-home-move-in" type="button" disabled>Approve move-in</button>
+      <button id="pin-home-move-in-goals" type="button" disabled>Track move-in goals</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
@@ -531,6 +532,7 @@ app.innerHTML = `
       <div class="home-budget" id="home-safety">Safety audit unavailable</div>
       <div class="home-budget" id="home-organization">Organization unavailable</div>
       <div class="home-budget" id="home-readiness">Move-in readiness unavailable</div>
+      <div class="home-budget" id="home-move-in-goals">Move-in goals unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
@@ -5732,6 +5734,7 @@ function updateHomeBuildControls(home: Home | null) {
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const autoAssignRooms = document.querySelector<HTMLButtonElement>("#auto-assign-rooms")!;
   const approveMoveIn = document.querySelector<HTMLButtonElement>("#approve-home-move-in")!;
+  const pinMoveInGoals = document.querySelector<HTMLButtonElement>("#pin-home-move-in-goals")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
@@ -5865,6 +5868,7 @@ function updateHomeBuildControls(home: Home | null) {
   organizationElement.classList.toggle("warning", Boolean(organization && organization.score < 68));
   const readiness = home ? assessHomeReadiness(world, home) : null;
   const moveInAuthorization = home ? homeMoveInAuthorization(world, home) : null;
+  const moveInGoals = home ? homeMoveInGoals(world, home) : [];
   const readinessElement = document.querySelector<HTMLElement>("#home-readiness")!;
   readinessElement.textContent = readiness
     ? `Move-in readiness ${readiness.score}% · ${readiness.status} · ${readiness.blockers.length} blocker${readiness.blockers.length === 1 ? "" : "s"}`
@@ -5876,6 +5880,15 @@ function updateHomeBuildControls(home: Home | null) {
     : moveInAuthorization?.status === "Suspended"
       ? "Reapprove after repairs"
       : readiness?.ready ? "Approve move-in" : "Resolve move-in blockers";
+  pinMoveInGoals.disabled = !home || !readiness?.priorities.length;
+  pinMoveInGoals.textContent = moveInGoals.length
+    ? `Refresh move-in goals · ${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length}`
+    : readiness?.priorities.length ? `Track ${Math.min(3, new Set(readiness.priorities.map(priority => priority.kind)).size)} move-in goals` : "Checklist complete";
+  const moveInGoalsElement = document.querySelector<HTMLElement>("#home-move-in-goals")!;
+  moveInGoalsElement.textContent = moveInGoals.length
+    ? `Move-in goals ${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length} complete · ${moveInGoals.filter(goal => !goal.complete).map(goal => goal.label).join(" · ") || "all tracked goals complete"}`
+    : "No move-in goals pinned";
+  moveInGoalsElement.classList.toggle("warning", moveInGoals.some(goal => !goal.complete));
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -5975,6 +5988,7 @@ function updateHouseholdSummary(home: Home) {
     const organization = world.homeOrganization(home);
     const readiness = assessHomeReadiness(world, home);
     const moveInAuthorization = homeMoveInAuthorization(world, home);
+    const moveInGoals = homeMoveInGoals(world, home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${homeRoomLabel(room)} on Floor ${homeEntityFloor(room) + 1}`);
@@ -6008,6 +6022,7 @@ function updateHouseholdSummary(home: Home) {
         <div title="${organization.storageCapacity} storage for ${organization.possessionDemand} demand · ${organization.clearFloorShare}% clear floor"><span>Organization</span><strong>${organization.score}% · ${organization.status}</strong></div>
         <div title="Safety ${readiness.components.safety}% · circulation ${readiness.components.circulation}% · space ${readiness.components.space}% · organization ${readiness.components.organization}% · energy ${readiness.components.energy}% · privacy ${readiness.components.privacy}% · condition ${readiness.components.condition}%"><span>Move-in readiness</span><strong>${readiness.score}% · ${readiness.status}</strong></div>
         <div title="${moveInAuthorization.reason}"><span>Move-in decision</span><strong>${moveInAuthorization.status}${moveInAuthorization.approvedScore ? ` · ${moveInAuthorization.approvedScore}%` : ""}</strong></div>
+        <div title="${moveInGoals.map(goal => `${goal.label}: ${goal.complete ? "complete" : goal.detail}`).join(" · ") || "No goals pinned"}"><span>Move-in goals</span><strong>${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length || 0} complete</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -6034,6 +6049,16 @@ function updateHouseholdSummary(home: Home) {
           <div class="home-space-recommendation advisory"><strong>${readiness.strengths.join(" · ")}</strong><span>No blocking safety, capacity, or maintenance issues remain.</span></div>
         </section>
       `}
+      ${moveInGoals.length ? `
+        <section class="home-advisor" aria-label="Tracked move-in goals">
+          <div class="relationship-title">Tracked move-in goals · ${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length}</div>
+          ${moveInGoals.map(goal => `
+            <div class="home-space-recommendation ${goal.complete ? "advisory" : "important"}">
+              <strong>${goal.complete ? "Complete" : "Active"} · ${goal.label}</strong><span>${goal.detail}</span>
+            </div>
+          `).join("")}
+        </section>
+      ` : ""}
       ${spacePlan.deficits.length ? `
         <section class="home-advisor" aria-label="Space planning recommendations">
           <div class="relationship-title">Space planning</div>
@@ -9066,6 +9091,13 @@ document.querySelector("#approve-home-move-in")!.addEventListener("click", () =>
   const home = currentHome();
   if (!home) return;
   const result = approveHomeMoveIn(world, home);
+  renderWorld();
+  notice(result.reason);
+});
+document.querySelector("#pin-home-move-in-goals")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home) return;
+  const result = pinSuggestedHomeMoveInGoals(world, home);
   renderWorld();
   notice(result.reason);
 });

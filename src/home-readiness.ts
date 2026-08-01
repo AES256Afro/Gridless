@@ -1,13 +1,20 @@
 import { homeCirculation, homeSafetyAudit, type HomeSafetyIssue } from "./interiors";
-import type { Home, HomeSpaceDeficit, World } from "./world";
+import type { Home, HomeMoveInGoalKind, HomeSpaceDeficit, World } from "./world";
 
 export type HomeReadinessStatus = "Move-in ready" | "Nearly ready" | "Needs work" | "Unsafe";
 
 export type HomeReadinessPriority = {
-  kind: "safety" | "space" | "organization" | "energy" | "privacy" | "condition";
+  kind: HomeMoveInGoalKind;
   severity: "advisory" | "important" | "critical";
   label: string;
   recommendation: string;
+};
+
+export type HomeMoveInGoal = {
+  kind: HomeMoveInGoalKind;
+  label: string;
+  complete: boolean;
+  detail: string;
 };
 
 export type HomeReadiness = {
@@ -179,4 +186,34 @@ export function approveHomeMoveIn(world: World, home: Home) {
     reason: "Move-in approval is already current."
   };
   return { ok: true, readiness, reason: `${home.name} approved for move-in at ${readiness.score}% readiness.` };
+}
+
+const HOME_GOAL_LABELS: Record<HomeMoveInGoalKind, string> = {
+  safety: "Resolve safety and egress",
+  space: "Cover household capacity",
+  organization: "Organize storage and clear floor",
+  energy: "Improve energy performance",
+  privacy: "Provide bedroom privacy",
+  condition: "Restore home condition"
+};
+
+export function homeMoveInGoals(world: World, home: Home): HomeMoveInGoal[] {
+  const readiness = assessHomeReadiness(world, home);
+  return (home.moveInGoalKinds ?? []).map(kind => {
+    const active = readiness.priorities.find(priority => priority.kind === kind);
+    return {
+      kind,
+      label: HOME_GOAL_LABELS[kind],
+      complete: !active,
+      detail: active?.recommendation ?? "Completed from the live home plan."
+    };
+  });
+}
+
+export function pinSuggestedHomeMoveInGoals(world: World, home: Home) {
+  const readiness = assessHomeReadiness(world, home);
+  const kinds = [...new Set(readiness.priorities.map(priority => priority.kind))].slice(0, 3);
+  if (!kinds.length) return { ok: false, reason: "The move-in checklist has no remaining priorities.", kinds };
+  if (!world.setHomeMoveInGoals(home.id, kinds)) return { ok: false, reason: "These move-in goals are already pinned.", kinds };
+  return { ok: true, reason: `${kinds.length} move-in goal${kinds.length === 1 ? "" : "s"} pinned from live home evidence.`, kinds };
 }
