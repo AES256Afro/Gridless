@@ -1,6 +1,7 @@
 import {
   HOUSEHOLD_GATHERING_DEFINITIONS,
   MAX_HOUSEHOLD_GATHERINGS,
+  MAX_RESIDENT_ACTIVITY_PREFERENCES,
   RESIDENT_ASPIRATION_DEFINITIONS,
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
@@ -42,6 +43,7 @@ export type StabilityCheckpoint = {
   completedWorkDays: number;
   averageWorkPerformance: number;
   residentMilestones: number;
+  learnedActivityPreferences: number;
   customersPresent: number;
   privateSectorProfit: number;
   eventOccurrences: number;
@@ -384,6 +386,7 @@ function checkpoint(world: World): StabilityCheckpoint {
       ? Math.round(residents.filter(resident => resident.lastWorkTask).reduce((total, resident) => total + world.residentWorkPerformance(resident), 0) / residents.filter(resident => resident.lastWorkTask).length)
       : 0,
     residentMilestones: residents.reduce((total, resident) => total + (resident.milestones?.length ?? 0), 0),
+    learnedActivityPreferences: residents.reduce((total, resident) => total + world.residentActivityPreferences(resident).length, 0),
     customersPresent: world.lots.reduce((total, lot) => total + world.workplaceActivity(lot).customersPresent, 0),
     privateSectorProfit: economy.privateSectorProfit,
     eventOccurrences: world.cityEvents.reduce((total, event) => total + event.occurrences, 0),
@@ -706,6 +709,7 @@ function integrityFailures(world: World) {
       const routineProfile = world.residentRoutineProfile(resident);
       const routine = world.residentDailySchedule(resident);
       const personalItems = world.residentPersonalItems(resident);
+      const activityPreferences = resident.activityPreferences ?? [];
       if (!VALID_HOME_FURNITURE_STYLES.has(decorPreference)) failures.push(`Resident ${resident.id} has an invalid decor preference.`);
       if (!RESIDENT_PASTIME_DEFINITIONS[pastime]) failures.push(`Resident ${resident.id} has an invalid favorite pastime.`);
       if (!RESIDENT_OUTFIT_DEFINITIONS[outfitStyle] || !RESIDENT_OUTFIT_PALETTES[outfitPalette]) {
@@ -736,6 +740,22 @@ function integrityFailures(world: World) {
           || item.acquiredAt > world.clock.elapsedMinutes
         )
       ) failures.push(`Resident ${resident.id} has an invalid personal inventory.`);
+      if (
+        activityPreferences.length > MAX_RESIDENT_ACTIVITY_PREFERENCES
+        || new Set(activityPreferences.map(preference => preference.action)).size !== activityPreferences.length
+        || activityPreferences.some(preference =>
+          !VALID_RESIDENT_ACTIONS.has(preference.action)
+          || !Number.isInteger(preference.repetitions)
+          || preference.repetitions < 1
+          || preference.repetitions > 10_000
+          || !Number.isInteger(preference.satisfaction)
+          || preference.satisfaction < -100
+          || preference.satisfaction > 100
+          || !Number.isInteger(preference.lastAt)
+          || preference.lastAt < 0
+          || preference.lastAt > world.clock.elapsedMinutes
+        )
+      ) failures.push(`Resident ${resident.id} has invalid learned activity preferences.`);
       const ownershipSatisfaction = world.residentOwnershipSatisfaction(home, resident);
       if (!Number.isInteger(ownershipSatisfaction) || ownershipSatisfaction < 0 || ownershipSatisfaction > 100) {
         failures.push(`Resident ${resident.id} has invalid belonging satisfaction.`);

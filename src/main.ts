@@ -5058,6 +5058,7 @@ function updateHouseholdSummary(home: Home) {
                 ${RESIDENT_PERSONALITY_AXES.map(axis => `<span title="${world.residentPersonalityAxisLabel(axis)}"><b style="width:${personality[axis]}%"></b><small>${world.residentPersonalityAxisLabel(axis).slice(0, 3)} ${personality[axis]}</small></span>`).join("")}
               </div>
               <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
+              <div class="resident-preference">${world.residentActivityPreferenceSummary(resident)}</div>
               <div class="resident-belongings">
                 <span><strong>${world.residentFavoritePastimeLabel(resident)} · ${world.residentDecorPreferenceLabel(resident)} home</strong><small>${personalItems.length ? personalItems.map(item => RESIDENT_PERSONAL_ITEM_DEFINITIONS[item.kind].label).join(" · ") : "No personal collection yet"} · ${ownedFurniture.length} owned ${ownedFurniture.length === 1 ? "furnishing" : "furnishings"}</small></span>
                 <b>${ownershipSatisfaction}% belonging</b>

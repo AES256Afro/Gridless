@@ -397,6 +397,13 @@ export type SocialMemory = {
 
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "study" | "shower" | "socialize" | "tend-plants" | "idle";
 export type ResidentRoutineProfile = "early-bird" | "steady" | "night-owl" | "split-shift" | "flexible";
+export type ResidentActivityPreference = {
+  action: ResidentActionKind;
+  repetitions: number;
+  satisfaction: number;
+  lastAt: number;
+};
+export const MAX_RESIDENT_ACTIVITY_PREFERENCES = 8;
 export type ResidentSkill = "communication" | "creativity" | "wellness" | "practical";
 export type ResidentSkills = Record<ResidentSkill, number>;
 export type ResidentPurchaseKind = "meal-delivery" | "creative-supplies" | "wellness-care";
@@ -468,6 +475,7 @@ export type Resident = {
   outfitStyle?: ResidentOutfitStyle;
   outfitPalette?: ResidentOutfitPalette;
   routineProfile?: ResidentRoutineProfile;
+  activityPreferences?: ResidentActivityPreference[];
   inventory?: ResidentPersonalItem[];
   destinationLotId?: string;
   energy: number;
@@ -3354,6 +3362,47 @@ export class World {
     return `${preferred}${avoided} · ${preference.evidenceCount} remembered ${preference.evidenceCount === 1 ? "moment" : "moments"}`;
   }
 
+  residentActivityPreferences(resident: Resident) {
+    return normalizeResidentActivityPreferences(resident.activityPreferences, this.clock.elapsedMinutes);
+  }
+
+  residentActivityPreferenceBias(resident: Resident, action: ResidentActionKind) {
+    const preference = this.residentActivityPreferences(resident).find(item => item.action === action);
+    if (!preference) return 0;
+    return Math.round(clamp(preference.satisfaction * .22 + Math.min(10, preference.repetitions) * .8, -18, 24));
+  }
+
+  residentActivityLabel(action: ResidentActionKind) {
+    return {
+      sleep: "Sleeping",
+      eat: "Shared meals",
+      relax: "Relaxing",
+      study: "Studying",
+      shower: "Self-care",
+      socialize: "Social time",
+      "tend-plants": "Plant care",
+      idle: "Quiet breaks"
+    }[action];
+  }
+
+  residentActivityPreferenceSummary(resident: Resident) {
+    const preferences = this.residentActivityPreferences(resident);
+    const preferred = preferences
+      .filter(item => item.repetitions >= 2 && item.satisfaction >= 18)
+      .sort((first, second) => second.satisfaction - first.satisfaction || second.repetitions - first.repetitions)[0];
+    const avoided = preferences
+      .filter(item => item.satisfaction <= -8)
+      .sort((first, second) => first.satisfaction - second.satisfaction)[0];
+    if (!preferred && !avoided) return "Personal routine preferences are still forming";
+    const preferredCopy = preferred
+      ? `Returns to ${this.residentActivityLabel(preferred.action).toLowerCase()} after ${preferred.repetitions} satisfying repeats`
+      : "No favorite routine yet";
+    const avoidedCopy = avoided
+      ? ` · avoids ${this.residentActivityLabel(avoided.action).toLowerCase()}`
+      : "";
+    return `${preferredCopy}${avoidedCopy}`;
+  }
+
   relationshipCompatibility(firstResident: Resident, secondResident: Resident) {
     return residentCompatibility(firstResident, secondResident);
   }
@@ -4692,6 +4741,7 @@ export class World {
       outfitPalette: profile?.outfitPalette,
       routineProfile: profile?.routineProfile,
       inventory: [],
+      activityPreferences: [],
       energy: 82,
       social: 68,
       comfort: 74,
@@ -4816,6 +4866,7 @@ export class World {
           generation: Math.round(clamp(resident.generation ?? 1, 1, 100)),
           caregiverIds: [...new Set(resident.caregiverIds ?? [])].slice(0, 2),
           inventory: normalizeResidentInventory(resident.inventory, resident.id, savedElapsedMinutes),
+          activityPreferences: normalizeResidentActivityPreferences(resident.activityPreferences, savedElapsedMinutes),
           milestones: normalizeResidentMilestones(resident.milestones, resident.id, resident.name, savedElapsedMinutes),
           homeFloor: Math.round(clamp(resident.homeFloor ?? 0, 0, normalizedFloors - 1))
         };
@@ -5815,6 +5866,7 @@ export class World {
       candidate.score += hashString(`${resident.id}-${candidate.kind}-${Math.floor(now / 60)}`) % 9;
       candidate.score += residentActionTraitBonus(resident, candidate.kind);
       candidate.score += residentActionPersonalityBonus(resident, candidate.kind);
+      candidate.score += this.residentActivityPreferenceBias(resident, candidate.kind);
       if (candidate.kind === favoriteAction) candidate.score += 16;
       if (inventoryActions.has(candidate.kind)) candidate.score += 6;
       if (
@@ -5846,6 +5898,7 @@ export class World {
   }
 
   private completeResidentAction(home: Home, resident: Resident, action: ResidentAction) {
+    const needScoreBefore = resident.energy + resident.social + resident.comfort + resident.health + (100 - resident.stress);
     if (action.kind === "sleep") {
       resident.energy = clamp(resident.energy + 18, 0, 100);
       resident.health = clamp(resident.health + 3, 0, 100);
@@ -5949,10 +6002,44 @@ export class World {
     if (aspirationGain) {
       this.increaseResidentAspiration(resident, aspirationGain);
     }
+    const needScoreAfter = resident.energy + resident.social + resident.comfort + resident.health + (100 - resident.stress);
+    const favoriteAction = RESIDENT_PASTIME_DEFINITIONS[this.residentFavoritePastime(resident)].action;
+    const targetFurniture = action.targetFurnitureId
+      ? home.furniture.find(item => item.id === action.targetFurnitureId)
+      : undefined;
+    const satisfaction = Math.round(clamp(
+      (needScoreAfter - needScoreBefore) / 2
+      + (favoriteAction === action.kind && action.conversationIntent !== "confront" ? 4 : 0)
+      + (targetFurniture?.ownerResidentId === resident.id ? 3 : 0)
+      - (action.kind === "socialize" && action.conversationIntent === "confront" ? 4 : 0)
+      - (action.kind === "idle" ? 3 : 0),
+      -30,
+      30
+    ));
+    this.rememberResidentActivity(resident, action.kind, satisfaction, action.endsAt);
     resident.lastActionKind = action.kind;
     resident.lastActionAt = action.endsAt;
     resident.completedActions = (resident.completedActions ?? 0) + 1;
     resident.currentAction = undefined;
+  }
+
+  private rememberResidentActivity(
+    resident: Resident,
+    action: ResidentActionKind,
+    satisfaction: number,
+    lastAt: number
+  ) {
+    const preferences = this.residentActivityPreferences(resident);
+    const existing = preferences.find(item => item.action === action);
+    const next: ResidentActivityPreference = {
+      action,
+      repetitions: Math.min(10_000, (existing?.repetitions ?? 0) + 1),
+      satisfaction: Math.round(clamp((existing?.satisfaction ?? 0) + satisfaction, -100, 100)),
+      lastAt: Math.max(0, Math.round(lastAt))
+    };
+    resident.activityPreferences = [next, ...preferences.filter(item => item.action !== action)]
+      .sort((first, second) => second.lastAt - first.lastAt || first.action.localeCompare(second.action))
+      .slice(0, MAX_RESIDENT_ACTIVITY_PREFERENCES);
   }
 
   private updateResidentNeeds(minutes: number) {
@@ -6407,6 +6494,30 @@ function normalizeResidentInventory(
     });
   }
   return normalized;
+}
+
+function normalizeResidentActivityPreferences(
+  preferences: ResidentActivityPreference[] | undefined,
+  elapsedMinutes: number
+): ResidentActivityPreference[] {
+  const supported = new Set<ResidentActionKind>([
+    "sleep", "eat", "relax", "study", "shower", "socialize", "tend-plants", "idle"
+  ]);
+  const seen = new Set<ResidentActionKind>();
+  const normalized: ResidentActivityPreference[] = [];
+  for (const item of Array.isArray(preferences) ? preferences : []) {
+    if (!item || !supported.has(item.action) || seen.has(item.action)) continue;
+    seen.add(item.action);
+    normalized.push({
+      action: item.action,
+      repetitions: Math.round(clamp(Number.isFinite(item.repetitions) ? item.repetitions : 1, 1, 10_000)),
+      satisfaction: Math.round(clamp(Number.isFinite(item.satisfaction) ? item.satisfaction : 0, -100, 100)),
+      lastAt: Math.round(clamp(Number.isFinite(item.lastAt) ? item.lastAt : 0, 0, elapsedMinutes))
+    });
+  }
+  return normalized
+    .sort((first, second) => second.lastAt - first.lastAt || first.action.localeCompare(second.action))
+    .slice(0, MAX_RESIDENT_ACTIVITY_PREFERENCES);
 }
 
 function normalizeHouseholdGatherings(
