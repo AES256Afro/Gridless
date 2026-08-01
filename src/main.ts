@@ -26,6 +26,7 @@ import {
   RESIDENT_PASTIME_DEFINITIONS,
   RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
+  RESIDENT_ROUTINE_DEFINITIONS,
   normalizeRoadProfile,
   homeEntityFloor,
   homeFloorView,
@@ -68,6 +69,7 @@ import {
   type ResidentPersonalItemKind,
   type ResidentPersonality,
   type ResidentPurchaseKind,
+  type ResidentRoutineProfile,
   type ResidentTrait,
   type ServiceKind,
   type SpatialChunk,
@@ -508,6 +510,9 @@ app.innerHTML = `
         <div class="resident-field-row">
           <label class="resident-field">Everyday outfit<select id="resident-outfit-style">${(Object.entries(RESIDENT_OUTFIT_DEFINITIONS) as Array<[ResidentOutfitStyle, (typeof RESIDENT_OUTFIT_DEFINITIONS)[ResidentOutfitStyle]]>).map(([style, definition]) => `<option value="${style}">${definition.label}</option>`).join("")}</select></label>
           <label class="resident-field">Color palette<select id="resident-outfit-palette">${(Object.entries(RESIDENT_OUTFIT_PALETTES) as Array<[ResidentOutfitPalette, (typeof RESIDENT_OUTFIT_PALETTES)[ResidentOutfitPalette]]>).map(([palette, definition]) => `<option value="${palette}">${definition.label}</option>`).join("")}</select></label>
+        </div>
+        <div class="resident-field-row">
+          <label class="resident-field">Daily rhythm<select id="resident-routine-profile">${(Object.entries(RESIDENT_ROUTINE_DEFINITIONS) as Array<[ResidentRoutineProfile, (typeof RESIDENT_ROUTINE_DEFINITIONS)[ResidentRoutineProfile]]>).map(([profile, definition]) => `<option value="${profile}" ${profile === "steady" ? "selected" : ""}>${definition.label}</option>`).join("")}</select></label>
         </div>
         <fieldset class="resident-caregiver-fields" id="resident-caregiver-fields" hidden>
           <legend>Generational continuity</legend>
@@ -4732,6 +4737,7 @@ function updateResidentCreatorPreview() {
   const favoritePastime = document.querySelector<HTMLSelectElement>("#resident-favorite-pastime")!.value as ResidentPastime;
   const outfitStyle = document.querySelector<HTMLSelectElement>("#resident-outfit-style")!.value as ResidentOutfitStyle;
   const outfitPalette = document.querySelector<HTMLSelectElement>("#resident-outfit-palette")!.value as ResidentOutfitPalette;
+  const routineProfile = document.querySelector<HTMLSelectElement>("#resident-routine-profile")!.value as ResidentRoutineProfile;
   const outfitColors = RESIDENT_OUTFIT_PALETTES[outfitPalette];
   const caregiverFields = document.querySelector<HTMLElement>("#resident-caregiver-fields")!;
   caregiverFields.hidden = !dependent;
@@ -4748,7 +4754,7 @@ function updateResidentCreatorPreview() {
         .filter(select => select.value)
         .map(select => select.options[select.selectedIndex]?.text)
     : [];
-  document.querySelector("#resident-preview-copy")!.textContent = `${RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].label} · ${residentRoleLabel(role)} · ${RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].label} · ${RESIDENT_ASPIRATION_DEFINITIONS[aspiration].label} · ${decorPreference} home · ${RESIDENT_PASTIME_DEFINITIONS[favoritePastime].label}${caregiverNames.length ? ` · caregivers ${caregiverNames.join(" + ")}` : ""} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
+  document.querySelector("#resident-preview-copy")!.textContent = `${RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].label} · ${residentRoleLabel(role)} · ${RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].label} · ${RESIDENT_ASPIRATION_DEFINITIONS[aspiration].label} · ${RESIDENT_ROUTINE_DEFINITIONS[routineProfile].label} · ${decorPreference} home · ${RESIDENT_PASTIME_DEFINITIONS[favoritePastime].label}${caregiverNames.length ? ` · caregivers ${caregiverNames.join(" + ")}` : ""} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
   const strongest = RESIDENT_PERSONALITY_AXES
     .map(axis => ({ axis, value: personality[axis], distance: Math.abs(personality[axis] - 50) }))
     .filter(entry => entry.distance > 0)
@@ -4782,6 +4788,7 @@ function openResidentCreator() {
   document.querySelector<HTMLSelectElement>("#resident-favorite-pastime")!.value = "socializing";
   document.querySelector<HTMLSelectElement>("#resident-outfit-style")!.value = "casual";
   document.querySelector<HTMLSelectElement>("#resident-outfit-palette")!.value = "earth";
+  document.querySelector<HTMLSelectElement>("#resident-routine-profile")!.value = "steady";
   const eligibleCaregivers = home.residents.filter(resident => ["young-adult", "adult", "elder"].includes(world.residentLifeStage(resident)));
   for (const selector of ["#resident-caregiver-a", "#resident-caregiver-b"]) {
     const select = document.querySelector<HTMLSelectElement>(selector)!;
@@ -5027,6 +5034,7 @@ function updateHouseholdSummary(home: Home) {
           const outfitStyle = world.residentOutfitStyle(resident);
           const outfitPalette = world.residentOutfitPalette(resident);
           const outfitColors = world.residentOutfitColors(resident);
+          const routineProfile = world.residentRoutineProfile(resident);
           const milestones = world.residentMilestones(resident).slice(0, 3);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
@@ -5041,6 +5049,10 @@ function updateHouseholdSummary(home: Home) {
               <div class="resident-outfit-editor" style="border-left:3px solid #${outfitColors.primary.toString(16).padStart(6, "0")};padding-left:6px" title="${RESIDENT_OUTFIT_DEFINITIONS[outfitStyle].summary}">
                 <label>Outfit<select data-resident-outfit-style="${resident.id}">${(Object.entries(RESIDENT_OUTFIT_DEFINITIONS) as Array<[ResidentOutfitStyle, (typeof RESIDENT_OUTFIT_DEFINITIONS)[ResidentOutfitStyle]]>).map(([style, definition]) => `<option value="${style}" ${style === outfitStyle ? "selected" : ""}>${definition.label}</option>`).join("")}</select></label>
                 <label>Palette<select data-resident-outfit-palette="${resident.id}">${(Object.entries(RESIDENT_OUTFIT_PALETTES) as Array<[ResidentOutfitPalette, (typeof RESIDENT_OUTFIT_PALETTES)[ResidentOutfitPalette]]>).map(([palette, definition]) => `<option value="${palette}" ${palette === outfitPalette ? "selected" : ""}>${definition.label}</option>`).join("")}</select></label>
+              </div>
+              <div class="resident-routine-editor" title="${RESIDENT_ROUTINE_DEFINITIONS[routineProfile].summary}">
+                <label>Daily rhythm<select data-resident-routine-profile="${resident.id}">${(Object.entries(RESIDENT_ROUTINE_DEFINITIONS) as Array<[ResidentRoutineProfile, (typeof RESIDENT_ROUTINE_DEFINITIONS)[ResidentRoutineProfile]]>).map(([profile, definition]) => `<option value="${profile}" ${profile === routineProfile ? "selected" : ""}>${definition.label}</option>`).join("")}</select></label>
+                <small>${world.residentRoutineSummary(resident)}</small>
               </div>
               <div class="resident-personality" aria-label="Personality matrix">
                 ${RESIDENT_PERSONALITY_AXES.map(axis => `<span title="${world.residentPersonalityAxisLabel(axis)}"><b style="width:${personality[axis]}%"></b><small>${world.residentPersonalityAxisLabel(axis).slice(0, 3)} ${personality[axis]}</small></span>`).join("")}
@@ -5161,6 +5173,18 @@ function updateHouseholdSummary(home: Home) {
           renderWorld();
           const changedResident = home.residents.find(resident => resident.id === residentId);
           notice(`${changedResident?.name ?? "Resident"} changed into ${RESIDENT_OUTFIT_DEFINITIONS[style].label.toLowerCase()} in ${RESIDENT_OUTFIT_PALETTES[palette].label.toLowerCase()}`);
+        }
+      });
+    });
+    details.querySelectorAll<HTMLSelectElement>("[data-resident-routine-profile]").forEach(select => {
+      select.addEventListener("change", () => {
+        const residentId = select.dataset.residentRoutineProfile;
+        const profile = select.value as ResidentRoutineProfile;
+        if (!residentId || !RESIDENT_ROUTINE_DEFINITIONS[profile]) return;
+        if (world.setResidentRoutine(home.id, residentId, profile)) {
+          renderWorld();
+          const changedResident = home.residents.find(resident => resident.id === residentId);
+          notice(`${changedResident?.name ?? "Resident"} now follows ${RESIDENT_ROUTINE_DEFINITIONS[profile].label.toLowerCase()}`);
         }
       });
     });
@@ -7333,6 +7357,7 @@ document.querySelector("#resident-decor-preference")!.addEventListener("change",
 document.querySelector("#resident-favorite-pastime")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-outfit-style")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-outfit-palette")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-routine-profile")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-caregiver-a")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-caregiver-b")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-inherit-personality")!.addEventListener("change", updateResidentCreatorPreview);
@@ -7359,6 +7384,7 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
   const favoritePastime = document.querySelector<HTMLSelectElement>("#resident-favorite-pastime")!.value as ResidentPastime;
   const outfitStyle = document.querySelector<HTMLSelectElement>("#resident-outfit-style")!.value as ResidentOutfitStyle;
   const outfitPalette = document.querySelector<HTMLSelectElement>("#resident-outfit-palette")!.value as ResidentOutfitPalette;
+  const routineProfile = document.querySelector<HTMLSelectElement>("#resident-routine-profile")!.value as ResidentRoutineProfile;
   const caregiverIds = [...new Set([
     document.querySelector<HTMLSelectElement>("#resident-caregiver-a")!.value,
     document.querySelector<HTMLSelectElement>("#resident-caregiver-b")!.value
@@ -7370,7 +7396,7 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
     notice("Choose exactly two personality traits");
     return;
   }
-  if (!world.addResident(home.id, { name, age, lifeStage, role, traits, personality, careerTrack, aspiration, caregiverIds, inheritPersonality, decorPreference, favoritePastime, outfitStyle, outfitPalette })) {
+  if (!world.addResident(home.id, { name, age, lifeStage, role, traits, personality, careerTrack, aspiration, caregiverIds, inheritPersonality, decorPreference, favoritePastime, outfitStyle, outfitPalette, routineProfile })) {
     notice("Use a unique name with letters, numbers, spaces, apostrophes, periods, or hyphens");
     return;
   }

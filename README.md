@@ -48,6 +48,7 @@ The current vertical slice proves:
 - Opt-in procedural soundscapes generated in the browser, with quiet regional ambience in City Builder, traffic-responsive streets in City Explorer, sheltered room tone in Home Simulator, and weather plus day/night transitions across all three
 - Persistent street-graph commutes with named resident workplaces, representative walking and driving groups, visible 3D travelers, congestion, and traffic-sensitive staffing and emergency response
 - Persistent resident energy, social, comfort, health, and stress needs shaped by schedules, home design, utilities, neighborhood services, incidents, and commute burden
+- Five editable resident rhythms with recurring weekday, weekend, early, late, split-shift, flexible, outing, and sleep windows shared by home autonomy, workplace attendance, career credit, and household wages
 - Persistent two-trait resident identities plus editable Cleanliness, Spontaneity, Sociability, Emotional intensity, and Activity axes, with visible personality spectra, matrix-weighted autonomy, compatibility, career fit, and deterministic save migration
 - Seven persistent life stages from Infant through Elder with deterministic daily aging, stage-aware school and work roles, caregiver lineage, generation numbers, inherited personality blends, family bonds, and legacy-save migration
 - Bounded resident life stories that remember household arrivals, birthdays, career specializations, promotions, fulfilled aspirations, and personal collections with dated Home Simulator timelines and cross-scale context

@@ -2053,6 +2053,38 @@ check(
     && migratedViabilityWorld.lots.every(lot => lot.businessFinance?.operatingReserve === lot.businesses * 5_000),
   "Legacy lots did not receive safe business finance reserves during migration."
 );
+const earlyRoutineProbe = { ...structuredClone(samira), currentAction: undefined, routineProfile: "early-bird" as const };
+const nightRoutineProbe = { ...structuredClone(samira), currentAction: undefined, routineProfile: "night-owl" as const };
+const splitRoutineProbe = { ...structuredClone(samira), currentAction: undefined, routineProfile: "split-shift" as const };
+const flexibleRoutineProbe = { ...structuredClone(samira), currentAction: undefined, routineProfile: "flexible" as const };
+const earlySchedule = lifeCycleWorld.residentDailySchedule(earlyRoutineProbe, 2 * 1_440);
+const nightSchedule = lifeCycleWorld.residentDailySchedule(nightRoutineProbe, 2 * 1_440);
+const splitSchedule = lifeCycleWorld.residentDailySchedule(splitRoutineProbe, 2 * 1_440);
+const flexibleMonday = lifeCycleWorld.residentDailySchedule(flexibleRoutineProbe, 0);
+const flexibleNextMonday = lifeCycleWorld.residentDailySchedule(flexibleRoutineProbe, 7 * 1_440);
+const weekendSchedule = lifeCycleWorld.residentDailySchedule(nightRoutineProbe, 5 * 1_440);
+check(
+  earlySchedule.workWindows[0].start === 7 * 60
+    && nightSchedule.workWindows[0].start === 10 * 60
+    && splitSchedule.workWindows.length === 2
+    && splitSchedule.workWindows[0].end < splitSchedule.workWindows[1].start
+    && JSON.stringify(flexibleMonday.workWindows) === JSON.stringify(flexibleNextMonday.workWindows)
+    && !weekendSchedule.workingToday
+    && weekendSchedule.workWindows.length === 0
+    && lifeCycleWorld.residentStatusAt(earlyRoutineProbe, 7 * 60 + 30) === "At work"
+    && lifeCycleWorld.residentStatusAt(nightRoutineProbe, 7 * 60 + 30) === "Home"
+    && lifeCycleWorld.residentIsScheduledAsleep(earlyRoutineProbe, 22 * 60)
+    && !lifeCycleWorld.residentIsScheduledAsleep(nightRoutineProbe, 22 * 60)
+    && lifeCycleWorld.residentIsScheduledAsleep(nightRoutineProbe, 2 * 60),
+  "Resident routines did not produce recurring early, late, split, flexible, sleep, and weekend schedules."
+);
+check(
+  lifeCycleWorld.setResidentRoutine(lifeCycleHome.id, samira.id, "night-owl")
+    && lifeCycleWorld.residentRoutineProfile(samira) === "night-owl"
+    && lifeCycleWorld.residentRoutineSummary(samira).includes("Night owl")
+    && !lifeCycleWorld.setResidentRoutine(lifeCycleHome.id, samira.id, "night-owl"),
+  "The household editor did not persist a valid resident routine or reject a no-op change."
+);
 check(
   lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "promotion")
     && lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "career-branch")
@@ -2082,6 +2114,7 @@ check(
     && restoredLifeCycleWorld.homes[0].residents[0].lastWorkTask === samira.lastWorkTask
     && restoredLifeCycleWorld.homes[0].residents[0].workPerformance === samira.workPerformance
     && restoredLifeCycleWorld.homes[0].residents[0].workDaysCompleted === 1
+    && restoredLifeCycleWorld.residentRoutineProfile(restoredLifeCycleWorld.homes[0].residents[0]) === "night-owl"
     && restoredLifeCycleWorld.residentMilestones(restoredLifeCycleWorld.homes[0].residents[0]).some(milestone => milestone.kind === "promotion")
     && restoredLifeCycleWorld.residentMilestones(restoredLifeCycleWorld.homes[0].residents[2]).some(milestone => milestone.kind === "life-stage")
     && restoredLifeCycleWorld.residentAspirationProgress(restoredLifeCycleWorld.homes[0].residents[2]) === familyProgressBeforeConversation + 4,
@@ -2100,6 +2133,7 @@ delete legacyDependent.caregiverIds;
 delete legacyDependent.aspiration;
 delete legacyDependent.careerTrack;
 delete legacyDependent.milestones;
+delete legacyDependent.routineProfile;
 legacyDependent.lifeStageDays = 9_999;
 legacyDependent.lastLifeStageChangeAt = lifeCycleWorld.clock.elapsedMinutes + 9_999;
 const migratedLifeWorld = new World();
@@ -2115,6 +2149,7 @@ check(
     && migratedDependent.caregiverIds?.length === 2
     && migratedLifeWorld.residentMilestones(migratedDependent)[0]?.kind === "arrival"
     && migratedLifeWorld.residentMilestones(migratedDependent)[0]?.occurredAt === 0
+    && migratedLifeWorld.residentRoutineProfile(migratedDependent) === "steady"
     && migratedWorker.lastWorkTask === undefined
     && migratedWorker.workPerformance === undefined
     && migratedWorker.workDaysCompleted === 0
@@ -3099,6 +3134,10 @@ console.log(JSON.stringify({
   businessDailyProfit: retailFinanceProjection.profit,
   businessClosureAt: failedFinance.lastClosureAt,
   privateSectorProfit: lifeCycleWorld.cityEconomy().privateSectorProfit,
+  residentRoutine: lifeCycleWorld.residentRoutineProfile(samira),
+  residentRoutineSummary: lifeCycleWorld.residentRoutineSummary(samira),
+  splitShiftWindows: splitSchedule.workWindows.length,
+  weekendWorkWindows: weekendSchedule.workWindows.length,
   lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
   latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),

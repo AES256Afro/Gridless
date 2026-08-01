@@ -396,6 +396,7 @@ export type SocialMemory = {
 };
 
 export type ResidentActionKind = "sleep" | "eat" | "relax" | "study" | "shower" | "socialize" | "tend-plants" | "idle";
+export type ResidentRoutineProfile = "early-bird" | "steady" | "night-owl" | "split-shift" | "flexible";
 export type ResidentSkill = "communication" | "creativity" | "wellness" | "practical";
 export type ResidentSkills = Record<ResidentSkill, number>;
 export type ResidentPurchaseKind = "meal-delivery" | "creative-supplies" | "wellness-care";
@@ -423,6 +424,30 @@ export type ResidentAction = {
   relationshipCredit?: boolean;
 };
 
+export type ResidentDailySchedule = {
+  profile: ResidentRoutineProfile;
+  dayIndex: number;
+  workingToday: boolean;
+  wakeMinute: number;
+  sleepMinute: number;
+  workWindows: Array<{ start: number; end: number }>;
+  outingWindows: Array<{ start: number; end: number }>;
+};
+
+export const RESIDENT_ROUTINE_DEFINITIONS: Record<ResidentRoutineProfile, {
+  label: string;
+  summary: string;
+  wakeMinute: number;
+  sleepMinute: number;
+  shiftOffset: number;
+}> = {
+  "early-bird": { label: "Early bird", summary: "Starts early and winds down before the city quiets", wakeMinute: 5 * 60 + 30, sleepMinute: 21 * 60 + 30, shiftOffset: -60 },
+  steady: { label: "Steady rhythm", summary: "Keeps a conventional workday and evening routine", wakeMinute: 7 * 60, sleepMinute: 22 * 60 + 30, shiftOffset: 0 },
+  "night-owl": { label: "Night owl", summary: "Starts later and stays active after midnight", wakeMinute: 9 * 60 + 30, sleepMinute: 60, shiftOffset: 120 },
+  "split-shift": { label: "Split shift", summary: "Works two recurring blocks with a long break between", wakeMinute: 6 * 60, sleepMinute: 23 * 60, shiftOffset: 0 },
+  flexible: { label: "Flexible week", summary: "Uses a stable weekday pattern with one-hour start variation", wakeMinute: 7 * 60 + 30, sleepMinute: 23 * 60 + 30, shiftOffset: 0 }
+};
+
 export type Resident = {
   id: string;
   name: string;
@@ -442,6 +467,7 @@ export type Resident = {
   favoritePastime?: ResidentPastime;
   outfitStyle?: ResidentOutfitStyle;
   outfitPalette?: ResidentOutfitPalette;
+  routineProfile?: ResidentRoutineProfile;
   inventory?: ResidentPersonalItem[];
   destinationLotId?: string;
   energy: number;
@@ -478,6 +504,7 @@ export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits">
   favoritePastime?: ResidentPastime;
   outfitStyle?: ResidentOutfitStyle;
   outfitPalette?: ResidentOutfitPalette;
+  routineProfile?: ResidentRoutineProfile;
 };
 
 export const RESIDENT_LIFE_STAGES: ResidentLifeStage[] = [
@@ -2661,9 +2688,7 @@ export class World {
     const assigned = this.residentsAssignedToWorkplace(lot.id);
     const namedWorkersOnShift = assigned.filter(({ resident }) => {
       if (resident.currentAction?.directed && resident.currentAction.endsAt > this.clock.elapsedMinutes) return false;
-      if (resident.role === "office") return hour >= 8 && hour < 18;
-      if (resident.role === "service") return hour >= 6 && hour < 15;
-      return false;
+      return this.residentStatusAt(resident, minute) === "At work";
     }).length;
     const nearbyPopulation = this.lots.reduce((total, candidate) => {
       const proximity = clamp(1 - distance(lot.center, candidate.center) / 180, 0, 1);
@@ -2892,18 +2917,113 @@ export class World {
     }
   }
 
+  residentRoutineProfile(resident: Resident) {
+    return normalizeResidentRoutineProfile(resident.routineProfile, resident);
+  }
+
+  residentDailySchedule(resident: Resident, elapsedMinute = this.clock.elapsedMinutes): ResidentDailySchedule {
+    const profile = this.residentRoutineProfile(resident);
+    const definition = RESIDENT_ROUTINE_DEFINITIONS[profile];
+    const dayIndex = Math.floor(Math.max(0, elapsedMinute) / 1_440) % 7;
+    const workingToday = resident.role !== "home" && dayIndex < 5;
+    const baseWindow = resident.role === "student"
+      ? { start: 8 * 60, end: 16 * 60 }
+      : resident.role === "office"
+        ? { start: 8 * 60, end: 18 * 60 }
+        : resident.role === "service"
+          ? { start: 6 * 60, end: 15 * 60 }
+          : undefined;
+    const flexibleOffset = profile === "flexible"
+      ? (hashString(`${resident.id}:routine:${dayIndex}`) % 3 - 1) * 60
+      : 0;
+    const shiftOffset = definition.shiftOffset + flexibleOffset;
+    const workWindows: Array<{ start: number; end: number }> = [];
+    if (workingToday && baseWindow) {
+      const start = Math.round(clamp(baseWindow.start + shiftOffset, 4 * 60, 13 * 60));
+      const duration = profile === "flexible"
+        ? Math.max(6 * 60, baseWindow.end - baseWindow.start - 60)
+        : baseWindow.end - baseWindow.start;
+      if (profile === "split-shift") {
+        const firstDuration = Math.round(duration / 2);
+        const secondStart = Math.min(21 * 60, start + firstDuration + 5 * 60);
+        workWindows.push(
+          { start, end: start + firstDuration },
+          { start: secondStart, end: Math.min(23 * 60 + 30, secondStart + duration - firstDuration) }
+        );
+      } else {
+        workWindows.push({ start, end: Math.min(23 * 60 + 30, start + duration) });
+      }
+    }
+    const lastWorkEnd = workWindows.at(-1)?.end;
+    const outingStart = lastWorkEnd !== undefined
+      ? Math.min(22 * 60 + 30, lastWorkEnd + 30)
+      : profile === "early-bird"
+        ? 9 * 60
+        : profile === "night-owl"
+          ? 14 * 60
+          : profile === "split-shift"
+            ? 12 * 60
+            : 11 * 60 + flexibleOffset;
+    const outingDuration = lastWorkEnd !== undefined ? 90 : 180;
+    return {
+      profile,
+      dayIndex,
+      workingToday,
+      wakeMinute: definition.wakeMinute,
+      sleepMinute: definition.sleepMinute,
+      workWindows,
+      outingWindows: [{ start: Math.max(0, outingStart), end: Math.min(23 * 60 + 59, outingStart + outingDuration) }]
+    };
+  }
+
+  residentRoutineSummary(resident: Resident) {
+    const schedule = this.residentDailySchedule(resident);
+    const definition = RESIDENT_ROUTINE_DEFINITIONS[schedule.profile];
+    const outing = schedule.outingWindows
+      .map(window => `${formatRoutineMinute(window.start)}-${formatRoutineMinute(window.end)}`)
+      .join(" + ");
+    if (resident.role === "home") {
+      return `${definition.label} · Out ${outing} · sleep ${formatRoutineMinute(schedule.sleepMinute)}-${formatRoutineMinute(schedule.wakeMinute)}`;
+    }
+    const work = schedule.workWindows.length
+      ? schedule.workWindows.map(window => `${formatRoutineMinute(window.start)}-${formatRoutineMinute(window.end)}`).join(" + ")
+      : schedule.workingToday ? "No assigned shift" : "Day off";
+    return `${definition.label} · ${resident.role === "student" ? "School" : "Work"} ${work} · sleep ${formatRoutineMinute(schedule.sleepMinute)}-${formatRoutineMinute(schedule.wakeMinute)}`;
+  }
+
+  residentIsScheduledAsleep(resident: Resident, minute = this.clock.minute) {
+    const schedule = this.residentDailySchedule(resident);
+    return minuteInWrappedWindow(minute, schedule.sleepMinute, schedule.wakeMinute);
+  }
+
+  setResidentRoutine(homeId: string, residentId: string, profile: ResidentRoutineProfile) {
+    const home = this.homes.find(item => item.id === homeId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    if (!home || !resident || !RESIDENT_ROUTINE_DEFINITIONS[profile] || this.residentRoutineProfile(resident) === profile) return false;
+    this.checkpoint();
+    resident.routineProfile = profile;
+    if (!resident.currentAction?.directed) resident.currentAction = undefined;
+    return true;
+  }
+
   residentStatus(resident: Home["residents"][number]) {
-    const hour = this.clock.minute / 60;
+    return this.residentStatusAt(resident, this.clock.minute);
+  }
+
+  residentStatusAt(resident: Home["residents"][number], minute: number) {
     if (
       resident.currentAction?.directed
       && resident.currentAction.endsAt > this.clock.elapsedMinutes
     ) return "Home";
+    const dayStart = Math.floor(this.clock.elapsedMinutes / 1_440) * 1_440;
+    const schedule = this.residentDailySchedule(resident, dayStart + minute);
     const commute = this.commuteForResident(resident);
-    if (commute && this.activeCommutes().some(active => active.flow.id === commute.id)) return "Commuting";
-    if (resident.role === "student") return hour >= 8 && hour < 16 ? "At school" : hour >= 16 && hour < 18 ? "Out in city" : "Home";
-    if (resident.role === "office") return hour >= 8 && hour < 18 ? "At work" : hour >= 18 && hour < 20 ? "Out in city" : "Home";
-    if (resident.role === "service") return hour >= 6 && hour < 15 ? "At work" : hour >= 15 && hour < 17 ? "Out in city" : "Home";
-    return hour >= 11 && hour < 14 ? "Out in city" : "Home";
+    if (schedule.workingToday && minute === this.clock.minute && commute && this.activeCommutes().some(active => active.flow.id === commute.id)) return "Commuting";
+    if (schedule.workWindows.some(window => minute >= window.start && minute < window.end)) {
+      return resident.role === "student" ? "At school" : "At work";
+    }
+    if (schedule.outingWindows.some(window => minute >= window.start && minute < window.end)) return "Out in city";
+    return "Home";
   }
 
   activeResidentAction(resident: Resident) {
@@ -4530,6 +4650,7 @@ export class World {
     if (profile?.favoritePastime && !RESIDENT_PASTIME_DEFINITIONS[profile.favoritePastime]) return false;
     if (profile?.outfitStyle && !RESIDENT_OUTFIT_DEFINITIONS[profile.outfitStyle]) return false;
     if (profile?.outfitPalette && !RESIDENT_OUTFIT_PALETTES[profile.outfitPalette]) return false;
+    if (profile?.routineProfile && !RESIDENT_ROUTINE_DEFINITIONS[profile.routineProfile]) return false;
     const caregiverIds = [...new Set(profile?.caregiverIds ?? [])];
     if (caregiverIds.length > 2) return false;
     const caregivers = caregiverIds.map(id => home.residents.find(resident => resident.id === id)).filter((resident): resident is Resident => Boolean(resident));
@@ -4569,6 +4690,7 @@ export class World {
       favoritePastime: profile?.favoritePastime,
       outfitStyle: profile?.outfitStyle,
       outfitPalette: profile?.outfitPalette,
+      routineProfile: profile?.routineProfile,
       inventory: [],
       energy: 82,
       social: 68,
@@ -4592,6 +4714,7 @@ export class World {
     resident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, resident);
     resident.outfitStyle = normalizeResidentOutfitStyle(resident.outfitStyle, resident);
     resident.outfitPalette = normalizeResidentOutfitPalette(resident.outfitPalette, resident);
+    resident.routineProfile = normalizeResidentRoutineProfile(resident.routineProfile, resident);
     this.recordResidentMilestone(
       resident,
       "arrival",
@@ -4703,6 +4826,7 @@ export class World {
         normalizedResident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, normalizedResident);
         normalizedResident.outfitStyle = normalizeResidentOutfitStyle(resident.outfitStyle, normalizedResident);
         normalizedResident.outfitPalette = normalizeResidentOutfitPalette(resident.outfitPalette, normalizedResident);
+        normalizedResident.routineProfile = normalizeResidentRoutineProfile(resident.routineProfile, normalizedResident);
         if (lifeStage === "young-adult" || lifeStage === "adult") {
           normalizedResident.role = RESIDENT_CAREER_TRACK_DEFINITIONS[normalizedResident.careerTrack].role;
         }
@@ -5275,6 +5399,7 @@ export class World {
       for (const resident of home.residents) {
         const stage = this.residentLifeStage(resident);
         if (resident.role === "student" || stage === "infant" || stage === "toddler" || stage === "child" || stage === "teen" || stage === "elder") continue;
+        if (!this.residentDailySchedule(resident, Math.max(0, this.clock.elapsedMinutes - 1)).workingToday) continue;
         resident.skills = normalizeResidentSkills(resident.skills);
         resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
         const career = RESIDENT_CAREER_TRACK_DEFINITIONS[resident.careerTrack];
@@ -5341,7 +5466,10 @@ export class World {
       const utilityReliability = lot
         ? this.lotUtilityReliability(lot, totalPopulation, effectiveStaffing)
         : 50;
-      const income = home.residents.reduce((total, resident) => total + this.residentDailyWage(resident), 0);
+      const income = home.residents.reduce((total, resident) => {
+        const workedToday = this.residentDailySchedule(resident, Math.max(0, this.clock.elapsedMinutes - 1)).workingToday;
+        return total + (workedToday ? this.residentDailyWage(resident) : 0);
+      }, 0);
       const expenses = Math.round(
         home.residents.length * 32
         + home.rooms.length * (home.residents.length ? 12 : 4)
@@ -5579,7 +5707,7 @@ export class World {
   private chooseResidentAction(home: Home, resident: Resident): ResidentAction {
     const now = this.clock.elapsedMinutes;
     const hour = this.clock.minute / 60;
-    const sleepingHours = hour < 7 || hour >= 22;
+    const sleepingHours = this.residentIsScheduledAsleep(resident, this.clock.minute);
     const availablePartnerMatch = home.residents
       .filter(candidate =>
         candidate.id !== resident.id
@@ -5847,7 +5975,7 @@ export class World {
         const status = this.residentStatus(resident);
         const action = this.activeResidentAction(resident);
         const commuteBurden = this.residentCommuteBurden(resident);
-        const sleepingHours = hour < 7 || hour >= 22;
+        const sleepingHours = this.residentIsScheduledAsleep(resident, this.clock.minute);
         let energyTarget = status === "Home"
           ? sleepingHours ? hasBed ? 96 : 78 : 74
           : status === "Commuting" ? 46
@@ -6162,6 +6290,31 @@ function normalizeHomeFurnitureStyle(style: HomeFurnitureStyle | undefined): Hom
 
 function normalizeResidentLifeStage(stage: ResidentLifeStage | undefined, age: Resident["age"]): ResidentLifeStage {
   return stage && RESIDENT_LIFE_STAGES.includes(stage) ? stage : age === "child" ? "child" : "adult";
+}
+
+function normalizeResidentRoutineProfile(
+  profile: ResidentRoutineProfile | undefined,
+  resident: Pick<Resident, "id" | "role" | "age" | "lifeStage" | "traits" | "personality">
+): ResidentRoutineProfile {
+  if (profile && RESIDENT_ROUTINE_DEFINITIONS[profile]) return profile;
+  const stage = normalizeResidentLifeStage(resident.lifeStage, resident.age);
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (stage === "infant" || stage === "toddler" || stage === "child") return "steady";
+  if (stage === "teen" || resident.traits.includes("creative") || personality.spontaneity >= 74) return "night-owl";
+  if (resident.role === "service" && hashString(`${resident.id}:routine`) % 5 === 0) return "split-shift";
+  if (resident.traits.includes("organized") || personality.cleanliness >= 72 || personality.activity >= 76) return "early-bird";
+  if (personality.spontaneity >= 58) return "flexible";
+  return "steady";
+}
+
+function formatRoutineMinute(minute: number) {
+  const normalized = ((Math.round(minute) % 1_440) + 1_440) % 1_440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
+}
+
+function minuteInWrappedWindow(minute: number, start: number, end: number) {
+  const normalized = ((minute % 1_440) + 1_440) % 1_440;
+  return start <= end ? normalized >= start && normalized < end : normalized >= start || normalized < end;
 }
 
 function lifeStageAge(stage: ResidentLifeStage): Resident["age"] {
