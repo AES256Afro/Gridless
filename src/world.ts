@@ -30,6 +30,7 @@ export type Road = {
   name?: string;
   class?: RoadClass;
   profile?: RoadProfile;
+  developable?: boolean;
 };
 
 export const ROAD_PROFILE_PRESETS: Record<RoadClass, RoadProfile> = {
@@ -125,7 +126,7 @@ function normalizeRoadRecord(road: Road): Road {
 export type Area = {
   id: string;
   name: string;
-  kind: "land" | "park" | "district";
+  kind: "land" | "park" | "water" | "district";
   points: Point2[];
 };
 
@@ -183,7 +184,7 @@ function normalizeTaxRate(rate: number) {
 }
 
 export type WorldTemplate = {
-  id: "nyc" | "blank";
+  id: "nyc" | "chicago" | "blank";
   name: string;
   description: string;
   roads: Road[];
@@ -1015,17 +1016,32 @@ export class World {
         : month <= 8
           ? "summer"
           : "autumn";
-    const seed = hashString(`weather:${year}:${month}:${day}`);
+    const climate = this.templateId === "chicago"
+      ? {
+          monthlyTemperature: [-6, -4, 3, 10, 17, 23, 26, 25, 20, 12, 4, -3],
+          wetThreshold: { winter: 32, spring: 42, summer: 37, autumn: 36 } as Record<Season, number>,
+          snowThreshold: 25,
+          windBase: 12
+        }
+      : {
+          monthlyTemperature: [-1, 1, 6, 12, 18, 23, 26, 25, 21, 14, 8, 2],
+          wetThreshold: { winter: 30, spring: 42, summer: 34, autumn: 38 } as Record<Season, number>,
+          snowThreshold: 18,
+          windBase: 6
+        };
+    const seed = hashString(this.templateId === "nyc"
+      ? `weather:${year}:${month}:${day}`
+      : `weather:${this.templateId}:${year}:${month}:${day}`);
     const roll = seed % 100;
-    const wetThreshold = season === "summer" ? 34 : season === "spring" ? 42 : season === "autumn" ? 38 : 30;
-    const kind: WeatherKind = season === "winter" && roll < 18
+    const wetThreshold = climate.wetThreshold[season];
+    const kind: WeatherKind = season === "winter" && roll < climate.snowThreshold
       ? "snow"
       : roll < wetThreshold
         ? "rain"
         : roll < wetThreshold + 27
           ? "cloudy"
           : "clear";
-    const monthlyTemperature = [-1, 1, 6, 12, 18, 23, 26, 25, 21, 14, 8, 2][month - 1];
+    const monthlyTemperature = climate.monthlyTemperature[month - 1];
     const temperatureC = monthlyTemperature + Math.floor(seed / 101) % 9 - 4;
     const precipitation = kind === "rain" ? .72 + (seed % 19) / 100 : kind === "snow" ? .58 + (seed % 17) / 100 : 0;
     const visibility = kind === "rain" ? .58 : kind === "snow" ? .66 : kind === "cloudy" ? .82 : 1;
@@ -1040,7 +1056,7 @@ export class World {
       season,
       label: labels[kind],
       temperatureC,
-      windKph: 6 + Math.floor(seed / 17) % 27,
+      windKph: climate.windBase + Math.floor(seed / 17) % 27,
       precipitation,
       visibility
     };
@@ -3268,7 +3284,7 @@ export class World {
     const template = WORLD_TEMPLATES[id];
     if (!template) return false;
     this.checkpoint();
-    this.cityName = id === "nyc" ? "New Gridless City" : "Untitled Region";
+    this.cityName = id === "nyc" ? "New Gridless City" : id === "chicago" ? "New Lakeshore City" : "Untitled Region";
     this.templateId = id;
     this.roads = clone(template.roads).map(normalizeRoadRecord);
     this.areas = clone(template.areas);
@@ -3911,10 +3927,13 @@ export class World {
       && /^[\p{L}\p{N} .'-]+$/u.test(savedCityName)
       ? savedCityName
       : "New Gridless City";
-    this.templateId = snapshot.templateId ?? "nyc";
+    const savedTemplateId = snapshot.templateId;
+    this.templateId = savedTemplateId && Object.prototype.hasOwnProperty.call(WORLD_TEMPLATES, savedTemplateId)
+      ? savedTemplateId
+      : "nyc";
     this.spatialChunkSize = Math.round(clamp(snapshot.spatialChunkSize ?? 256, 128, 1024));
     this.roads = clone(snapshot.roads).map(normalizeRoadRecord);
-    this.areas = clone(snapshot.areas ?? NYC_TEMPLATE.areas);
+    this.areas = clone(snapshot.areas ?? WORLD_TEMPLATES[this.templateId].areas);
     this.lots = clone(snapshot.lots).map(lot => {
       const zone = lot.zone ?? "unassigned";
       const seed = hashString(lot.id);
@@ -4227,6 +4246,7 @@ export class World {
     }]));
     const lots: Lot[] = [];
     for (const road of this.roads) {
+      if (road.developable === false) continue;
       const curve = new THREE.CatmullRomCurve3(road.points.map(p => new THREE.Vector3(p.x, 0, p.z)), false, "centripetal");
       const length = curve.getLength();
       const count = Math.max(1, Math.floor(length / 28));
@@ -4239,10 +4259,11 @@ export class World {
           const offset = road.width / 2 + 10;
           const x = center.x + tangent.z * side * offset;
           const z = center.z - tangent.x * side * offset;
-          if (this.areas.some(area => area.kind === "park" && pointInPolygon({ x, z }, area.points))) continue;
+          if (this.areas.some(area => (area.kind === "park" || area.kind === "water") && pointInPolygon({ x, z }, area.points))) continue;
           if (lots.some(lot => Math.hypot(lot.center.x - x, lot.center.z - z) < 16)) continue;
           const id = `${road.id}-${i}-${side}`;
-          const zone = existingZones.get(id) ?? (road.id.startsWith("nyc-") ? inferTemplateZone(this.templateId, x, z) : "unassigned");
+          const isTemplateRoad = road.id.startsWith("nyc-") || road.id.startsWith("chicago-");
+          const zone = existingZones.get(id) ?? (isTemplateRoad ? inferTemplateZone(this.templateId, x, z) : "unassigned");
           const seed = hashString(id);
           const households = existingActivity.get(id)?.households ?? initialHouseholds(zone, seed);
           const businesses = existingActivity.get(id)?.businesses ?? initialBusinesses(zone, seed);
@@ -5700,6 +5721,13 @@ function serviceShiftFactor(kind: ServiceKind, hour: number) {
 
 function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number): Zone {
   if (templateId === "blank") return "unassigned";
+  if (templateId === "chicago") {
+    if (x > -105 && x < 70 && z > -95 && z < 65) return "commercial";
+    if ((x < -230 && Math.abs(z) < 105) || (z < -245 && x < -120)) return "industrial";
+    if (x > -175 && z > -145 && z < 145) return "mixed";
+    if (x > 35 && z > -200) return "mixed";
+    return "residential";
+  }
   if (z < -245) return Math.abs(x) < 78 ? "mixed" : "commercial";
   if (z < 72) return Math.abs(x) < 62 ? "commercial" : "mixed";
   if (z > 315) return "residential";
@@ -5707,13 +5735,14 @@ function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number
 }
 
 function initialCityEvents(roads: Road[]): CityEvent[] {
-  const road = roads.find(item => item.id === "nyc-broadway");
+  const chicago = roads.some(item => item.id.startsWith("chicago-"));
+  const road = roads.find(item => item.id === (chicago ? "chicago-state" : "nyc-broadway"));
   if (!road?.points.length) return [];
   const definition = CITY_EVENT_DEFINITIONS.market;
   const position = clone(road.points[Math.floor(road.points.length / 2)]);
   return [{
-    id: "template-event-broadway-market",
-    name: "Broadway Night Market",
+    id: chicago ? "template-event-state-street-arts" : "template-event-broadway-market",
+    name: chicago ? "State Street Arts Walk" : "Broadway Night Market",
     kind: "market",
     position,
     startAt: 10 * 60,
@@ -5733,11 +5762,21 @@ function initialCityEvents(roads: Road[]): CityEvent[] {
 }
 
 function initialParking(roads: Road[]): ParkingFacility[] {
-  const choices = [
-    { roadId: "nyc-avenue-1", progress: .24, side: -1 },
-    { roadId: "nyc-avenue-3", progress: .52, side: 1 },
-    { roadId: "nyc-avenue-5", progress: .76, side: -1 }
-  ];
+  const preferredRoadIds = roads.some(road => road.id.startsWith("chicago-"))
+    ? ["chicago-state", "chicago-lake", "chicago-milwaukee"]
+    : ["nyc-avenue-1", "nyc-avenue-3", "nyc-avenue-5"];
+  const fallbackRoadIds = roads
+    .filter(road => road.points.length > 1)
+    .sort((first, second) => routeLength(second.points) - routeLength(first.points))
+    .map(road => road.id);
+  const selectedRoadIds = [...new Set([...preferredRoadIds, ...fallbackRoadIds])]
+    .filter(roadId => roads.some(road => road.id === roadId))
+    .slice(0, 3);
+  const choices = selectedRoadIds.map((roadId, index) => ({
+    roadId,
+    progress: [.24, .52, .76][index],
+    side: index % 2 ? 1 : -1
+  }));
   return choices.flatMap((choice, index) => {
     const road = roads.find(item => item.id === choice.roadId);
     if (!road || road.points.length < 2) return [];

@@ -5,6 +5,7 @@ import { ProceduralSoundscape, soundscapeProfile } from "./soundscape";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { recordActivity, type ActivityEntry } from "./activity";
+import { WORLD_TEMPLATES } from "./templates";
 import {
   CITY_EVENT_DEFINITIONS,
   DISTRICT_POLICY_DEFINITIONS,
@@ -198,12 +199,13 @@ app.innerHTML = `
       <div>
         <div class="eyebrow">REGION FOUNDATION</div>
         <strong>Start structured, change anything</strong>
+        <small id="region-foundation-summary">Manhattan-inspired density, waterfront, park, and diagonal street logic.</small>
       </div>
       <input id="city-name-input" aria-label="City name" maxlength="40" value="New Gridless City">
       <button id="rename-city" type="button">Rename</button>
       <select id="template-select" aria-label="Region template">
         <option value="nyc">New York City foundation</option>
-        <option disabled>Chicago foundation · planned</option>
+        <option value="chicago">Chicago foundation</option>
         <option disabled>Houston foundation · planned</option>
         <option disabled>Seattle foundation · planned</option>
         <option disabled>Portland foundation · planned</option>
@@ -638,7 +640,7 @@ const ground = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
 );
 ground.rotation.x = -Math.PI / 2;
-const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x6e919b, roughness: .62, metalness: .08 });
+const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x6e919b, roughness: .62, metalness: .08, side: THREE.DoubleSide });
 const water = new THREE.Mesh(
   new THREE.PlaneGeometry(1800, 1800),
   waterMaterial
@@ -679,6 +681,7 @@ scene.add(
   transitFleetGroup
 );
 const world = new World();
+let pendingTemplateId: keyof typeof WORLD_TEMPLATES = world.templateId;
 const soundscape = new ProceduralSoundscape();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -2205,6 +2208,9 @@ function renderWorld() {
   syncEconomyControls();
   const cityNameInput = document.querySelector<HTMLInputElement>("#city-name-input")!;
   if (document.activeElement !== cityNameInput) cityNameInput.value = world.cityName;
+  const templateSelect = document.querySelector<HTMLSelectElement>("#template-select")!;
+  templateSelect.value = pendingTemplateId;
+  document.querySelector("#region-foundation-summary")!.textContent = WORLD_TEMPLATES[pendingTemplateId].description;
   document.title = `${world.cityName} · Gridless`;
   if (selectedLot) selectedLot = world.lots.find(lot => lot.id === selectedLot!.id) ?? null;
   if (!explorerDriving && world.playerVehicle) {
@@ -2954,14 +2960,16 @@ function renderTerrain() {
     shape.closePath();
     const surface = new THREE.Mesh(
       new THREE.ShapeGeometry(shape),
-      new THREE.MeshStandardMaterial({
-        color: area.kind === "park" ? seasonalParkColor : seasonalLandColor,
-        roughness: 1,
-        side: THREE.DoubleSide
-      })
+      area.kind === "water"
+        ? waterMaterial
+        : new THREE.MeshStandardMaterial({
+            color: area.kind === "park" ? seasonalParkColor : seasonalLandColor,
+            roughness: 1,
+            side: THREE.DoubleSide
+          })
     );
     surface.rotation.x = Math.PI / 2;
-    surface.position.y = area.kind === "park" ? .08 : -.02;
+    surface.position.y = area.kind === "park" ? .08 : area.kind === "water" ? .02 : -.02;
     surface.receiveShadow = true;
     terrainGroup.add(surface);
     if (area.kind === "park") {
@@ -6908,11 +6916,13 @@ function scheduleAutosave(force = false) {
 }
 function applyUndo() {
   if (!world.undo()) return;
+  pendingTemplateId = world.templateId;
   renderWorld();
   notice("Change undone");
 }
 function applyRedo() {
   if (!world.redo()) return;
+  pendingTemplateId = world.templateId;
   renderWorld();
   notice("Change restored");
 }
@@ -6925,12 +6935,14 @@ document.querySelector("#save")!.addEventListener("click", () => {
 });
 document.querySelector("#load")!.addEventListener("click", () => {
   const loaded = world.load();
+  if (loaded) pendingTemplateId = world.templateId;
   notice(loaded ? "Saved city loaded" : "No saved city found");
   renderWorld();
   updateSaveStatus(loaded ? `Manual save loaded · ${saveStatusTime()}` : "No manual save found", loaded ? "saved" : "idle");
 });
 document.querySelector("#recover-autosave")!.addEventListener("click", () => {
   const recovered = world.loadAutosave();
+  if (recovered) pendingTemplateId = world.templateId;
   notice(recovered ? "Autosave recovered. Undo returns to the previous state." : "No autosave found");
   renderWorld();
   updateSaveStatus(recovered ? `Recovery loaded · ${saveStatusTime()}` : "No recovery found", recovered ? "saved" : "idle");
@@ -6940,6 +6952,11 @@ if (world.hasAutosave()) updateSaveStatus("Recovery available", "saved");
 addEventListener("beforeunload", () => world.saveAutosave());
 let templateResetArmed = false;
 let templateResetTimer = 0;
+document.querySelector("#template-select")!.addEventListener("change", event => {
+  const value = (event.currentTarget as HTMLSelectElement).value as keyof typeof WORLD_TEMPLATES;
+  pendingTemplateId = value;
+  document.querySelector("#region-foundation-summary")!.textContent = WORLD_TEMPLATES[value].description;
+});
 document.querySelector("#apply-template")!.addEventListener("click", event => {
   const button = event.currentTarget as HTMLButtonElement;
   if (!templateResetArmed) {
@@ -6956,12 +6973,12 @@ document.querySelector("#apply-template")!.addEventListener("click", event => {
   templateResetArmed = false;
   clearTimeout(templateResetTimer);
   button.textContent = "Start new region";
-  const value = (document.querySelector("#template-select") as HTMLSelectElement).value as "nyc" | "blank";
+  const value = pendingTemplateId;
   if (!world.applyTemplate(value)) return;
   selectedLot = null;
   renderWorld();
   setMode("city");
-  notice(value === "nyc" ? "NYC foundation loaded. Every road remains editable." : "Blank region loaded");
+  notice(value === "blank" ? "Blank region loaded" : `${WORLD_TEMPLATES[value].name} loaded. Every road remains editable.`);
 });
 
 const clock = new THREE.Clock();
