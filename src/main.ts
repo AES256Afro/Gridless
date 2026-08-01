@@ -565,6 +565,7 @@ app.innerHTML = `
       <button id="assign-room-resident">Assign room</button>
       <button id="renovate-room">Renovate</button>
       <button id="furnish-room">Furnish room</button>
+      <button id="duplicate-room">Duplicate room</button>
       <button id="delete-room">Delete room</button>
     </div>
     <div class="resident-creator" id="resident-creator" role="dialog" aria-modal="true" aria-labelledby="resident-creator-title" hidden>
@@ -5801,6 +5802,12 @@ function updateRoomEditor(home: Home | null) {
   assignButton.disabled = !roomCapacity || !home.residents.length;
   assignButton.textContent = assignedIds.length ? "Update room claim" : "Assign room";
   const deleteButton = document.querySelector<HTMLButtonElement>("#delete-room")!;
+  const duplicateButton = document.querySelector<HTMLButtonElement>("#duplicate-room")!;
+  const duplicatePreview = world.previewRoomDuplicate(home, room.id);
+  duplicateButton.disabled = !duplicatePreview || world.homeRemainingBudget(home) < duplicatePreview.cost;
+  duplicateButton.textContent = duplicatePreview
+    ? `Duplicate · ${formatHomeCurrency(duplicatePreview.cost)}`
+    : "No adjacent space";
   const floorRoomCount = home.rooms.filter(candidate => homeEntityFloor(candidate) === homeEntityFloor(room)).length;
   deleteButton.disabled = floorRoomCount <= 1;
   deleteButton.textContent = floorRoomCount <= 1 ? "Keep one room on floor" : "Delete room · 25% refund";
@@ -8740,6 +8747,21 @@ document.querySelector("#furnish-room")!.addEventListener("click", () => {
   notice(result.placed
     ? `${room.kind} furnished with ${result.placed} object${result.placed === 1 ? "" : "s"} for ${formatHomeCurrency(result.spent)}${result.skipped ? ` · ${result.skipped} could not fit` : ""}`
     : `No new ${room.kind.toLowerCase()} objects fit the room and remaining budget`);
+});
+document.querySelector("#duplicate-room")!.addEventListener("click", () => {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  if (!home || !room) return;
+  const result = world.duplicateRoom(home.id, room.id);
+  if (!result.ok) {
+    renderHome();
+    notice(result.reason);
+    return;
+  }
+  selectedRoomId = result.roomId ?? null;
+  selectedFurnitureId = null;
+  renderWorld();
+  notice(result.reason);
 });
 document.querySelector("#delete-room")!.addEventListener("click", () => {
   const home = currentHome();
