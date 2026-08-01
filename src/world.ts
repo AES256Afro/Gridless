@@ -5210,14 +5210,40 @@ export class World {
 
   addRoom(homeId: string, room: Omit<Home["rooms"][number], "id">) {
     const home = this.homes.find(item => item.id === homeId);
-    const floor = Math.round(room.floor ?? 0);
-    if (!home || room.width < 2 || room.depth < 2 || !Number.isInteger(floor) || floor < 0 || floor >= home.floors) return false;
-    const cost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
-    if (this.homeRemainingBudget(home) < cost) return false;
+    if (!home) return false;
+    const preview = this.previewHomeRoom(home, room);
+    if (!preview.ok) return false;
     this.checkpoint();
-    home.rooms.push({ id: crypto.randomUUID(), floorFinish: "oak", wallFinish: "warm-white", ...clone(room), floor, condition: 100 });
-    home.designSpent += cost;
+    home.rooms.push({ id: crypto.randomUUID(), floorFinish: "oak", wallFinish: "warm-white", ...clone(room), floor: preview.floor, condition: 100 });
+    home.designSpent += preview.cost;
     return true;
+  }
+
+  previewHomeRoom(home: Home, room: Omit<Home["rooms"][number], "id">) {
+    const floor = Math.round(room.floor ?? 0);
+    const area = Math.round(room.width * room.depth * 10) / 10;
+    const cost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
+    if (room.width < 2 || room.depth < 2) {
+      return { ok: false, reason: "Rooms must be at least 2m by 2m.", floor, area, cost };
+    }
+    if (!Number.isInteger(floor) || floor < 0 || floor >= home.floors) {
+      return { ok: false, reason: "Choose an existing home floor.", floor, area, cost };
+    }
+    const lot = this.lots.find(item => item.id === home.lotId);
+    if (lot && (
+      Math.abs(room.x) + room.width / 2 > lot.width / 2
+      || Math.abs(room.z) + room.depth / 2 > lot.depth / 2
+    )) return { ok: false, reason: "The room footprint crosses the parcel boundary.", floor, area, cost };
+    const overlap = home.rooms.some(other =>
+      homeEntityFloor(other) === floor
+      && Math.abs(room.x - other.x) < (room.width + other.width) / 2 - .05
+      && Math.abs(room.z - other.z) < (room.depth + other.depth) / 2 - .05
+    );
+    if (overlap) return { ok: false, reason: "The room footprint overlaps an existing room on this floor.", floor, area, cost };
+    if (this.homeRemainingBudget(home) < cost) {
+      return { ok: false, reason: `$${cost.toLocaleString()} needed with $${this.homeRemainingBudget(home).toLocaleString()} remaining.`, floor, area, cost };
+    }
+    return { ok: true, reason: `${area} m² room fits on Floor ${floor + 1}.`, floor, area, cost };
   }
 
   previewRoomDuplicate(home: Home, roomId: string) {
