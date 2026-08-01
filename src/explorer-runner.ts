@@ -557,6 +557,101 @@ check(
   "A legacy Chicago save without area geometry did not recover its regional terrain."
 );
 
+const houstonWorld = new World();
+check(
+  houstonWorld.applyTemplate("houston")
+    && houstonWorld.cityName === "New Bayou City"
+    && houstonWorld.templateId === "houston",
+  "The Houston foundation did not reset world and city identity."
+);
+check(
+  houstonWorld.roads.length === 24
+    && houstonWorld.areas.filter(area => area.kind === "water").length === 2
+    && houstonWorld.areas.filter(area => area.kind === "floodplain").length === 3
+    && houstonWorld.areas.filter(area => area.kind === "park").length === 2
+    && houstonWorld.areas.filter(area => area.kind === "district").length === 4,
+  "The Houston foundation lost its bayous, floodplains, parks, districts, or road structure."
+);
+const houstonI10 = houstonWorld.roads.find(road => road.id === "houston-i10")!;
+const houstonFrontage = houstonWorld.roads.find(road => road.id === "houston-i10-frontage-1")!;
+check(
+  houstonI10.developable === false
+    && houstonI10.profile?.travelLanes === 8
+    && houstonI10.profile.speedLimitKph === 100
+    && houstonFrontage.developable !== false
+    && houstonFrontage.profile?.travelLanes === 3
+    && !houstonWorld.lots.some(lot => lot.roadId === houstonI10.id)
+    && houstonWorld.lots.some(lot => lot.roadId === houstonFrontage.id),
+  "Houston freeway and frontage-road hierarchy did not control profiles and parcel access."
+);
+const houstonRiskCounts = { none: 0, moderate: 0, high: 0 };
+houstonWorld.lots.forEach(lot => houstonRiskCounts[houstonWorld.lotFloodRisk(lot)] += 1);
+const houstonZones = new Set(houstonWorld.lots.map(lot => lot.zone));
+check(
+  houstonWorld.lots.length > 700
+    && houstonRiskCounts.none > 0
+    && houstonRiskCounts.moderate > 0
+    && houstonRiskCounts.high > 0
+    && houstonZones.has("unassigned")
+    && houstonZones.has("residential")
+    && houstonZones.has("commercial")
+    && houstonZones.has("mixed")
+    && houstonZones.has("industrial"),
+  "Houston did not create large parcels, flexible land use, or three distinct flood-exposure states."
+);
+const houstonSafeLot = houstonWorld.lots.find(lot => houstonWorld.lotFloodRisk(lot) === "none")!;
+const houstonSafeLandValue = houstonWorld.lotLandValue(houstonSafeLot);
+houstonWorld.areas.push({
+  id: "test-high-risk",
+  name: "Test floodplain",
+  kind: "floodplain",
+  floodRisk: "high",
+  points: [
+    { x: houstonSafeLot.center.x - 2, z: houstonSafeLot.center.z - 2 },
+    { x: houstonSafeLot.center.x + 2, z: houstonSafeLot.center.z - 2 },
+    { x: houstonSafeLot.center.x + 2, z: houstonSafeLot.center.z + 2 },
+    { x: houstonSafeLot.center.x - 2, z: houstonSafeLot.center.z + 2 }
+  ]
+});
+check(
+  houstonWorld.lotFloodRisk(houstonSafeLot) === "high"
+    && houstonWorld.lotLandValue(houstonSafeLot) === Math.max(0, houstonSafeLandValue - 14),
+  "High flood exposure did not apply its explicit land-value pressure."
+);
+houstonWorld.areas.pop();
+check(
+  houstonWorld.transitLines[0]?.name === "Main Street Rapid H1"
+    && houstonWorld.transitLines[0].stops.some(stop => stop.name === "Downtown")
+    && houstonWorld.parking.length === 3
+    && houstonWorld.cityEvents[0]?.name === "Buffalo Bayou Festival"
+    && houstonWorld.cityEvents[0].kind === "concert",
+  "The Houston foundation did not seed its local transit, parking, and bayou event."
+);
+const houstonWeather = houstonWorld.weather();
+const matchingHoustonWorld = new World();
+matchingHoustonWorld.applyTemplate("houston");
+check(
+  houstonWeather.temperatureC > matchingWeatherWorld.weather().temperatureC
+    && houstonWeather.kind !== "snow"
+    && JSON.stringify(houstonWeather) === JSON.stringify(matchingHoustonWorld.weather()),
+  "Houston climate was not warmer, snow-free, and deterministic on the reference winter date."
+);
+const restoredHoustonWorld = new World();
+check(
+  restoredHoustonWorld.restore(houstonWorld.serialize())
+    && restoredHoustonWorld.templateId === "houston"
+    && restoredHoustonWorld.roads.some(road => road.id === "houston-loop-610")
+    && restoredHoustonWorld.areas.some(area => area.kind === "floodplain" && area.floodRisk === "high"),
+  "Houston regional identity, freeway geometry, or floodplain evidence was lost during persistence."
+);
+const legacyHoustonSnapshot = JSON.parse(houstonWorld.serialize());
+delete legacyHoustonSnapshot.areas;
+check(
+  restoredHoustonWorld.restore(JSON.stringify(legacyHoustonSnapshot))
+    && restoredHoustonWorld.areas.some(area => area.kind === "water" && area.name === "Buffalo Bayou"),
+  "A legacy Houston save without area geometry did not recover its regional terrain."
+);
+
 const householdIdentityWorld = new World();
 const householdIdentityHome = householdIdentityWorld.ensureHome(householdIdentityWorld.lots[0]);
 check(!householdIdentityWorld.setHomeName(householdIdentityHome.id, "<home>"), "Home identity accepted unsafe markup characters.");

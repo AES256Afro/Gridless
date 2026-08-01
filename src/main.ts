@@ -122,7 +122,7 @@ type HomeFurnitureKind = Home["furniture"][number]["kind"];
 type HomeTool = "select" | "room" | "stairs" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
-type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value";
+type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment";
 const HOME_FURNITURE_KINDS: HomeFurnitureKind[] = ["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"];
 const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_FURNITURE_KINDS.includes(value as HomeFurnitureKind);
@@ -206,7 +206,7 @@ app.innerHTML = `
       <select id="template-select" aria-label="Region template">
         <option value="nyc">New York City foundation</option>
         <option value="chicago">Chicago foundation</option>
-        <option disabled>Houston foundation · planned</option>
+        <option value="houston">Houston foundation</option>
         <option disabled>Seattle foundation · planned</option>
         <option disabled>Portland foundation · planned</option>
         <option value="blank">Blank region</option>
@@ -396,6 +396,7 @@ app.innerHTML = `
         <button data-city-view="utilities">Utilities</button>
         <button data-city-view="wellbeing">Wellbeing</button>
         <button data-city-view="land-value">Land value</button>
+        <button data-city-view="environment">Environment</button>
         <button data-city-view="development">Development</button>
         <div class="city-view-legend" id="city-view-legend"><i></i><span>Natural city colors</span></div>
       </div>
@@ -2085,6 +2086,7 @@ function lotPlanningValue(
   if (view === "utilities") return world.lotUtilityReliability(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "wellbeing") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "land-value") return world.lotLandValue(lot, totalPopulation, effectiveStaffing) / 100;
+  if (view === "environment") return 1 - world.lotFloodRiskScore(lot);
   if (view === "development") return lot.zone === "unassigned" ? 0 : world.constructionProgress(lot);
   return 1;
 }
@@ -2958,18 +2960,25 @@ function renderTerrain() {
     const shape = new THREE.Shape();
     area.points.forEach((point, index) => index === 0 ? shape.moveTo(point.x, point.z) : shape.lineTo(point.x, point.z));
     shape.closePath();
-    const surface = new THREE.Mesh(
-      new THREE.ShapeGeometry(shape),
-      area.kind === "water"
-        ? waterMaterial
+    const areaMaterial = area.kind === "water"
+      ? waterMaterial
+      : area.kind === "floodplain"
+        ? new THREE.MeshStandardMaterial({
+            color: area.floodRisk === "high" ? 0x5c89a1 : 0x789c9d,
+            transparent: true,
+            opacity: cityView === "environment" ? .48 : .18,
+            roughness: .76,
+            side: THREE.DoubleSide,
+            depthWrite: false
+          })
         : new THREE.MeshStandardMaterial({
             color: area.kind === "park" ? seasonalParkColor : seasonalLandColor,
             roughness: 1,
             side: THREE.DoubleSide
-          })
-    );
+          });
+    const surface = new THREE.Mesh(new THREE.ShapeGeometry(shape), areaMaterial);
     surface.rotation.x = Math.PI / 2;
-    surface.position.y = area.kind === "park" ? .08 : area.kind === "water" ? .02 : -.02;
+    surface.position.y = area.kind === "park" ? .08 : area.kind === "floodplain" ? .045 : area.kind === "water" ? .02 : -.02;
     surface.receiveShadow = true;
     terrainGroup.add(surface);
     if (area.kind === "park") {
@@ -5609,6 +5618,16 @@ function updateCityViewPanel() {
       `${pressured} developed parcels are below 45. Values combine reliable utilities, neighborhood services, park access, road speed and traffic noise, zoning, tax pressure, and district policy.`,
       "Red|Low value;Amber|Stable;Green|High value;Economy|Change taxes and policy"
     );
+  } else if (cityView === "environment") {
+    const highRisk = world.lots.filter(lot => world.lotFloodRisk(lot) === "high").length;
+    const moderateRisk = world.lots.filter(lot => world.lotFloodRisk(lot) === "moderate").length;
+    legendCopy.textContent = "High exposure · lower exposure";
+    setPanel(
+      "ENVIRONMENT VIEW",
+      `${highRisk} high-risk floodplain parcels`,
+      `${moderateRisk} additional parcels have moderate flood exposure. Floodplain shading is regional evidence rather than a building ban: players can preserve open space, accept lower land value, or invest in future resilience systems while every parcel remains editable.`,
+      "Red|High flood risk;Amber|Moderate risk;Green|Outside mapped floodplain;Inspect|Review parcel"
+    );
   } else if (cityView === "development") {
     const active = world.lots.filter(lot => world.constructionProgress(lot) < 1).length;
     const complete = world.lots.filter(lot => lot.zone !== "unassigned" && world.constructionProgress(lot) >= 1).length;
@@ -5625,7 +5644,7 @@ function updateCityViewPanel() {
       "CITY VIEW",
       "Natural city materials",
       "The default view preserves zoning colors, architecture, streets, parks, and water. Switch views when you need evidence, then return here to read the city as a place.",
-      "Traffic|Road pressure;Utilities|Service reliability;Wellbeing|Human outcomes;Development|Construction"
+      "Traffic|Road pressure;Utilities|Service reliability;Wellbeing|Human outcomes;Environment|Flood exposure"
     );
   }
 }

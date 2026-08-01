@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { NYC_TEMPLATE, WORLD_TEMPLATES } from "./templates";
+import { NYC_TEMPLATE, TEMPLATE_REGIONAL_CONFIGS, WORLD_TEMPLATES } from "./templates";
 import { findRoadRoute, routeLength } from "./routing";
 import {
   initialTransitLines,
@@ -126,9 +126,12 @@ function normalizeRoadRecord(road: Road): Road {
 export type Area = {
   id: string;
   name: string;
-  kind: "land" | "park" | "water" | "district";
+  kind: "land" | "park" | "water" | "floodplain" | "district";
+  floodRisk?: "moderate" | "high";
   points: Point2[];
 };
+
+export type FloodRisk = "none" | "moderate" | "high";
 
 export type TaxCategory = "residential" | "commercial" | "industrial";
 
@@ -184,7 +187,7 @@ function normalizeTaxRate(rate: number) {
 }
 
 export type WorldTemplate = {
-  id: "nyc" | "chicago" | "blank";
+  id: "nyc" | "chicago" | "houston" | "blank";
   name: string;
   description: string;
   roads: Road[];
@@ -1016,19 +1019,7 @@ export class World {
         : month <= 8
           ? "summer"
           : "autumn";
-    const climate = this.templateId === "chicago"
-      ? {
-          monthlyTemperature: [-6, -4, 3, 10, 17, 23, 26, 25, 20, 12, 4, -3],
-          wetThreshold: { winter: 32, spring: 42, summer: 37, autumn: 36 } as Record<Season, number>,
-          snowThreshold: 25,
-          windBase: 12
-        }
-      : {
-          monthlyTemperature: [-1, 1, 6, 12, 18, 23, 26, 25, 21, 14, 8, 2],
-          wetThreshold: { winter: 30, spring: 42, summer: 34, autumn: 38 } as Record<Season, number>,
-          snowThreshold: 18,
-          windBase: 6
-        };
+    const climate = TEMPLATE_REGIONAL_CONFIGS[this.templateId].climate;
     const seed = hashString(this.templateId === "nyc"
       ? `weather:${year}:${month}:${day}`
       : `weather:${this.templateId}:${year}:${month}:${day}`);
@@ -1977,6 +1968,20 @@ export class World {
     return this.areas.find(area => area.kind === "district" && pointInPolygon(lot.center, area.points));
   }
 
+  lotFloodRisk(lot: Lot): FloodRisk {
+    const floodplains = this.areas.filter(area =>
+      area.kind === "floodplain" && pointInPolygon(lot.center, area.points)
+    );
+    if (floodplains.some(area => area.floodRisk === "high")) return "high";
+    if (floodplains.length) return "moderate";
+    return "none";
+  }
+
+  lotFloodRiskScore(lot: Lot) {
+    const risk = this.lotFloodRisk(lot);
+    return risk === "high" ? 1 : risk === "moderate" ? .55 : 0;
+  }
+
   districtPoliciesForLot(lot: Lot) {
     const district = this.districtForLot(lot);
     return district ? this.districtPolicies[district.id] ?? [] : [];
@@ -2080,6 +2085,8 @@ export class World {
       + (policies.includes("small-business-grants") ? 3 : 0);
     const taxPenalty = Math.max(0, this.taxRateForLot(lot) - 10) * 1.4;
     const industrialPenalty = lot.zone === "industrial" ? 11 : 0;
+    const floodRisk = this.lotFloodRisk(lot);
+    const floodRiskPenalty = floodRisk === "high" ? 14 : floodRisk === "moderate" ? 7 : 0;
     return Math.round(clamp(
       22
       + utility * .22
@@ -2088,6 +2095,7 @@ export class World {
       - noise * 14
       - taxPenalty
       - industrialPenalty
+      - floodRiskPenalty
       + policyBonus,
       0,
       100
@@ -3284,7 +3292,7 @@ export class World {
     const template = WORLD_TEMPLATES[id];
     if (!template) return false;
     this.checkpoint();
-    this.cityName = id === "nyc" ? "New Gridless City" : id === "chicago" ? "New Lakeshore City" : "Untitled Region";
+    this.cityName = TEMPLATE_REGIONAL_CONFIGS[id].defaultCityName;
     this.templateId = id;
     this.roads = clone(template.roads).map(normalizeRoadRecord);
     this.areas = clone(template.areas);
@@ -4262,7 +4270,7 @@ export class World {
           if (this.areas.some(area => (area.kind === "park" || area.kind === "water") && pointInPolygon({ x, z }, area.points))) continue;
           if (lots.some(lot => Math.hypot(lot.center.x - x, lot.center.z - z) < 16)) continue;
           const id = `${road.id}-${i}-${side}`;
-          const isTemplateRoad = road.id.startsWith("nyc-") || road.id.startsWith("chicago-");
+          const isTemplateRoad = road.id.startsWith(`${this.templateId}-`);
           const zone = existingZones.get(id) ?? (isTemplateRoad ? inferTemplateZone(this.templateId, x, z) : "unassigned");
           const seed = hashString(id);
           const households = existingActivity.get(id)?.households ?? initialHouseholds(zone, seed);
@@ -5721,6 +5729,14 @@ function serviceShiftFactor(kind: ServiceKind, hour: number) {
 
 function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number): Zone {
   if (templateId === "blank") return "unassigned";
+  if (templateId === "houston") {
+    if (Math.abs(x) < 115 && z > -90 && z < 135) return "commercial";
+    if (x > 205 && Math.abs(z) < 210) return "industrial";
+    if (x < -330 && (z < -220 || z > 255)) return "unassigned";
+    if (Math.abs(x) < 155 && z < -130 && z > -340) return "mixed";
+    if (Math.abs(z) < 190) return "mixed";
+    return "residential";
+  }
   if (templateId === "chicago") {
     if (x > -105 && x < 70 && z > -95 && z < 65) return "commercial";
     if ((x < -230 && Math.abs(z) < 105) || (z < -245 && x < -120)) return "industrial";
@@ -5734,16 +5750,24 @@ function inferTemplateZone(templateId: WorldTemplate["id"], x: number, z: number
   return "residential";
 }
 
+function templateIdForRoads(roads: Road[]): WorldTemplate["id"] {
+  return (Object.keys(TEMPLATE_REGIONAL_CONFIGS) as WorldTemplate["id"][]).find(templateId => {
+    const transitRoadId = TEMPLATE_REGIONAL_CONFIGS[templateId].transit?.roadId;
+    return transitRoadId && roads.some(road => road.id === transitRoadId);
+  }) ?? "blank";
+}
+
 function initialCityEvents(roads: Road[]): CityEvent[] {
-  const chicago = roads.some(item => item.id.startsWith("chicago-"));
-  const road = roads.find(item => item.id === (chicago ? "chicago-state" : "nyc-broadway"));
+  const config = TEMPLATE_REGIONAL_CONFIGS[templateIdForRoads(roads)].event;
+  if (!config) return [];
+  const road = roads.find(item => item.id === config.roadId);
   if (!road?.points.length) return [];
-  const definition = CITY_EVENT_DEFINITIONS.market;
+  const definition = CITY_EVENT_DEFINITIONS[config.kind];
   const position = clone(road.points[Math.floor(road.points.length / 2)]);
   return [{
-    id: chicago ? "template-event-state-street-arts" : "template-event-broadway-market",
-    name: chicago ? "State Street Arts Walk" : "Broadway Night Market",
-    kind: "market",
+    id: config.id,
+    name: config.name,
+    kind: config.kind,
     position,
     startAt: 10 * 60,
     durationMinutes: definition.durationMinutes,
@@ -5762,9 +5786,7 @@ function initialCityEvents(roads: Road[]): CityEvent[] {
 }
 
 function initialParking(roads: Road[]): ParkingFacility[] {
-  const preferredRoadIds = roads.some(road => road.id.startsWith("chicago-"))
-    ? ["chicago-state", "chicago-lake", "chicago-milwaukee"]
-    : ["nyc-avenue-1", "nyc-avenue-3", "nyc-avenue-5"];
+  const preferredRoadIds = TEMPLATE_REGIONAL_CONFIGS[templateIdForRoads(roads)].parkingRoadIds;
   const fallbackRoadIds = roads
     .filter(road => road.points.length > 1)
     .sort((first, second) => routeLength(second.points) - routeLength(first.points))

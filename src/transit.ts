@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Point2, Road, TransitLine, TransitStop } from "./world";
+import { TEMPLATE_REGIONAL_CONFIGS } from "./templates";
 
 export type TransitDirection = 1 | -1;
 
@@ -18,16 +19,26 @@ export type TransitVehiclePose = {
   direction: TransitDirection;
 };
 
+function regionalTransitConfigForRoad(roadId: string | undefined) {
+  if (!roadId) return undefined;
+  return Object.values(TEMPLATE_REGIONAL_CONFIGS)
+    .map(config => config.transit)
+    .find(config => config?.roadId === roadId);
+}
+
 export function initialTransitLines(roads: Road[]): TransitLine[] {
   const candidates = roads.filter(road => road.points.length > 1);
   if (!candidates.length) return [];
-  const road = candidates.find(candidate => candidate.id === "nyc-broadway")
-    ?? candidates.find(candidate => candidate.id === "chicago-state")
+  const regionalTransit = candidates
+    .map(candidate => regionalTransitConfigForRoad(candidate.id))
+    .find(Boolean);
+  const road = candidates.find(candidate => candidate.id === regionalTransit?.roadId)
     ?? [...candidates].sort((a, b) => approximateRoadLength(b) - approximateRoadLength(a))[0];
   return [transitLineForRoad(road, 0)];
 }
 
 export function transitLineForRoad(road: Road, lineIndex: number): TransitLine {
+  const regionalTransit = regionalTransitConfigForRoad(road.id);
   const curve = new THREE.CatmullRomCurve3(
     road.points.map(point => new THREE.Vector3(point.x, 0, point.z)),
     false,
@@ -42,11 +53,9 @@ export function transitLineForRoad(road: Road, lineIndex: number): TransitLine {
   const line: TransitLine = {
     id: lineIndex === 0 ? `transit-line-${road.id}` : `transit-line-${road.id}-${lineNumber}`,
     roadId: road.id,
-    name: road.id === "nyc-broadway" && lineIndex === 0
-      ? "Broadway Local B1"
-      : road.id === "chicago-state" && lineIndex === 0
-        ? "State Street Connector C1"
-        : `${road.name ?? "City"} Local ${lineNumber}`,
+    name: lineIndex === 0 && regionalTransit?.roadId === road.id
+      ? regionalTransit.lineName
+      : `${road.name ?? "City"} Local ${lineNumber}`,
     mode: "bus",
     color: [0x2d79a7, 0xc45d4c, 0x5f9e67, 0x8b6ec1, 0xd39a3d, 0x4b9f9a, 0xb85f8f, 0x6e7c8d][lineIndex % 8],
     route,
@@ -65,11 +74,8 @@ export function transitLineForRoad(road: Road, lineIndex: number): TransitLine {
 export function transitStopsForLine(line: TransitLine, stopCount: number, roadWidth = 12): TransitStop[] {
   const count = Math.max(4, Math.min(10, Math.round(stopCount)));
   const roadName = line.name.replace(/\s+Local(?:\s+\w+)?$/, "");
-  const stopNames = line.roadId === "nyc-broadway"
-    ? ["Lower Broadway", "Canal Street", "Union Square", "Times Square", "Columbus Circle", "Upper Broadway", "Harlem Terminal", "North Terminal"]
-    : line.roadId === "chicago-state"
-      ? ["South Side", "Bronzeville", "Roosevelt", "The Loop", "River North", "Near North", "Lincoln Park", "North Terminal"]
-    : [];
+  const regionalTransit = regionalTransitConfigForRoad(line.roadId);
+  const stopNames = regionalTransit?.stopNames ?? [];
   return Array.from({ length: count }, (_, index) => {
     const progress = .04 + index / Math.max(1, count - 1) * .92;
     const position = transitPoseAtProgress(
@@ -88,10 +94,8 @@ export function transitStopsForLine(line: TransitLine, stopCount: number, roadWi
       id: line.id === `transit-line-${line.roadId}`
         ? `transit-stop-${line.roadId}-${index + 1}`
         : `${line.id}-stop-${index + 1}`,
-      name: line.roadId === "nyc-broadway" && line.id === "transit-line-nyc-broadway"
-        ? stopNames[index] ?? `Broadway Stop ${index + 1}`
-        : line.roadId === "chicago-state" && line.id === "transit-line-chicago-state"
-          ? stopNames[index] ?? `State Street Stop ${index + 1}`
+      name: regionalTransit && line.id === `transit-line-${line.roadId}`
+        ? stopNames[index] ?? `${roadName} Stop ${index + 1}`
         : `${roadName} Stop ${index + 1}`,
       position,
       progress,
