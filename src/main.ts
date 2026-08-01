@@ -39,6 +39,7 @@ import {
   homeEntityFloor,
   homeFloorView,
   homeRoomExteriorWalls,
+  homeRoomLabel,
   roadCapacityForProfile,
   roadConstructionCost,
   snapRoadDrawingPoint,
@@ -545,6 +546,8 @@ app.innerHTML = `
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
       <strong id="room-editor-title">Room selected</strong>
+      <input id="room-name-input" aria-label="Custom room name" maxlength="32" placeholder="Name this room">
+      <button id="rename-room" type="button">Rename room</button>
       <label>Purpose<select id="room-kind">
         ${HOME_ROOM_KINDS.map(kind => `<option value="${kind}">${kind}</option>`).join("")}
       </select></label>
@@ -2110,7 +2113,7 @@ function updateExplorerMovementStatus(speed: number) {
           : "Moving quickly";
     const controlled = controlledInteriorResident();
     document.querySelector("#explorer-location")!.textContent = `${controlled?.resident.name ?? interior.home.name} · Floor ${explorerInteriorFloor + 1}`;
-    document.querySelector("#explorer-surface")!.textContent = room?.kind ?? `Floor ${explorerInteriorFloor + 1} landing`;
+    document.querySelector("#explorer-surface")!.textContent = room ? homeRoomLabel(room) : `Floor ${explorerInteriorFloor + 1} landing`;
     document.querySelector("#explorer-pace")!.textContent = pace;
     updateInteriorInteractionPrompt();
     return;
@@ -5773,7 +5776,9 @@ function updateRoomEditor(home: Home | null) {
   if (!home || !room) return;
   const roomCondition = world.roomCondition(room);
   const renovationCost = world.roomRenovationCost(room);
-  document.querySelector("#room-editor-title")!.textContent = `${room.kind} · ${room.width.toFixed(1)} × ${room.depth.toFixed(1)}m`;
+  document.querySelector("#room-editor-title")!.textContent = `${homeRoomLabel(room)} · ${room.kind} · ${room.width.toFixed(1)} × ${room.depth.toFixed(1)}m`;
+  const roomNameInput = document.querySelector<HTMLInputElement>("#room-name-input")!;
+  if (document.activeElement !== roomNameInput) roomNameInput.value = room.name ?? "";
   document.querySelector("#room-condition")!.textContent = `${world.homeConditionLabel(roomCondition)} · ${roomCondition}%`;
   const renovate = document.querySelector<HTMLButtonElement>("#renovate-room")!;
   renovate.disabled = !renovationCost;
@@ -5861,7 +5866,7 @@ function updateHouseholdSummary(home: Home) {
     const organization = world.homeOrganization(home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
-      .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
+      .map(room => `${homeRoomLabel(room)} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
       `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, a ${foundation.style} foundation, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight and ${privacy}% bedroom privacy. The household space plan scores ${spacePlan.score}%${spacePlan.deficits.length ? ` and recommends ${spacePlan.deficits[0].recommendation.toLowerCase()}` : " with every tracked capacity covered"}. Safety scores ${safety.score}% with ${safety.egressCoverage}% sleeping-room egress coverage${safety.issues.length ? `; first priority: ${safety.issues[0].recommendation.toLowerCase()}` : " and no identified hazards"}. Organization is ${organization.status.toLowerCase()} at ${organization.score}%: ${organization.recommendation.toLowerCase()} The ${foundation.floodRisk} flood risk becomes ${foundation.residualExposure}% residual exposure after ${foundation.protection}% foundation protection. Energy performance is ${energy.score}% at ${energy.dailyKwh.toFixed(1)} kWh and ${formatHomeCurrency(energy.dailyCost)} per day.${energy.benefits.length ? ` Benefits: ${energy.benefits.join(", ")}.` : ""} Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
@@ -6053,7 +6058,7 @@ function updateHouseholdSummary(home: Home) {
                 <b>${ownershipSatisfaction}% belonging</b>
               </div>
               <div class="resident-belongings">
-                <span><strong>${personalRoom.room ? `${personalRoom.room.kind} · Floor ${homeEntityFloor(personalRoom.room) + 1}` : "No personal room"}</strong><small>${personalRoom.factors.join(" · ")}</small></span>
+                <span><strong>${personalRoom.room ? `${homeRoomLabel(personalRoom.room)} · Floor ${homeEntityFloor(personalRoom.room) + 1}` : "No personal room"}</strong><small>${personalRoom.factors.join(" · ")}</small></span>
                 <b>${personalRoom.score}% room fit</b>
               </div>
               <button type="button" class="resident-control" data-personalize-room="${resident.id}" ${personalRoom.room && world.residentRoomFurniture(home, resident.id).length ? "" : "disabled"}>Make room mine${world.residentRoomPersonalizationCost(home, resident.id) ? ` · ${formatHomeCurrency(world.residentRoomPersonalizationCost(home, resident.id))}` : ""}</button>
@@ -6565,8 +6570,8 @@ function updateExplorerContext() {
     document.querySelector("#panel-kicker")!.textContent = "HOME INTERIOR";
     document.querySelector("#panel-title")!.textContent =
       controlled
-        ? `${controlled.resident.name} · Floor ${explorerInteriorFloor + 1} · ${room?.kind ?? "Landing"}`
-        : `${interior.home.name} · Floor ${explorerInteriorFloor + 1} · ${room?.kind ?? "Landing"}`;
+        ? `${controlled.resident.name} · Floor ${explorerInteriorFloor + 1} · ${room ? homeRoomLabel(room) : "Landing"}`
+        : `${interior.home.name} · Floor ${explorerInteriorFloor + 1} · ${room ? homeRoomLabel(room) : "Landing"}`;
     document.querySelector("#panel-copy")!.textContent =
       `${interior.home.floors} floor${interior.home.floors === 1 ? "" : "s"}, ${interior.home.rooms.length} rooms, and ${interior.home.furniture.length} furnishings are part of the persistent Home Simulator plan.${controlCopy}${activityCopy}${outageCopy} ${entrance ? entranceAccessLabel(entrance) : "Entrance not connected"}. Press F to return to the street.`;
     return;
@@ -7340,7 +7345,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
       selectedHomeDoorId = null;
       renderHome();
       const room = home.rooms.find(item => item.id === selectedRoomId);
-      if (room) notice(`${room.kind} selected. Choose its floor and wall finishes.`);
+      if (room) notice(`${homeRoomLabel(room)} selected. Choose its purpose, name, and finishes.`);
       return;
     }
     const foundationHit = raycaster.intersectObjects(homeGroup.children, true).find(item => item.object.userData.homeSurface);
@@ -8690,6 +8695,27 @@ document.querySelector("#room-kind")!.addEventListener("change", event => {
   if (!home || !room || !world.setRoomKind(home.id, room.id, kind)) return;
   renderWorld();
   notice(`Room purpose changed to ${kind}`);
+});
+function applyRoomName() {
+  const home = currentHome();
+  const room = home?.rooms.find(item => item.id === selectedRoomId);
+  const input = document.querySelector<HTMLInputElement>("#room-name-input")!;
+  if (!home || !room) return;
+  const previous = homeRoomLabel(room);
+  if (!world.setRoomName(home.id, room.id, input.value)) {
+    input.value = room.name ?? "";
+    notice("Use 2 to 32 letters, numbers, spaces, apostrophes, periods, or hyphens");
+    return;
+  }
+  renderWorld();
+  notice(previous === homeRoomLabel(room) ? `${previous} already has that name` : `Room renamed ${homeRoomLabel(room)}`);
+}
+document.querySelector("#rename-room")!.addEventListener("click", applyRoomName);
+document.querySelector("#room-name-input")!.addEventListener("keydown", event => {
+  if ((event as KeyboardEvent).code !== "Enter") return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyRoomName();
 });
 document.querySelector("#assign-room-resident")!.addEventListener("click", () => {
   const home = currentHome();

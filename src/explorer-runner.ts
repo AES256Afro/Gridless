@@ -64,6 +64,7 @@ import {
   homeEntityFloor,
   homeFloorView,
   homeRoomExteriorWalls,
+  homeRoomLabel,
   roadConstructionCost,
   roadWidthForProfile,
   snapRoadDrawingPoint,
@@ -1703,6 +1704,19 @@ check(
     && roomClaimWorld.residentRoom(roomClaimHome, "privacy-a")?.id === "room-a"
     && roomClaimWorld.residentRoom(roomClaimHome, "privacy-b")?.id === "room-b",
   "Smart room assignment did not maximize resident fit and household privacy deterministically."
+);
+check(
+  roomClaimWorld.setRoomName(roomClaimHome.id, "room-b", "  Blair's Hideaway  ")
+    && roomClaimHome.rooms.find(room => room.id === "room-b")?.name === "Blair's Hideaway"
+    && homeRoomLabel(roomClaimHome.rooms.find(room => room.id === "room-b")!) === "Blair's Hideaway"
+    && !roomClaimWorld.setRoomName(roomClaimHome.id, "room-b", "<script>"),
+  "Custom room naming did not normalize safe names or reject unsafe input."
+);
+const namedRoomRestoreWorld = new World();
+check(
+  namedRoomRestoreWorld.restore(roomClaimWorld.serialize())
+    && namedRoomRestoreWorld.homes[0].rooms.find(room => room.id === "room-b")?.name === "Blair's Hideaway",
+  "Custom room names did not survive save and restore."
 );
 const residentToPersonalize = roomClaimHome.residents.find(resident => resident.id === "privacy-b")!;
 residentToPersonalize.decorPreference = "colorful";
@@ -4279,6 +4293,7 @@ console.log(JSON.stringify({
     fitBefore: roomFitBeforePersonalization,
     fitAfter: personalization.score
   },
+  namedRoom: namedRoomRestoreWorld.homes[0].rooms.find(room => room.id === "room-b")?.name,
   householdSpacePlan: {
     constrained: constrainedSpacePlan,
     equipped: equippedSpacePlan
