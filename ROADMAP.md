@@ -27,9 +27,9 @@ The default template borrows New York City’s useful planning logic without tur
 
 Later map import should use versioned public GIS data as an optional reference layer. Imported geometry must be simplified into playable road graphs and parcels, never treated as immutable scenery.
 
-### Planned regional foundations
+### Regional foundations
 
-- **Chicago:** lakefront, river branches, rail corridors, alleys, boulevards, strong orthogonal grid, elevated transit, and neighborhood commercial streets
+- **Chicago is live:** an editable lakefront, three river branches, service alleys, a strong orthogonal grid, Milwaukee diagonal, expressway, bus-priority State and Lake corridors, lakefront trail, neighborhood zoning, distinct parks and districts, local parking, State Street event, transit identity, and colder windier climate
 - **Houston:** freeway loops, frontage roads, bayous, floodplains, large parcels, industrial corridors, low-density growth, and flexible land-use patterns
 - **Seattle:** steep terrain, Puget Sound, Lake Washington, ferries, bridges, constrained corridors, dense urban villages, and seismic risk
 - **Portland:** compact blocks, Willamette and Columbia rivers, bridges, light rail, bicycle networks, neighborhood main streets, and an urban-growth boundary
@@ -60,6 +60,8 @@ Player comfort settings persist separately from the city save. Reduced motion re
 The global activity center retains the latest 30 notices for the current play session instead of replacing history with each new message. Entries carry the saved simulation date and time, use text-only rendering for player-authored names, track unread updates, and can be cleared without changing the city.
 
 Each world now has a player-editable city name in the Builder foundation controls. The name appears in the persistent HUD and browser title, accepts a bounded safe character set, resets with a new region template, and participates in snapshots, recovery, Undo, and Redo.
+
+The foundation chooser now pairs each available template with a plain-language planning summary and preserves a pending choice through live simulation redraws until the player confirms the destructive reset. Chicago loads as New Lakeshore City with 30 editable routes, 698 developable parcels, four starting districts, two lakefront parks, three visible river branches, a regional zoning mix, Chicago-specific transit stops, parking, a State Street event, and deterministic winter climate. Expressway, trail, and service-alley geometry remains editable and traversable without generating unrealistic roadside parcels.
 
 Home Simulator exposes the same authored identity for each property or household. Names use the bounded safe character set, remain attached to the exact city lot, enter the activity feed, and participate in snapshots, recovery, Undo, and Redo.
 
@@ -323,6 +325,7 @@ Current foundation:
 - Small reference cities retain all current geometry. Regions larger than 16 chunks render detailed parcels only in agent and active tiers, establishing a safe cutoff for future impostors and streamed chunk loading.
 - Chunk size and metadata persist in snapshots. Older saves rebuild valid metadata from their existing roads and lots, while the stability gate verifies unique membership, references, and population reconciliation.
 - `npm run test:explorer` verifies the eight-chunk NYC reference, exact lot membership, aggregate population equality, focus-to-distance tier changes, and snapshot persistence.
+- The same regression gate verifies Chicago identity, exact grid and water features, developable-road parcel rules, four-way zoning mix, road-profile hierarchy, local transit, parking, event, deterministic climate, and save restoration.
 
 Next scale systems are chunk impostors, instanced building batches, hierarchical inter-chunk pathfinding, deterministic background workers, and real million-population performance budgets.
 
@@ -389,7 +392,8 @@ Exit gate: the one-million-person reference region meets its published budgets f
 
 ### P1: Regional foundations
 
-- Add Chicago, Houston, Seattle, and Portland as data-driven terrain, climate, street-hierarchy, transit, zoning, architecture, and economy profiles.
+- [Complete] Add Chicago as a data-driven terrain, climate, street-hierarchy, transit, zoning, parking, and event profile.
+- Add Houston, Seattle, and Portland as data-driven terrain, climate, street-hierarchy, transit, zoning, architecture, and economy profiles.
 - Keep every foundation flexible: players can erase, extend, remix, or combine regional rules.
 
 Exit gate: each foundation creates a recognizably different planning problem while using the same tested world systems and save format.

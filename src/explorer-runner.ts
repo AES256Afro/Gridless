@@ -492,6 +492,71 @@ check(identityWorld.undo() && identityWorld.cityName === "Second Name", "Undo di
 check(identityWorld.redo() && identityWorld.cityName === "Harbor Commons", "Redo did not restore the recovered city identity.");
 check(identityWorld.applyTemplate("blank") && identityWorld.cityName === "Untitled Region", "A blank template did not reset city identity.");
 
+const chicagoWorld = new World();
+check(
+  chicagoWorld.applyTemplate("chicago")
+    && chicagoWorld.cityName === "New Lakeshore City"
+    && chicagoWorld.templateId === "chicago",
+  "The Chicago foundation did not reset world and city identity."
+);
+const chicagoStateStreet = chicagoWorld.roads.find(road => road.id === "chicago-state")!;
+const chicagoLakeStreet = chicagoWorld.roads.find(road => road.id === "chicago-lake")!;
+check(
+  chicagoWorld.roads.length === 30
+    && chicagoStateStreet.points.every(point => point.x === chicagoStateStreet.points[0].x)
+    && chicagoLakeStreet.points.every(point => point.z === chicagoLakeStreet.points[0].z)
+    && chicagoWorld.areas.filter(area => area.kind === "water").length === 3
+    && chicagoWorld.areas.filter(area => area.kind === "park").length === 2
+    && chicagoWorld.areas.filter(area => area.kind === "district").length === 4,
+  "The Chicago foundation lost its grid, river branches, lakefront parks, or districts."
+);
+check(
+  chicagoWorld.lots.length > 500
+    && chicagoWorld.lots.every(lot => chicagoWorld.roads.find(road => road.id === lot.roadId)?.developable !== false)
+    && new Set(chicagoWorld.lots.map(lot => lot.zone)).has("industrial")
+    && new Set(chicagoWorld.lots.map(lot => lot.zone)).has("commercial")
+    && new Set(chicagoWorld.lots.map(lot => lot.zone)).has("mixed")
+    && new Set(chicagoWorld.lots.map(lot => lot.zone)).has("residential"),
+  "Chicago parcels ignored developable streets or failed to create a useful regional zoning mix."
+);
+check(
+  chicagoStateStreet.profile?.busLanes === true
+    && chicagoWorld.roads.find(road => road.id === "chicago-kennedy")?.profile?.speedLimitKph === 80
+    && chicagoWorld.roads.find(road => road.id === "chicago-lakefront-trail")?.profile?.bikeLanes === true,
+  "Chicago street hierarchy lost its transit, expressway, or lakefront trail profile."
+);
+check(
+  chicagoWorld.transitLines[0]?.name === "State Street Connector C1"
+    && chicagoWorld.transitLines[0].stops.some(stop => stop.name === "The Loop")
+    && chicagoWorld.parking.length === 3
+    && chicagoWorld.cityEvents[0]?.name === "State Street Arts Walk",
+  "The Chicago foundation did not seed its local transit, parking, and public-realm activity."
+);
+const chicagoWeather = chicagoWorld.weather();
+const matchingChicagoWorld = new World();
+matchingChicagoWorld.applyTemplate("chicago");
+check(
+  chicagoWeather.windKph >= 12
+    && chicagoWeather.temperatureC < matchingWeatherWorld.weather().temperatureC
+    && JSON.stringify(chicagoWeather) === JSON.stringify(matchingChicagoWorld.weather()),
+  "Chicago climate was not colder, windier, and deterministic on the reference winter date."
+);
+const restoredChicagoWorld = new World();
+check(
+  restoredChicagoWorld.restore(chicagoWorld.serialize())
+    && restoredChicagoWorld.templateId === "chicago"
+    && restoredChicagoWorld.roads.some(road => road.id === "chicago-milwaukee")
+    && restoredChicagoWorld.areas.some(area => area.kind === "water" && area.name === "Main Branch"),
+  "Chicago regional identity or geometry was lost during persistence."
+);
+const legacyChicagoSnapshot = JSON.parse(chicagoWorld.serialize());
+delete legacyChicagoSnapshot.areas;
+check(
+  restoredChicagoWorld.restore(JSON.stringify(legacyChicagoSnapshot))
+    && restoredChicagoWorld.areas.some(area => area.kind === "water" && area.name === "Main Branch"),
+  "A legacy Chicago save without area geometry did not recover its regional terrain."
+);
+
 const householdIdentityWorld = new World();
 const householdIdentityHome = householdIdentityWorld.ensureHome(householdIdentityWorld.lots[0]);
 check(!householdIdentityWorld.setHomeName(householdIdentityHome.id, "<home>"), "Home identity accepted unsafe markup characters.");
@@ -507,12 +572,14 @@ check(householdIdentityWorld.undo() && householdIdentityWorld.homes[0].name === 
 check(householdIdentityWorld.redo() && householdIdentityWorld.homes[0].name === "The Rivera Home", "Redo did not restore home identity.");
 const unsafeIdentitySnapshot = JSON.parse(householdIdentityWorld.serialize());
 unsafeIdentitySnapshot.cityName = "<unsafe city>";
+unsafeIdentitySnapshot.templateId = "unsafe-template";
 unsafeIdentitySnapshot.homes[0].name = "<unsafe home>";
 check(householdIdentityWorld.restore(JSON.stringify(unsafeIdentitySnapshot)), "Legacy identity migration snapshot could not load.");
 check(
   householdIdentityWorld.cityName === "New Gridless City"
+    && householdIdentityWorld.templateId === "nyc"
     && householdIdentityWorld.homes[0].name === "New household",
-  "Loaded identity migration retained unsafe city or home text."
+  "Loaded identity migration retained unsafe city, template, or home text."
 );
 
 const recoveryWorld = new World();

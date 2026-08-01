@@ -1279,6 +1279,14 @@ kbd {
 
 .city-editing .city-tools { display: flex; }
 .city-tools strong { display: block; margin-top: 2px; font-size: 12px; }
+.city-tools > div:first-child { max-width: 250px; }
+#region-foundation-summary {
+  display: block;
+  margin-top: 4px;
+  color: #92a298;
+  font-size: 9px;
+  line-height: 1.35;
+}
 .city-tools select {
   min-width: 190px;
   padding: 9px 30px 9px 10px;
