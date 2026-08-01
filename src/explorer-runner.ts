@@ -1844,6 +1844,7 @@ inspectionHistoryWorld.advanceMinutes(1, 0);
 inspectionHistoryHome.doors = structuredClone(safeHome.doors);
 inspectionHistoryHome.windows = structuredClone(safeHome.windows);
 const recordedPassedInspection = recordCurrentHomeInspection(inspectionHistoryWorld, inspectionHistoryHome);
+const refusedDuplicateInspection = recordCurrentHomeInspection(inspectionHistoryWorld, inspectionHistoryHome);
 const restoredInspectionHistoryWorld = new World();
 const improvingInspectionTrend = homeInspectionTrend(inspectionHistoryHome);
 const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
@@ -1905,6 +1906,7 @@ check(
     && recordedFailedInspection.inspection.result === "Failed"
     && recordedPassedInspection.ok
     && recordedPassedInspection.inspection.result === "Passed"
+    && !refusedDuplicateInspection.ok
     && inspectionHistoryHome.inspections?.map(record => record.result).join(",") === "Failed,Passed"
     && restoredInspectionHistoryWorld.restore(inspectionHistoryWorld.serialize())
     && restoredInspectionHistoryWorld.homes[0].inspections?.length === 2,
@@ -1949,11 +1951,16 @@ check(
   "Pinned move-in goals did not persist or complete from corrected live home evidence."
 );
 const firstNightComfortBefore = safeHome.residents.reduce((total, resident) => total + resident.comfort, 0);
+const roomlessFirstNightHome = { ...structuredClone(safeHome), id: "roomless-first-night", rooms: [], firstNightAt: undefined, firstNightComfortGain: undefined };
+moveInApprovalWorld.homes.push(roomlessFirstNightHome);
+const roomlessFirstNight = moveInApprovalWorld.beginHomeFirstNight(roomlessFirstNightHome.id);
 const suspendedFirstNight = beginApprovedHomeFirstNight(moveInApprovalWorld, suspendedMoveInHome);
 const firstNight = beginApprovedHomeFirstNight(moveInApprovalWorld, safeHome);
 const restoredFirstNightWorld = new World();
 check(
-  !suspendedFirstNight.ok
+  !roomlessFirstNight.ok
+    && roomlessFirstNight.reason.includes("at least one room")
+    && !suspendedFirstNight.ok
     && firstNight.ok
     && firstNight.residents === safeHome.residents.length
     && firstNight.comfortGain === safeHome.residents.reduce((total, resident) => total + resident.comfort, 0) - firstNightComfortBefore
