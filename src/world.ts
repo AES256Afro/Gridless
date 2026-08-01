@@ -5011,7 +5011,15 @@ export class World {
       || normalized.corrections < 0
     ) return false;
     const latest = home.inspections?.at(-1);
-    if (latest && latest.at === normalized.at && latest.score === normalized.score && latest.result === normalized.result) return false;
+    if (
+      latest
+      && latest.at === normalized.at
+      && latest.score === normalized.score
+      && latest.result === normalized.result
+      && latest.readyRooms === normalized.readyRooms
+      && latest.totalRooms === normalized.totalRooms
+      && latest.corrections === normalized.corrections
+    ) return false;
     this.checkpoint();
     home.inspections = [...(home.inspections ?? []), normalized].slice(-12);
     return true;
@@ -5019,8 +5027,13 @@ export class World {
 
   beginHomeFirstNight(homeId: string) {
     const home = this.homes.find(item => item.id === homeId);
-    if (!home || !home.residents.length || home.firstNightAt !== undefined) {
-      return { ok: false, residents: 0, comfortGain: 0, reason: home?.firstNightAt !== undefined ? "This household has already completed its first night." : "Add residents before beginning the first night." };
+    if (!home || !home.residents.length || !home.rooms.length || home.firstNightAt !== undefined) {
+      const reason = home?.firstNightAt !== undefined
+        ? "This household has already completed its first night."
+        : !home?.residents.length
+          ? "Add residents before beginning the first night."
+          : "Add at least one room before beginning the first night.";
+      return { ok: false, residents: 0, comfortGain: 0, reason };
     }
     const comfortBefore = home.residents.reduce((total, resident) => total + resident.comfort, 0);
     this.checkpoint();
