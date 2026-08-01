@@ -3925,7 +3925,36 @@ function renderDraft() {
     const home = currentHome();
     const movingItem = home?.furniture.find(item => item.id === movingFurnitureId);
     const kind = movingItem?.kind ?? (isHomeFurnitureKind(homeTool) ? homeTool : null);
-    if (home && homeTool === "door") {
+    if (home && homeTool === "room" && homeDraft) {
+      const room = {
+        kind: "Living room",
+        x: (homeDraft.x + homePreviewPoint.x) / 2,
+        z: (homeDraft.z + homePreviewPoint.z) / 2,
+        width: Math.abs(homePreviewPoint.x - homeDraft.x),
+        depth: Math.abs(homePreviewPoint.z - homeDraft.z),
+        floor: homeFloor
+      };
+      const assessment = world.previewHomeRoom(home, room);
+      const footprint = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.max(.05, room.width), .08, Math.max(.05, room.depth)),
+        new THREE.MeshBasicMaterial({ color: assessment.ok ? 0x73c68b : 0xd96c5f, transparent: true, opacity: .5, depthWrite: false })
+      );
+      const worldPosition = localToWorld(room, selectedLot);
+      footprint.position.set(worldPosition.x, .4, worldPosition.z);
+      footprint.rotation.y = selectedLot.rotation;
+      previewGroup.add(footprint);
+      const status = assessment.ok
+        ? `${room.width.toFixed(1)} × ${room.depth.toFixed(1)}m · ${assessment.area} m² · ${formatHomeCurrency(assessment.cost)} · Floor ${assessment.floor + 1}`
+        : assessment.reason;
+      if (homePlacementStatus) {
+        homePlacementStatus.hidden = false;
+        homePlacementStatus.textContent = status;
+        homePlacementStatus.classList.toggle("warning", !assessment.ok);
+      }
+      const label = makeHomeLabel(status);
+      label.position.set(worldPosition.x, 1.2, worldPosition.z);
+      previewGroup.add(label);
+    } else if (home && homeTool === "door") {
       const widthKind = (document.querySelector("#home-door-width") as HTMLSelectElement).value as HomeDoorWidth;
       const placement = world.previewHomeDoor(home, homePreviewPoint, homeFloor, widthKind);
       const cost = world.homeDoorCost(widthKind);
@@ -7509,10 +7538,9 @@ renderer.domElement.addEventListener("pointerdown", event => {
           depth: Math.abs(point.z - homeDraft.z),
           floor: homeFloor
         };
-        const roomCost = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter);
-        if (world.addRoom(home.id, room)) notice(`${room.kind} built for ${formatHomeCurrency(roomCost)}`);
-        else if (room.width < 2 || room.depth < 2) notice("Rooms must be at least 2m × 2m");
-        else notice(`This room needs ${formatHomeCurrency(roomCost)}. The design budget has ${formatHomeCurrency(world.homeRemainingBudget(home))} left`);
+        const roomPreview = world.previewHomeRoom(home, room);
+        if (world.addRoom(home.id, room)) notice(`${room.kind} built for ${formatHomeCurrency(roomPreview.cost)} · ${roomPreview.area} m² on Floor ${roomPreview.floor + 1}`);
+        else notice(roomPreview.reason);
         homeDraft = null;
         renderDraft();
         renderWorld();

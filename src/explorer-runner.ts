@@ -1918,11 +1918,43 @@ check(
   "Home Simulator allowed furniture outside every room."
 );
 const designBudgetBeforeRoom = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
+furniturePlacementWorld.lots = [lot];
+const validRoomPreview = furniturePlacementWorld.previewHomeRoom(interiorHome, {
+  kind: "Studio",
+  x: 0,
+  z: 7,
+  width: 3,
+  depth: 4
+});
+const overlappingRoomPreview = furniturePlacementWorld.previewHomeRoom(interiorHome, {
+  kind: "Studio",
+  x: 0,
+  z: 1,
+  width: 3,
+  depth: 4
+});
+const outsideRoomPreview = furniturePlacementWorld.previewHomeRoom(interiorHome, {
+  kind: "Studio",
+  x: 0,
+  z: 8,
+  width: 3,
+  depth: 4
+});
+check(
+  validRoomPreview.ok
+    && validRoomPreview.area === 12
+    && validRoomPreview.cost === 2_640
+    && !overlappingRoomPreview.ok
+    && overlappingRoomPreview.reason.includes("overlaps")
+    && !outsideRoomPreview.ok
+    && outsideRoomPreview.reason.includes("parcel boundary"),
+  "Room drawing previews did not report exact area, cost, overlap, and parcel limits."
+);
 check(
   furniturePlacementWorld.addRoom(interiorHome.id, {
     kind: "Studio",
     x: 0,
-    z: 8,
+    z: 7,
     width: 3,
     depth: 4
   }),
@@ -4405,6 +4437,7 @@ console.log(JSON.stringify({
   },
   homeOrganization: { crowded: crowdedOrganization, organized: organizedOrganization },
   homeSafetyAudit: { unsafe: unsafeAudit, safe: safeAudit },
+  roomDrawingPreview: { valid: validRoomPreview, overlap: overlappingRoomPreview.reason, outside: outsideRoomPreview.reason },
   homeReadiness: { unsafe: unsafeReadiness, safe: safeReadiness },
   roomDuplication: {
     cost: duplicatedRoom.cost,
