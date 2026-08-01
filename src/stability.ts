@@ -1,4 +1,6 @@
 import {
+  HOUSEHOLD_GATHERING_DEFINITIONS,
+  MAX_HOUSEHOLD_GATHERINGS,
   RESIDENT_ASPIRATION_DEFINITIONS,
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
@@ -530,6 +532,34 @@ function integrityFailures(world: World) {
     if (!Number.isInteger(home.floors) || home.floors < 1 || home.floors > MAX_HOME_FLOORS) {
       failures.push(`Home ${home.id} has an invalid floor count.`);
     }
+    const residentIds = new Set(home.residents.map(resident => resident.id));
+    const gatherings = home.gatherings ?? [];
+    if (
+      gatherings.length > MAX_HOUSEHOLD_GATHERINGS
+      || new Set(gatherings.map(gathering => gathering.id)).size !== gatherings.length
+      || gatherings.some(gathering => {
+        const definition = HOUSEHOLD_GATHERING_DEFINITIONS[gathering.kind];
+        const endsAt = gathering.startAt + gathering.durationMinutes;
+        return !gathering.id
+          || !definition
+          || !residentIds.has(gathering.hostResidentId)
+          || !Number.isInteger(gathering.startAt)
+          || gathering.startAt < 0
+          || gathering.startAt > world.clock.elapsedMinutes + 7 * 24 * 60
+          || gathering.durationMinutes !== definition.durationMinutes
+          || gathering.cost !== definition.cost
+          || !Number.isInteger(gathering.guestCount)
+          || gathering.guestCount < 2
+          || gathering.guestCount > 14
+          || (gathering.completedAt !== undefined && (
+            gathering.completedAt !== endsAt
+            || gathering.completedAt > world.clock.elapsedMinutes
+            || !Number.isInteger(gathering.attendance)
+            || (gathering.attendance ?? 0) < home.residents.length
+            || gathering.relationshipGain !== definition.relationshipGain
+          ));
+      })
+    ) failures.push(`Home ${home.id} has invalid household gathering state.`);
     const functionality = world.homeFunctionality(home);
     if (
       world.homeQuality(home) < 0
@@ -565,7 +595,6 @@ function integrityFailures(world: World) {
     const roomIds = new Set(home.rooms.map(room => room.id));
     const furnitureIds = new Set(home.furniture.map(item => item.id));
     const stairIds = new Set((home.stairs ?? []).map(stair => stair.id));
-    const residentIds = new Set(home.residents.map(resident => resident.id));
     const residentNames = new Set(home.residents.map(resident => resident.name.toLocaleLowerCase()));
     if (
       home.lastPurchase

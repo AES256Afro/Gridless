@@ -13,6 +13,7 @@ import {
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
   HOME_ROOM_KINDS,
+  HOUSEHOLD_GATHERING_DEFINITIONS,
   MAX_HOME_FLOORS,
   ROAD_PROFILE_PRESETS,
   RESIDENT_PERSONALITY_AXES,
@@ -46,6 +47,7 @@ import {
   type HomeFurnitureStyle,
   type HomeRoomKind,
   type HomeWallFinish,
+  type HouseholdGatheringKind,
   type Lot,
   type ParkingFacility,
   type ParkingKind,
@@ -4316,6 +4318,31 @@ function renderHome() {
     person.position.set(position.x, .2, position.z);
     homeGroup.add(person);
   });
+  const activeGathering = world.activeHouseholdGathering(home);
+  if (activeGathering && activeFloor === 0) {
+    const gatheringRoom = floorHome.rooms.find(room => room.kind === "Living room" || room.kind === "Dining room") ?? floorHome.rooms[0];
+    if (gatheringRoom) {
+      const visibleVisitors = Math.min(6, activeGathering.guestCount);
+      for (let index = 0; index < visibleVisitors; index += 1) {
+        const angle = index / Math.max(1, visibleVisitors) * Math.PI * 2;
+        const radius = Math.min(1.8, Math.max(.8, Math.min(gatheringRoom.width, gatheringRoom.depth) * .2));
+        const visitor = createWorkplacePerson([0xb59be9, 0x79c995, 0xd69a64][index % 3], "customer");
+        visitor.position.set(
+          gatheringRoom.x + Math.cos(angle) * radius,
+          .2,
+          gatheringRoom.z + Math.sin(angle) * radius
+        );
+        visitor.rotation.y = -angle;
+        visitor.userData.gatheringVisitor = true;
+        homeGroup.add(visitor);
+      }
+      if (mode === "home") {
+        const gatheringLabel = makeHomeLabel(`${world.householdGatheringLabel(activeGathering)} · ${activeGathering.guestCount} visitors`);
+        gatheringLabel.position.set(gatheringRoom.x, 2.8, gatheringRoom.z);
+        homeGroup.add(gatheringLabel);
+      }
+    }
+  }
   if (mode === "home") {
     updateHomeBuildControls(home);
     updateRoomEditor(home);
@@ -4833,8 +4860,13 @@ function updateHouseholdSummary(home: Home) {
     const actionCopy = activeHouseholdActions.length
       ? ` Right now, ${activeHouseholdActions.join(" and ")}.`
       : "";
+    const gatherings = world.householdGatherings(home);
+    const activeGathering = world.activeHouseholdGathering(home);
+    const gatheringCopy = activeGathering
+      ? ` ${world.householdGatheringLabel(activeGathering)} is underway with ${activeGathering.guestCount} visitors.`
+      : "";
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -4899,6 +4931,22 @@ function updateHouseholdSummary(home: Home) {
           <small>${home.lastPurchase
             ? `Last: ${RESIDENT_PURCHASES[home.lastPurchase.kind].label} · ${formatHomeCurrency(home.lastPurchase.cost)} · total extras ${formatHomeCurrency(home.discretionarySpent ?? 0)}`
             : "Uses household funds, not the home design budget."} Personal items are permanent, unique belongings.</small>
+        </section>
+      ` : ""}
+      ${home.residents.length ? `
+        <section class="household-gatherings" aria-label="Household gatherings">
+          <div class="relationship-title">Invitations and gatherings</div>
+          <div class="gathering-planner">
+            <select id="gathering-host" aria-label="Gathering host">${home.residents.map(resident => `<option value="${resident.id}">${resident.name}</option>`).join("")}</select>
+            <select id="gathering-kind" aria-label="Gathering type">${(Object.entries(HOUSEHOLD_GATHERING_DEFINITIONS) as Array<[HouseholdGatheringKind, (typeof HOUSEHOLD_GATHERING_DEFINITIONS)[HouseholdGatheringKind]]>).map(([kind, definition]) => `<option value="${kind}">${definition.label} · ${formatHomeCurrency(definition.cost)}</option>`).join("")}</select>
+            <select id="gathering-delay" aria-label="Gathering time"><option value="60">In 1 hour</option><option value="180">In 3 hours</option><option value="360">In 6 hours</option><option value="1440">Tomorrow</option></select>
+            <button type="button" id="schedule-gathering">Invite</button>
+          </div>
+          <small>Guests become visible in the shared 3D home. Completed gatherings improve resident needs and household relationships.</small>
+          ${gatherings.length ? `<div class="gathering-list">${gatherings.slice(0, 4).map(gathering => {
+            const host = home.residents.find(resident => resident.id === gathering.hostResidentId);
+            return `<div class="${gathering === activeGathering ? "active" : gathering.completedAt !== undefined ? "complete" : "upcoming"}"><span><strong>${world.householdGatheringLabel(gathering)}</strong><small>${world.householdGatheringDate(gathering)} · hosted by ${host?.name ?? "Resident"}</small></span><b>${world.householdGatheringStatus(gathering)}</b></div>`;
+          }).join("")}</div>` : ""}
         </section>
       ` : ""}
       ${outages.length ? `
@@ -5047,6 +5095,15 @@ function updateHouseholdSummary(home: Home) {
       const kind = details.querySelector<HTMLSelectElement>("#collection-kind")?.value as ResidentPersonalItemKind | undefined;
       if (!residentId || !kind) return;
       const result = world.buyResidentPersonalItem(home.id, residentId, kind);
+      if (result.ok) renderWorld();
+      notice(result.reason);
+    });
+    details.querySelector("#schedule-gathering")?.addEventListener("click", () => {
+      const hostResidentId = details.querySelector<HTMLSelectElement>("#gathering-host")?.value;
+      const kind = details.querySelector<HTMLSelectElement>("#gathering-kind")?.value as HouseholdGatheringKind | undefined;
+      const delay = Number(details.querySelector<HTMLSelectElement>("#gathering-delay")?.value);
+      if (!hostResidentId || !kind || !Number.isFinite(delay)) return;
+      const result = world.scheduleHouseholdGathering(home.id, hostResidentId, kind, delay);
       if (result.ok) renderWorld();
       notice(result.reason);
     });
@@ -5560,6 +5617,15 @@ function updateExplorerContext() {
     return;
   }
   const home = selectedLot ? world.homes.find(item => item.lotId === selectedLot!.id) : undefined;
+  const activeGathering = home ? world.activeHouseholdGathering(home) : undefined;
+  if (home && activeGathering) {
+    const host = home.residents.find(resident => resident.id === activeGathering.hostResidentId);
+    document.querySelector("#panel-kicker")!.textContent = "HOUSEHOLD GATHERING";
+    document.querySelector("#panel-title")!.textContent = `${world.householdGatheringLabel(activeGathering)} at ${home.name}`;
+    document.querySelector("#panel-copy")!.textContent =
+      `${host?.name ?? "A resident"} is hosting ${activeGathering.guestCount} visitors. ${world.householdGatheringStatus(activeGathering)}. Enter from the real street entrance to join the same gathering visible in Home Simulator.`;
+    return;
+  }
   const resident = home?.residents[0];
   document.querySelector("#panel-kicker")!.textContent = "CITY EXPLORER";
   if (!resident) {

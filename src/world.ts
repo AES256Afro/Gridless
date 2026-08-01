@@ -853,6 +853,19 @@ export type UtilityFailure = {
 export type HomeFloorFinish = "oak" | "tile" | "concrete" | "carpet";
 export type HomeWallFinish = "warm-white" | "sage" | "clay" | "slate";
 export type HomeFurnitureStyle = "natural" | "light" | "dark" | "colorful";
+export type HouseholdGatheringKind = "dinner" | "game-night" | "birthday" | "open-house";
+export type HouseholdGathering = {
+  id: string;
+  kind: HouseholdGatheringKind;
+  hostResidentId: string;
+  startAt: number;
+  durationMinutes: number;
+  guestCount: number;
+  cost: number;
+  completedAt?: number;
+  attendance?: number;
+  relationshipGain?: number;
+};
 export const HOME_ROOM_KINDS = ["Living room", "Bedroom", "Kitchen", "Bathroom", "Study", "Dining room", "Nursery", "Studio"] as const;
 export type HomeRoomKind = typeof HOME_ROOM_KINDS[number];
 
@@ -892,6 +905,7 @@ export type Home = {
   lastDailyExpenses?: number;
   discretionarySpent?: number;
   lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
+  gatherings?: HouseholdGathering[];
   residents: Resident[];
   relationships: ResidentRelationship[];
 };
@@ -909,6 +923,22 @@ export const HOME_BUILD_COSTS = {
   fridge: 1_100,
   shower: 1_650
 } as const;
+
+export const HOUSEHOLD_GATHERING_DEFINITIONS: Record<HouseholdGatheringKind, {
+  label: string;
+  summary: string;
+  cost: number;
+  durationMinutes: number;
+  baseGuests: number;
+  relationshipGain: number;
+}> = {
+  dinner: { label: "Shared dinner", summary: "a hosted meal with close friends", cost: 140, durationMinutes: 120, baseGuests: 3, relationshipGain: 5 },
+  "game-night": { label: "Game night", summary: "a playful evening built around conversation", cost: 90, durationMinutes: 150, baseGuests: 4, relationshipGain: 6 },
+  birthday: { label: "Birthday celebration", summary: "a milestone gathering for the whole household", cost: 220, durationMinutes: 180, baseGuests: 6, relationshipGain: 8 },
+  "open-house": { label: "Open house", summary: "a larger neighborhood welcome", cost: 320, durationMinutes: 210, baseGuests: 8, relationshipGain: 4 }
+};
+
+export const MAX_HOUSEHOLD_GATHERINGS = 8;
 
 export const MAX_HOME_FLOORS = 4;
 
@@ -3489,6 +3519,7 @@ export class World {
       .slice(-18);
     this.updateResidentActions();
     this.updateResidentNeeds(minutes);
+    this.completeHouseholdGatherings(previousElapsed);
     return monthChanged;
   }
 
@@ -4077,6 +4108,118 @@ export class World {
     return Math.round(clamp(48 + funds / 420 + dailyNet * .1, 0, 100));
   }
 
+  householdGatherings(home: Home) {
+    return [...(home.gatherings ?? [])].sort((first, second) => second.startAt - first.startAt);
+  }
+
+  activeHouseholdGathering(home: Home, elapsedMinute = this.clock.elapsedMinutes) {
+    return (home.gatherings ?? []).find(gathering =>
+      gathering.completedAt === undefined
+      && elapsedMinute >= gathering.startAt
+      && elapsedMinute < gathering.startAt + gathering.durationMinutes
+    );
+  }
+
+  householdGatheringLabel(gathering: HouseholdGathering) {
+    return HOUSEHOLD_GATHERING_DEFINITIONS[gathering.kind].label;
+  }
+
+  householdGatheringDate(gathering: HouseholdGathering) {
+    const absoluteMinutes = Math.max(0, gathering.startAt + 8 * 60);
+    const elapsedDays = Math.floor(absoluteMinutes / 1_440);
+    const year = Math.floor(elapsedDays / 360) + 1;
+    const dayOfYear = elapsedDays % 360;
+    const month = Math.floor(dayOfYear / 30) + 1;
+    const day = dayOfYear % 30 + 1;
+    const minuteOfDay = positiveModulo(absoluteMinutes, 1_440);
+    const hour = Math.floor(minuteOfDay / 60);
+    const minute = minuteOfDay % 60;
+    return `Y${year} M${month} D${day} · ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  householdGatheringStatus(gathering: HouseholdGathering) {
+    if (gathering.completedAt !== undefined) return `${gathering.attendance ?? 0} attended · +${gathering.relationshipGain ?? 0} relationships`;
+    if (this.clock.elapsedMinutes >= gathering.startAt) {
+      return `In progress · ${Math.max(1, Math.ceil(gathering.startAt + gathering.durationMinutes - this.clock.elapsedMinutes))}m left`;
+    }
+    const minutes = Math.max(1, Math.ceil(gathering.startAt - this.clock.elapsedMinutes));
+    return minutes < 120 ? `Starts in ${minutes}m` : `Starts in ${Math.round(minutes / 60)}h`;
+  }
+
+  scheduleHouseholdGathering(
+    homeId: string,
+    hostResidentId: string,
+    kind: HouseholdGatheringKind,
+    delayMinutes: number
+  ) {
+    const home = this.homes.find(item => item.id === homeId);
+    const host = home?.residents.find(resident => resident.id === hostResidentId);
+    const definition = HOUSEHOLD_GATHERING_DEFINITIONS[kind];
+    if (!home || !host || !definition) return { ok: false, reason: "That gathering is unavailable" };
+    const delay = Math.round(clamp(delayMinutes, 30, 7 * 24 * 60));
+    const startAt = this.clock.elapsedMinutes + delay;
+    const endAt = startAt + definition.durationMinutes;
+    const overlaps = (home.gatherings ?? []).some(gathering =>
+      gathering.completedAt === undefined
+      && startAt < gathering.startAt + gathering.durationMinutes + 30
+      && endAt + 30 > gathering.startAt
+    );
+    if (overlaps) return { ok: false, reason: "That household already has a gathering near this time" };
+    if (this.homeHouseholdFunds(home) < definition.cost) {
+      return { ok: false, reason: `${definition.label} needs $${definition.cost}. The household has $${this.homeHouseholdFunds(home)}.` };
+    }
+    this.checkpoint();
+    const quality = this.homeQuality(home);
+    const sociability = this.residentPersonality(host).sociability;
+    const guestCount = Math.round(clamp(definition.baseGuests + quality / 22 + sociability / 28, 2, 14));
+    const gathering: HouseholdGathering = {
+      id: crypto.randomUUID(),
+      kind,
+      hostResidentId,
+      startAt,
+      durationMinutes: definition.durationMinutes,
+      guestCount,
+      cost: definition.cost
+    };
+    home.householdFunds = this.homeHouseholdFunds(home) - definition.cost;
+    home.discretionarySpent = Math.max(0, Math.round(home.discretionarySpent ?? 0)) + definition.cost;
+    home.gatherings = [...(home.gatherings ?? []), gathering]
+      .sort((first, second) => first.startAt - second.startAt)
+      .slice(-MAX_HOUSEHOLD_GATHERINGS);
+    return { ok: true, reason: `${definition.label} scheduled with ${guestCount} invited guests`, gathering };
+  }
+
+  private completeHouseholdGatherings(previousElapsedMinute: number) {
+    for (const home of this.homes) {
+      for (const gathering of home.gatherings ?? []) {
+        const endsAt = gathering.startAt + gathering.durationMinutes;
+        if (gathering.completedAt !== undefined || endsAt > this.clock.elapsedMinutes || endsAt <= previousElapsedMinute) continue;
+        const definition = HOUSEHOLD_GATHERING_DEFINITIONS[gathering.kind];
+        const attendance = Math.max(home.residents.length, gathering.guestCount + home.residents.length);
+        gathering.completedAt = endsAt;
+        gathering.attendance = attendance;
+        gathering.relationshipGain = definition.relationshipGain;
+        for (const resident of home.residents) {
+          resident.social = clamp(resident.social + 18, 0, 100);
+          resident.comfort = clamp(resident.comfort + (gathering.kind === "dinner" ? 10 : 6), 0, 100);
+          resident.stress = clamp(resident.stress - (gathering.kind === "birthday" ? 14 : 9), 0, 100);
+          if (resident.id === gathering.hostResidentId) {
+            resident.skills = normalizeResidentSkills(resident.skills);
+            resident.skills.communication = clamp(resident.skills.communication + 3, 0, 100);
+            if (this.residentAspiration(resident) === "family" || this.residentAspiration(resident) === "community") {
+              this.increaseResidentAspiration(resident, 4);
+            }
+          }
+        }
+        for (const relationship of home.relationships) {
+          relationship.score = clamp(relationship.score + definition.relationshipGain, 0, 100);
+          relationship.lastInteractionAt = endsAt;
+        }
+      }
+      home.gatherings = (home.gatherings ?? []).slice(-MAX_HOUSEHOLD_GATHERINGS);
+    }
+  }
+
   purchaseForResident(homeId: string, residentId: string, kind: ResidentPurchaseKind) {
     const home = this.homes.find(item => item.id === homeId);
     const resident = home?.residents.find(item => item.id === residentId);
@@ -4467,6 +4610,7 @@ export class World {
               at: Math.max(0, Math.round(home.lastPurchase.at ?? 0))
             }
           : undefined,
+        gatherings: normalizeHouseholdGatherings(home.gatherings, residentIds, savedElapsedMinutes),
         residents,
         relationships
       };
@@ -5864,6 +6008,39 @@ function normalizeResidentInventory(
     });
   }
   return normalized;
+}
+
+function normalizeHouseholdGatherings(
+  gatherings: HouseholdGathering[] | undefined,
+  residentIds: Set<string>,
+  elapsedMinutes: number
+): HouseholdGathering[] {
+  const normalized: HouseholdGathering[] = [];
+  const seenIds = new Set<string>();
+  for (const [index, gathering] of (Array.isArray(gatherings) ? gatherings : []).entries()) {
+    const definition = gathering && HOUSEHOLD_GATHERING_DEFINITIONS[gathering.kind];
+    if (!definition || !residentIds.has(gathering.hostResidentId)) continue;
+    const startAt = Math.round(clamp(gathering.startAt ?? 0, 0, elapsedMinutes + 7 * 24 * 60));
+    const id = typeof gathering.id === "string" && gathering.id && !seenIds.has(gathering.id)
+      ? gathering.id
+      : `gathering-${gathering.hostResidentId}-${startAt}-${index}`;
+    seenIds.add(id);
+    const endsAt = startAt + definition.durationMinutes;
+    const completed = gathering.completedAt !== undefined && endsAt <= elapsedMinutes;
+    normalized.push({
+      id,
+      kind: gathering.kind,
+      hostResidentId: gathering.hostResidentId,
+      startAt,
+      durationMinutes: definition.durationMinutes,
+      guestCount: Math.round(clamp(gathering.guestCount ?? definition.baseGuests, 2, 14)),
+      cost: definition.cost,
+      completedAt: completed ? endsAt : undefined,
+      attendance: completed ? Math.round(clamp(gathering.attendance ?? gathering.guestCount, 1, 30)) : undefined,
+      relationshipGain: completed ? definition.relationshipGain : undefined
+    });
+  }
+  return normalized.sort((first, second) => first.startAt - second.startAt).slice(-MAX_HOUSEHOLD_GATHERINGS);
 }
 
 function safeResidentMilestoneText(value: unknown, fallback: string, maximumLength: number) {
