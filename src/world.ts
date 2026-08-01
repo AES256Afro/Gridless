@@ -263,6 +263,14 @@ export type ResidentWorkTask =
   | "develop-commission"
   | "refine-portfolio"
   | "deliver-project";
+export type ResidentMilestoneKind = "arrival" | "life-stage" | "promotion" | "career-branch" | "aspiration" | "collection";
+export type ResidentMilestone = {
+  id: string;
+  kind: ResidentMilestoneKind;
+  title: string;
+  detail: string;
+  occurredAt: number;
+};
 export type ResidentPastime = "reading" | "gardening" | "cooking" | "socializing" | "relaxing";
 export type ResidentPersonalItemKind = "book-set" | "garden-kit" | "recipe-box" | "game-set" | "comfort-kit";
 
@@ -361,6 +369,7 @@ export type Resident = {
   workPerformance?: number;
   workDaysCompleted?: number;
   lastWorkDayAt?: number;
+  milestones?: ResidentMilestone[];
 };
 
 export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits"> & {
@@ -451,6 +460,11 @@ const CAREER_WORKPLACE_SECTORS: Record<ResidentCareerTrack, [BusinessSector, Bus
   care: ["community", "hospitality"],
   creative: ["retail", "office"]
 };
+
+export const RESIDENT_MILESTONE_KINDS: ResidentMilestoneKind[] = [
+  "arrival", "life-stage", "promotion", "career-branch", "aspiration", "collection"
+];
+export const MAX_RESIDENT_MILESTONES = 12;
 
 export const RESIDENT_PASTIME_DEFINITIONS: Record<ResidentPastime, {
   label: string;
@@ -2494,6 +2508,57 @@ export class World {
     return Math.round(clamp(resident.workPerformance ?? 0, 0, 100));
   }
 
+  residentMilestones(resident: Resident) {
+    return [...(resident.milestones ?? [])]
+      .sort((first, second) => second.occurredAt - first.occurredAt || second.id.localeCompare(first.id));
+  }
+
+  residentMilestoneDate(milestone: ResidentMilestone) {
+    const elapsedDays = Math.max(0, Math.floor((milestone.occurredAt + 8 * 60) / 1_440));
+    const year = Math.floor(elapsedDays / 360) + 1;
+    const dayOfYear = elapsedDays % 360;
+    const month = Math.floor(dayOfYear / 30) + 1;
+    const day = dayOfYear % 30 + 1;
+    return `Y${year} M${month} D${day}`;
+  }
+
+  private recordResidentMilestone(
+    resident: Resident,
+    kind: ResidentMilestoneKind,
+    title: string,
+    detail: string,
+    occurredAt = this.clock.elapsedMinutes
+  ) {
+    const savedTitle = safeResidentMilestoneText(title, "Life milestone", 64);
+    const savedDetail = safeResidentMilestoneText(detail, "A new chapter began.", 140);
+    const savedAt = Math.max(0, Math.round(occurredAt));
+    const existing = resident.milestones ?? [];
+    if (existing.some(milestone => milestone.kind === kind && milestone.title === savedTitle && milestone.occurredAt === savedAt)) return;
+    resident.milestones = [{
+      id: `milestone-${resident.id}-${kind}-${savedAt}-${hashString(savedTitle)}`,
+      kind,
+      title: savedTitle,
+      detail: savedDetail,
+      occurredAt: savedAt
+    }, ...existing]
+      .sort((first, second) => second.occurredAt - first.occurredAt || second.id.localeCompare(first.id))
+      .slice(0, MAX_RESIDENT_MILESTONES);
+  }
+
+  private increaseResidentAspiration(resident: Resident, amount: number) {
+    const before = this.residentAspirationProgress(resident);
+    resident.aspirationProgress = Math.min(100, before + Math.max(0, Math.round(amount)));
+    if (before < 100 && resident.aspirationProgress === 100) {
+      const label = this.residentAspirationLabel(resident);
+      this.recordResidentMilestone(
+        resident,
+        "aspiration",
+        `${label} fulfilled`,
+        `${resident.name} completed a defining long-term aspiration.`
+      );
+    }
+  }
+
   residentStatus(resident: Home["residents"][number]) {
     const hour = this.clock.minute / 60;
     if (
@@ -3917,8 +3982,14 @@ export class World {
     resident.skills[definition.skill] = clamp(resident.skills[definition.skill] + 3, 0, 100);
     resident.comfort = clamp(resident.comfort + 5, 0, 100);
     if (this.residentAspiration(resident) === definition.aspiration) {
-      resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 5);
+      this.increaseResidentAspiration(resident, 5);
     }
+    this.recordResidentMilestone(
+      resident,
+      "collection",
+      `Collected ${definition.label}`,
+      `${resident.name} added a personal item connected to ${this.residentFavoritePastimeLabel(resident).toLowerCase()}.`
+    );
     return { ok: true, reason: `${definition.label} added to ${resident.name}'s personal collection · $${definition.cost}` };
   }
 
@@ -4035,6 +4106,12 @@ export class World {
     resident.careerTrack = normalizeResidentCareerTrack(resident.careerTrack, resident);
     resident.decorPreference = normalizeResidentDecorPreference(resident.decorPreference, resident);
     resident.favoritePastime = normalizeResidentPastime(resident.favoritePastime, resident);
+    this.recordResidentMilestone(
+      resident,
+      "arrival",
+      "Joined the household",
+      `${resident.name}'s story began in ${home.name === "New household" ? "a new household" : home.name}.`
+    );
     for (const existing of home.residents) {
       home.relationships.push({
         residentIds: orderedResidentIds(existing.id, resident.id),
@@ -4129,6 +4206,7 @@ export class World {
           generation: Math.round(clamp(resident.generation ?? 1, 1, 100)),
           caregiverIds: [...new Set(resident.caregiverIds ?? [])].slice(0, 2),
           inventory: normalizeResidentInventory(resident.inventory, resident.id, savedElapsedMinutes),
+          milestones: normalizeResidentMilestones(resident.milestones, resident.id, resident.name, savedElapsedMinutes),
           homeFloor: Math.round(clamp(resident.homeFloor ?? 0, 0, normalizedFloors - 1))
         };
         normalizedResident.aspiration = normalizeResidentAspiration(resident.aspiration, normalizedResident);
@@ -4631,8 +4709,14 @@ export class World {
           resident.role = "home";
           resident.currentAction = undefined;
         }
+        this.recordResidentMilestone(
+          resident,
+          "life-stage",
+          `Became ${RESIDENT_LIFE_STAGE_DEFINITIONS[stage].label.toLowerCase()}`,
+          `${resident.name} began a new life stage in ${home.name}.`
+        );
         if (this.residentAspiration(resident) === "family") {
-          resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 10);
+          this.increaseResidentAspiration(resident, 10);
         }
       }
     }
@@ -4680,11 +4764,23 @@ export class World {
           const personality = this.residentPersonality(resident);
           const branchIndex = (resident.skills[career.primarySkills[1]] + personality.spontaneity + hashString(resident.id)) % 2;
           resident.careerBranch = career.branches[branchIndex < 1 ? 0 : 1];
+          this.recordResidentMilestone(
+            resident,
+            "career-branch",
+            `Chose ${resident.careerBranch}`,
+            `${resident.name} committed to a specialization in ${career.label}.`
+          );
         }
         if (level > startingLevel) {
+          this.recordResidentMilestone(
+            resident,
+            "promotion",
+            `Promoted to ${this.residentCareerTitle(resident)}`,
+            `${resident.name} reached career level ${level} after ${resident.workDaysCompleted ?? 0} completed shifts.`
+          );
           const aspiration = this.residentAspiration(resident);
           if (aspiration === "mastery" || aspiration === "prosperity" || (aspiration === "creative" && resident.careerTrack === "creative")) {
-            resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + (level - startingLevel) * 10);
+            this.increaseResidentAspiration(resident, (level - startingLevel) * 10);
           }
         }
       }
@@ -4711,12 +4807,12 @@ export class World {
         if ((resident.lifetimeDays ?? 0) % 7 !== 0) continue;
         const aspiration = this.residentAspiration(resident);
         if (aspiration === "prosperity" && income > expenses) {
-          resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 2);
+          this.increaseResidentAspiration(resident, 2);
         }
         const mentoring = this.residentLifeStage(resident) === "elder"
           && home.residents.some(candidate => ["toddler", "child", "teen", "young-adult"].includes(this.residentLifeStage(candidate)));
         if (mentoring && (aspiration === "family" || aspiration === "community")) {
-          resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + 2);
+          this.increaseResidentAspiration(resident, 2);
         }
       }
     }
@@ -5175,7 +5271,7 @@ export class World {
             ? 4
             : 0;
     if (aspirationGain) {
-      resident.aspirationProgress = Math.min(100, this.residentAspirationProgress(resident) + aspirationGain);
+      this.increaseResidentAspiration(resident, aspirationGain);
     }
     resident.lastActionKind = action.kind;
     resident.lastActionAt = action.endsAt;
@@ -5584,6 +5680,48 @@ function normalizeResidentInventory(
     });
   }
   return normalized;
+}
+
+function safeResidentMilestoneText(value: unknown, fallback: string, maximumLength: number) {
+  if (typeof value !== "string") return fallback;
+  const safe = value.replace(/[<>&]/g, "").trim().replace(/\s+/g, " ").slice(0, maximumLength);
+  return safe || fallback;
+}
+
+function normalizeResidentMilestones(
+  milestones: ResidentMilestone[] | undefined,
+  residentId: string,
+  residentName: string,
+  elapsedMinutes: number
+): ResidentMilestone[] {
+  const normalized: ResidentMilestone[] = [];
+  const usedIds = new Set<string>();
+  for (const [index, milestone] of (Array.isArray(milestones) ? milestones : []).entries()) {
+    if (!milestone || !RESIDENT_MILESTONE_KINDS.includes(milestone.kind)) continue;
+    const occurredAt = Math.round(clamp(milestone.occurredAt ?? 0, 0, elapsedMinutes));
+    const title = safeResidentMilestoneText(milestone.title, "Life milestone", 64);
+    const detail = safeResidentMilestoneText(milestone.detail, "A new chapter began.", 140);
+    const savedId = typeof milestone.id === "string" && milestone.id.length > 0 && milestone.id.length <= 160
+      ? milestone.id
+      : undefined;
+    const id = savedId && !usedIds.has(savedId)
+      ? savedId
+      : `milestone-${residentId}-${milestone.kind}-${occurredAt}-${hashString(`${title}:${index}`)}`;
+    usedIds.add(id);
+    normalized.push({ id, kind: milestone.kind, title, detail, occurredAt });
+  }
+  if (!normalized.length) {
+    normalized.push({
+      id: `milestone-${residentId}-arrival-0-${hashString(residentName)}`,
+      kind: "arrival",
+      title: "Joined the household",
+      detail: `${safeResidentMilestoneText(residentName, "This resident", 24)}'s saved household story began here.`,
+      occurredAt: 0
+    });
+  }
+  return normalized
+    .sort((first, second) => second.occurredAt - first.occurredAt || second.id.localeCompare(first.id))
+    .slice(0, MAX_RESIDENT_MILESTONES);
 }
 
 function nextResidentLifeStage(stage: ResidentLifeStage): ResidentLifeStage | undefined {

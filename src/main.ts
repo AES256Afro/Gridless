@@ -4751,6 +4751,7 @@ function updateHouseholdSummary(home: Home) {
           const personalItems = world.residentPersonalItems(resident);
           const ownedFurniture = world.residentOwnedFurniture(home, resident);
           const ownershipSatisfaction = world.residentOwnershipSatisfaction(home, resident);
+          const milestones = world.residentMilestones(resident).slice(0, 3);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
@@ -4779,6 +4780,18 @@ function updateHouseholdSummary(home: Home) {
                 <i><b style="width:${aspirationProgress}%"></b></i>
                 <em>${aspirationProgress}%</em>
               </div>
+              ${milestones.length ? `
+                <div class="resident-milestones">
+                  <span>Life story</span>
+                  ${milestones.map(milestone => `
+                    <div>
+                      <b>${world.residentMilestoneDate(milestone)}</b>
+                      <strong>${milestone.title}</strong>
+                      <small>${milestone.detail}</small>
+                    </div>
+                  `).join("")}
+                </div>
+              ` : ""}
               <div class="resident-action-row">
                 <span>${action ? `${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m remaining` : world.residentStatus(resident)}</span>
                 <i><b style="width:${action ? actionProgress : 100}%"></b></i>
@@ -5353,6 +5366,7 @@ function updateExplorerContext() {
     return;
   }
   const wellbeing = world.residentWellbeing(resident);
+  const latestMilestone = world.residentMilestones(resident)[0];
   const outages = selectedLot ? world.utilityFailuresForLot(selectedLot) : [];
   const outageCopy = outages.length
     ? ` ${outages.map(failure => utilityKindLabel(failure.kind)).join(" and ")} service is disrupted while crews respond.`
@@ -5362,7 +5376,7 @@ function updateExplorerContext() {
     : world.residentStatus(resident);
   document.querySelector("#panel-title")!.textContent = `${resident.name} in the city`;
   document.querySelector("#panel-copy")!.textContent =
-    `${resident.name} is ${currentActivity.toLowerCase()} with ${wellbeing.score}% wellbeing. ${wellbeing.pressure}.${outageCopy} Their current commute burden is ${wellbeing.commuteBurden}%.`;
+    `${resident.name} is ${currentActivity.toLowerCase()} with ${wellbeing.score}% wellbeing. ${wellbeing.pressure}.${outageCopy} Their current commute burden is ${wellbeing.commuteBurden}%.${latestMilestone ? ` Latest milestone: ${latestMilestone.title} (${world.residentMilestoneDate(latestMilestone)}).` : ""}`;
 }
 
 function setPanel(kicker: string, title: string, copy: string, controls: string) {
@@ -5413,6 +5427,9 @@ function renderParcelDetails(lot: Lot) {
   const lotWellbeing = world.lotWellbeing(lot);
   const lotWellbeingState = wellbeingLabel(lotWellbeing);
   const lotHome = world.homes.find(home => home.lotId === lot.id);
+  const latestHomeMilestone = lotHome?.residents
+    .flatMap(resident => world.residentMilestones(resident).map(milestone => ({ resident, milestone })))
+    .sort((first, second) => second.milestone.occurredAt - first.milestone.occurredAt)[0];
   const accessibilityEntrance = world.accessibilityEntrances.find(
     entrance => entrance.targetKind === "lot" && entrance.targetId === lot.id
   );
@@ -5481,7 +5498,7 @@ function renderParcelDetails(lot: Lot) {
       <div class="parcel-autonomy">
         <span>Named household activity</span>
         <strong>${lotHome.residents.map(resident => `${resident.name}: ${world.residentActionLabel(resident)}`).join(" · ")}</strong>
-        <small>${lotHome.residents.reduce((total, resident) => total + (resident.completedActions ?? 0), 0)} autonomous actions completed</small>
+        <small>${lotHome.residents.reduce((total, resident) => total + (resident.completedActions ?? 0), 0)} autonomous actions completed${latestHomeMilestone ? ` · Latest story: ${latestHomeMilestone.resident.name} ${latestHomeMilestone.milestone.title.toLowerCase()}` : ""}</small>
       </div>
     ` : ""}
     ${activeUtilityFailures.length ? `

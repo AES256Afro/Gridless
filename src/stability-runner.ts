@@ -18,6 +18,7 @@ const rows = first.yearly.map(checkpoint => ({
   residentActions: checkpoint.completedResidentActions,
   workShifts: checkpoint.completedWorkDays,
   workPerformance: `${checkpoint.averageWorkPerformance}%`,
+  milestones: checkpoint.residentMilestones,
   eventVisits: checkpoint.eventAttendance
 }));
 

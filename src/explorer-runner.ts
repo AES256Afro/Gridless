@@ -1549,6 +1549,7 @@ check(
     && residentCreatorHome.residents[0].personality?.emotionality === 28
     && residentCreatorWorld.residentDecorPreference(residentCreatorHome.residents[0]) === "dark"
     && residentCreatorWorld.residentFavoritePastime(residentCreatorHome.residents[0]) === "reading"
+    && residentCreatorWorld.residentMilestones(residentCreatorHome.residents[0])[0]?.kind === "arrival"
     && residentCreatorHome.name === "Morgan Lee's household",
   "Resident creator did not preserve the authored profile or household name."
 );
@@ -1571,7 +1572,8 @@ check(
     && personalHome.discretionarySpent === 80
     && personalResident.inventory?.[0].kind === "book-set"
     && personalWorld.residentSkills(personalResident).creativity === 3
-    && personalWorld.residentAspirationProgress(personalResident) === 5,
+    && personalWorld.residentAspirationProgress(personalResident) === 5
+    && personalWorld.residentMilestones(personalResident)[0]?.kind === "collection",
   "A personal collection purchase did not debit funds or update inventory, skills, and aspiration."
 );
 check(
@@ -1608,8 +1610,9 @@ check(
     && restoredPersonalWorld.homes[0].furniture.find(item => item.id === personalFurniture.id)?.ownerResidentId === personalResident.id
     && restoredPersonalWorld.homes[0].residents[0].inventory?.[0].kind === "book-set"
     && restoredPersonalWorld.residentDecorPreference(restoredPersonalWorld.homes[0].residents[0]) === "dark"
-    && restoredPersonalWorld.residentFavoritePastime(restoredPersonalWorld.homes[0].residents[0]) === "reading",
-  "Personal preferences, inventory, or furniture ownership was lost during persistence."
+    && restoredPersonalWorld.residentFavoritePastime(restoredPersonalWorld.homes[0].residents[0]) === "reading"
+    && restoredPersonalWorld.residentMilestones(restoredPersonalWorld.homes[0].residents[0])[0]?.kind === "collection",
+  "Personal preferences, inventory, milestone, or furniture ownership was lost during persistence."
 );
 check(
   !residentCreatorWorld.addResident(residentCreatorHome.id, {
@@ -1827,6 +1830,7 @@ check(
 );
 samira.careerLevel = 3;
 samira.careerXp = 119;
+samira.aspirationProgress = 96;
 kai.lifeStageDays = RESIDENT_LIFE_STAGE_DEFINITIONS.infant.durationDays! - 1;
 lifeCycleWorld.advanceMinutes(24 * 60, 0);
 check(
@@ -1840,7 +1844,7 @@ check(
 check(
   lifeCycleWorld.residentCareerLevel(samira) === 4
     && RESIDENT_CAREER_TRACK_DEFINITIONS.civic.branches.includes(samira.careerBranch!)
-    && lifeCycleWorld.residentAspirationProgress(samira) === 10,
+    && lifeCycleWorld.residentAspirationProgress(samira) === 100,
   "Career progression did not unlock a deterministic branch or advance mastery."
 );
 const samiraWorkplace = lifeCycleWorld.residentWorkplaceLot(samira);
@@ -1856,6 +1860,15 @@ check(
     && lifeCycleWorld.residentWorkPerformance(samira) <= 100
     && lifeCycleWorld.residentsAssignedToWorkplace(samiraWorkplace!.id).some(({ resident }) => resident.id === samira.id),
   "A completed workday did not create a valid physical workplace task and performance record."
+);
+check(
+  lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "promotion")
+    && lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "career-branch")
+    && lifeCycleWorld.residentMilestones(samira).some(milestone => milestone.kind === "aspiration")
+    && lifeCycleWorld.residentMilestones(kai).some(milestone => milestone.kind === "life-stage")
+    && lifeCycleWorld.residentMilestoneDate(lifeCycleWorld.residentMilestones(kai).find(milestone => milestone.kind === "life-stage")!) === "Y1 M1 D2"
+    && lifeCycleWorld.residentMilestones(samira).every(milestone => !/[<>&]/.test(`${milestone.title}${milestone.detail}`)),
+  "Career, aspiration, and birthday events did not become safe resident life milestones."
 );
 lifeCycleWorld.clock.minute = 20 * 60;
 const familyProgressBeforeConversation = lifeCycleWorld.residentAspirationProgress(kai);
@@ -1877,6 +1890,8 @@ check(
     && restoredLifeCycleWorld.homes[0].residents[0].lastWorkTask === samira.lastWorkTask
     && restoredLifeCycleWorld.homes[0].residents[0].workPerformance === samira.workPerformance
     && restoredLifeCycleWorld.homes[0].residents[0].workDaysCompleted === 1
+    && restoredLifeCycleWorld.residentMilestones(restoredLifeCycleWorld.homes[0].residents[0]).some(milestone => milestone.kind === "promotion")
+    && restoredLifeCycleWorld.residentMilestones(restoredLifeCycleWorld.homes[0].residents[2]).some(milestone => milestone.kind === "life-stage")
     && restoredLifeCycleWorld.residentAspirationProgress(restoredLifeCycleWorld.homes[0].residents[2]) === familyProgressBeforeConversation + 4,
   "Life stage, lineage, career, workplace, or aspiration state was lost during persistence."
 );
@@ -1892,6 +1907,7 @@ delete legacyDependent.generation;
 delete legacyDependent.caregiverIds;
 delete legacyDependent.aspiration;
 delete legacyDependent.careerTrack;
+delete legacyDependent.milestones;
 legacyDependent.lifeStageDays = 9_999;
 legacyDependent.lastLifeStageChangeAt = lifeCycleWorld.clock.elapsedMinutes + 9_999;
 const migratedLifeWorld = new World();
@@ -1905,6 +1921,8 @@ check(
     && (migratedDependent.lastLifeStageChangeAt ?? 0) <= migratedLifeWorld.clock.elapsedMinutes
     && migratedDependent.generation === 2
     && migratedDependent.caregiverIds?.length === 2
+    && migratedLifeWorld.residentMilestones(migratedDependent)[0]?.kind === "arrival"
+    && migratedLifeWorld.residentMilestones(migratedDependent)[0]?.occurredAt === 0
     && migratedWorker.lastWorkTask === undefined
     && migratedWorker.workPerformance === undefined
     && migratedWorker.workDaysCompleted === 0
@@ -2879,6 +2897,8 @@ console.log(JSON.stringify({
   careerWorkTask: samira.lastWorkTask,
   careerPerformance: samira.workPerformance,
   completedWorkShifts: samira.workDaysCompleted,
+  lifeMilestones: lifeCycleWorld.residentMilestones(samira).map(milestone => milestone.kind),
+  latestMilestone: lifeCycleWorld.residentMilestones(samira)[0]?.title,
   familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
   personalInventory: personalResident.inventory?.map(item => item.kind),
   ownedFurniture: personalWorld.residentOwnedFurniture(personalHome, personalResident).length,
