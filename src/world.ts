@@ -1148,6 +1148,7 @@ export type HomeRoom = {
   floor?: number;
   condition?: number;
   lastRenovatedAt?: number;
+  assignedResidentIds?: string[];
 };
 
 export type HomeStair = {
@@ -4319,6 +4320,7 @@ export class World {
       + functionality.alignment / 100 * 5
       + furnitureVariety * 7
       + plants * 2
+      + (home.residents.length ? this.homePrivacy(home) / 100 * 6 : 0)
       - conditionPenalty
       - daylightPenalty,
       0,
@@ -4824,6 +4826,9 @@ export class World {
     for (const furniture of source.furniture) {
       if (furniture.ownerResidentId === resident.id) furniture.ownerResidentId = undefined;
     }
+    for (const room of source.rooms) {
+      room.assignedResidentIds = (room.assignedResidentIds ?? []).filter(id => id !== resident.id);
+    }
     for (const remainingResident of source.residents) {
       remainingResident.caregiverIds = (remainingResident.caregiverIds ?? []).filter(id => id !== resident.id);
     }
@@ -4933,6 +4938,9 @@ export class World {
     }
     for (const furniture of source.furniture) {
       if (furniture.ownerResidentId && movingIds.has(furniture.ownerResidentId)) furniture.ownerResidentId = undefined;
+    }
+    for (const room of source.rooms) {
+      room.assignedResidentIds = (room.assignedResidentIds ?? []).filter(id => !movingIds.has(id));
     }
     source.residents = remainingResidents;
     source.relationships = normalizeRelationships(remainingResidents, source.relationships);
@@ -5077,7 +5085,69 @@ export class World {
     if (!home || !room || room.kind === kind || !HOME_ROOM_KINDS.includes(kind)) return false;
     this.checkpoint();
     room.kind = kind;
+    if (kind !== "Bedroom" && kind !== "Nursery" && kind !== "Studio") room.assignedResidentIds = [];
     return true;
+  }
+
+  roomResidentCapacity(home: Home, room: HomeRoom) {
+    if (room.kind !== "Bedroom" && room.kind !== "Nursery" && room.kind !== "Studio") return 0;
+    return home.furniture.filter(item =>
+      item.kind === "bed"
+      && homeEntityFloor(item) === homeEntityFloor(room)
+      && Math.abs(item.x - room.x) <= room.width / 2
+      && Math.abs(item.z - room.z) <= room.depth / 2
+    ).length;
+  }
+
+  assignResidentRoom(homeId: string, roomId: string, residentId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    const resident = home?.residents.find(item => item.id === residentId);
+    if (!home || !room || !resident) return false;
+    const capacity = this.roomResidentCapacity(home, room);
+    const assigned = room.assignedResidentIds ?? [];
+    if (!capacity || (!assigned.includes(residentId) && assigned.length >= capacity)) return false;
+    if (assigned.includes(residentId)) return true;
+    this.checkpoint();
+    for (const candidate of home.rooms) {
+      candidate.assignedResidentIds = (candidate.assignedResidentIds ?? []).filter(id => id !== residentId);
+    }
+    room.assignedResidentIds = [...(room.assignedResidentIds ?? []), residentId];
+    resident.homeFloor = homeEntityFloor(room);
+    return true;
+  }
+
+  unassignResidentRoom(homeId: string, residentId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    if (!home || !home.rooms.some(room => (room.assignedResidentIds ?? []).includes(residentId))) return false;
+    this.checkpoint();
+    for (const room of home.rooms) room.assignedResidentIds = (room.assignedResidentIds ?? []).filter(id => id !== residentId);
+    return true;
+  }
+
+  clearRoomAssignments(homeId: string, roomId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const room = home?.rooms.find(item => item.id === roomId);
+    if (!home || !room?.assignedResidentIds?.length) return false;
+    this.checkpoint();
+    room.assignedResidentIds = [];
+    return true;
+  }
+
+  residentRoom(home: Home, residentId: string) {
+    return home.rooms.find(room => (room.assignedResidentIds ?? []).includes(residentId));
+  }
+
+  homePrivacy(home: Home) {
+    if (!home.residents.length) return 100;
+    return Math.round(average(home.residents.map(resident => {
+      const room = this.residentRoom(home, resident.id);
+      if (!room) return 25;
+      const occupants = (room.assignedResidentIds ?? []).length;
+      if (occupants <= 1) return 100;
+      const stage = this.residentLifeStage(resident);
+      return stage === "infant" || stage === "toddler" || stage === "child" ? 85 : 65;
+    })));
   }
 
   autoFurnishRoom(homeId: string, roomId: string) {
@@ -6120,6 +6190,7 @@ export class World {
         room.id,
         Math.round(clamp(room.floor ?? 0, 0, normalizedFloors - 1))
       ]));
+      const assignedRoomResidentIds = new Set<string>();
       return {
         ...home,
         name: savedHomeName.length >= 2
@@ -6134,6 +6205,11 @@ export class World {
           floorFinish: room.floorFinish ?? "oak",
           wallFinish: room.wallFinish ?? "warm-white",
           condition: clamp(room.condition ?? 100, 0, 100),
+          assignedResidentIds: [...new Set(room.assignedResidentIds ?? [])].filter(id => {
+            if (!residentIds.has(id) || assignedRoomResidentIds.has(id)) return false;
+            assignedRoomResidentIds.add(id);
+            return true;
+          }),
           lastRenovatedAt: room.lastRenovatedAt === undefined
             ? undefined
             : Math.round(clamp(room.lastRenovatedAt, 0, savedElapsedMinutes))

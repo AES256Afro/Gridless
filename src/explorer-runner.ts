@@ -72,6 +72,7 @@ import {
   type Home,
   type Lot,
   type ParkingFacility,
+  type Resident,
   type Road
 } from "./world";
 
@@ -1601,6 +1602,59 @@ check(
   efficientEnergyHome.lastDailyUtilityCost === energyWorld.homeEnergyPerformance(efficientEnergyHome).dailyCost
     && (efficientEnergyHome.lastDailyExpenses ?? 0) >= (efficientEnergyHome.lastDailyUtilityCost ?? 0),
   "Home energy demand did not settle into the household daily utility bill."
+);
+const privacyResident = (id: string, name: string): Resident => ({
+  id,
+  name,
+  age: "adult",
+  lifeStage: "adult",
+  role: "office",
+  energy: 80,
+  social: 70,
+  comfort: 70,
+  health: 85,
+  stress: 20,
+  traits: ["empathetic"]
+});
+const roomClaimWorld = new World();
+const roomClaimHome: Home = {
+  ...structuredClone(interiorHome),
+  id: "room-claim-home",
+  rooms: [
+    { ...structuredClone(interiorHome.rooms[0]), id: "room-a", kind: "Bedroom" },
+    { ...structuredClone(interiorHome.rooms[1]), id: "room-b", kind: "Bedroom" }
+  ],
+  furniture: [
+    { id: "claim-bed-a", kind: "bed", x: 0, z: 0, rotation: 0 },
+    { id: "claim-bed-b", kind: "bed", x: 6, z: 0, rotation: 0 }
+  ],
+  residents: [privacyResident("privacy-a", "Alex"), privacyResident("privacy-b", "Blair")]
+};
+roomClaimWorld.homes = [roomClaimHome];
+check(
+  roomClaimWorld.homePrivacy(roomClaimHome) === 25
+    && roomClaimWorld.assignResidentRoom(roomClaimHome.id, "room-a", "privacy-a")
+    && roomClaimWorld.assignResidentRoom(roomClaimHome.id, "room-b", "privacy-b")
+    && roomClaimWorld.homePrivacy(roomClaimHome) === 100,
+  "Private bedroom claims did not improve household privacy."
+);
+check(
+  !roomClaimWorld.assignResidentRoom(roomClaimHome.id, "room-a", "privacy-b"),
+  "A resident claimed a bedroom without available bed capacity."
+);
+roomClaimHome.furniture.push({ id: "claim-bed-a-2", kind: "bed", x: 2.3, z: 0, rotation: 0 });
+check(
+  roomClaimWorld.assignResidentRoom(roomClaimHome.id, "room-a", "privacy-b")
+    && roomClaimWorld.homePrivacy(roomClaimHome) === 65
+    && roomClaimWorld.residentRoom(roomClaimHome, "privacy-b")?.id === "room-a",
+  "Shared bedroom assignment did not move the claim or apply its privacy tradeoff."
+);
+const restoredClaimWorld = new World();
+check(
+  restoredClaimWorld.restore(roomClaimWorld.serialize())
+    && restoredClaimWorld.homes[0].rooms.find(room => room.id === "room-a")?.assignedResidentIds?.length === 2
+    && restoredClaimWorld.homePrivacy(restoredClaimWorld.homes[0]) === 65,
+  "Resident room claims did not survive save and restore."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -4079,6 +4133,10 @@ console.log(JSON.stringify({
     inefficient: inefficientEnergy,
     efficient: efficientEnergy,
     settledDailyUtilityCost: efficientEnergyHome.lastDailyUtilityCost
+  },
+  bedroomPrivacy: {
+    score: restoredClaimWorld.homePrivacy(restoredClaimWorld.homes[0]),
+    roomAResidents: restoredClaimWorld.homes[0].rooms.find(room => room.id === "room-a")?.assignedResidentIds
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
