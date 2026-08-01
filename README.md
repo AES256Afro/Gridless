@@ -37,6 +37,7 @@ The current vertical slice proves:
 - A local environmental-health model and Pollution view combining live traffic, road speed, industry, waste, sewage, air quality, noise, and ground pollution with visible mitigation from parks, street trees, recycling, and heavy-traffic policy
 - Neighborhood Voices that translate live district utilities, wellbeing, traffic, land value, park access, environmental exposure, jobs, outages, and policies into prioritized resident feedback with one-click district focus and evidence views
 - Parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
+- Independent low, medium, and high zoning intensity for every non-grid parcel, with ordered household and business capacity plus matching regional building height and footprint changes
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
 - Persistent power, water, fire, health, and school facilities with coverage radii, operating costs, municipal balance, and demand feedback
 - Deterministic saved calendar with pause/speed controls plus drawable power, water, and sewage networks

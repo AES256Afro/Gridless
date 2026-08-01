@@ -57,6 +57,7 @@ import {
   type HomeWallFinish,
   type HouseholdGatheringKind,
   type Lot,
+  type LotDensity,
   type ParkingFacility,
   type ParkingKind,
   type Point2,
@@ -294,6 +295,11 @@ app.innerHTML = `
       </div>
       <div class="city-tool-options" data-city-group-panel="zone">
         <span class="tool-label">Paint zone</span>
+        <select id="zone-density" aria-label="Zoning intensity">
+          <option value="low">Low intensity</option>
+          <option value="medium" selected>Medium intensity</option>
+          <option value="high">High intensity</option>
+        </select>
         <button data-city-tool="residential">Residential</button>
         <button data-city-tool="commercial">Commercial</button>
         <button data-city-tool="mixed">Mixed use</button>
@@ -2509,11 +2515,14 @@ function renderWorld() {
     const seed = hash(lot.id);
     const lotHome = lot.homeId ? world.homes.find(home => home.id === lot.homeId) : undefined;
     const architecture = buildingArchitecture(world.templateId, lot.zone, seed);
-    const buildingWidth = lot.width * (lotHome ? .62 : architecture.widthScale);
-    const buildingDepth = lot.depth * (lotHome ? .58 : architecture.depthScale);
+    const density = world.lotDensity(lot);
+    const densityFootprint = density === "low" ? .84 : density === "high" ? 1.08 : 1;
+    const densityHeight = density === "low" ? .62 : density === "high" ? 1.55 : 1;
+    const buildingWidth = lot.width * (lotHome ? .62 : Math.min(.88, architecture.widthScale * densityFootprint));
+    const buildingDepth = lot.depth * (lotHome ? .58 : Math.min(.84, architecture.depthScale * densityFootprint));
     const fullHeight = lotHome
       ? Math.max(3.6, lotHome.floors * 3.2 + .4)
-      : zoneBuildingHeight(lot.zone, seed) * architecture.heightScale;
+      : zoneBuildingHeight(lot.zone, seed) * architecture.heightScale * densityHeight;
     const progress = world.constructionProgress(lot);
     const height = fullHeight * (.12 + progress * .88);
     if (mode === "home" && lot.id === selectedLot?.id) continue;
@@ -4011,6 +4020,10 @@ function updateRoadProfileSummary() {
 
 function currentDistrictPolicy() {
   return (document.querySelector("#district-policy-kind") as HTMLSelectElement).value as DistrictPolicy;
+}
+
+function currentZoneDensity() {
+  return (document.querySelector("#zone-density") as HTMLSelectElement).value as LotDensity;
 }
 
 function currentPolicyDistrictId() {
@@ -6426,6 +6439,7 @@ function renderParcelDetails(lot: Lot) {
   const lotWellbeing = world.lotWellbeing(lot);
   const lotWellbeingState = wellbeingLabel(lotWellbeing);
   const environmentalQuality = world.lotEnvironmentalQuality(lot);
+  const developmentCapacity = world.lotDevelopmentCapacity(lot);
   const lotHome = world.homes.find(home => home.lotId === lot.id);
   const latestHomeMilestone = lotHome?.residents
     .flatMap(resident => world.residentMilestones(resident).map(milestone => ({ resident, milestone })))
@@ -6507,6 +6521,7 @@ function renderParcelDetails(lot: Lot) {
       <div><span>Businesses</span><strong>${lot.businesses.toLocaleString()}</strong></div>
       <div><span>Jobs</span><strong>${world.lotJobs(lot).toLocaleString()}</strong></div>
     </div>
+    <div class="parcel-line"><span>Zoning intensity</span><strong>${developmentCapacity.density} · capacity ${developmentCapacity.households} households and ${developmentCapacity.businesses} businesses</strong></div>
     <div class="parcel-line"><span>Household mix</span><strong>${householdMix.length ? householdMix.map(([label, count]) => `${label} ${count}`).join(" · ") : "No occupied homes"}</strong></div>
     <div class="parcel-line"><span>Business mix</span><strong>${businessMix.length ? businessMix.join(" · ") : "No open businesses"}</strong></div>
     <div class="parcel-line"><span>Live neighborhood routine</span><strong>${activity.atHome} home · ${activity.atWorkOrSchool} work or school · ${activity.outInCity} elsewhere · ${activity.openBusinesses}/${lot.businesses} businesses open</strong></div>
@@ -6671,7 +6686,8 @@ function updateCityToolPanel(lot?: Lot) {
     );
   } else {
     const label = cityTool === "mixed" ? "mixed-use" : cityTool;
-    setPanel("ZONING BRUSH", `Zone ${label}`, "Click parcels to change what can develop there. Buildings and population respond immediately while the underlying lot remains fully editable.", "Click lot|Apply zoning;Inspect|Review parcel;⌘ Z|Undo");
+    const density = currentZoneDensity();
+    setPanel("ZONING BRUSH", `Zone ${density} intensity ${label}`, "Click parcels to choose both land use and development intensity. Low intensity creates smaller buildings, medium supports urban blocks, and high intensity creates the greatest household or business capacity.", "Intensity|Choose built form;Click lot|Apply zoning;Inspect|Review parcel;⌘ Z|Undo");
   }
 }
 
@@ -7100,10 +7116,11 @@ renderer.domElement.addEventListener("pointerdown", event => {
       updateCityToolPanel(selectedLot);
       notice("Parcel selected");
     } else {
-      world.zoneLot(selectedLot.id, cityTool);
+      const density = currentZoneDensity();
+      world.zoneLot(selectedLot.id, cityTool, density);
       renderWorld();
       updateCityToolPanel(selectedLot);
-      notice(`${cityTool === "mixed" ? "Mixed-use" : `${cityTool[0].toUpperCase()}${cityTool.slice(1)}`} construction started`);
+      notice(`${density[0].toUpperCase()}${density.slice(1)} intensity ${cityTool === "mixed" ? "mixed-use" : cityTool} construction started`);
     }
     return;
   }
@@ -7679,6 +7696,13 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
           : `Zoning brush: ${cityTool}`
   );
 }));
+
+document.querySelector("#zone-density")!.addEventListener("change", () => {
+  if (cityTool === "residential" || cityTool === "commercial" || cityTool === "mixed" || cityTool === "industrial" || cityTool === "civic") {
+    updateCityToolPanel();
+    notice(`${currentZoneDensity()} intensity selected for the zoning brush`);
+  }
+});
 document.querySelector("#road-class")!.addEventListener("change", () => {
   const roadClass = (document.querySelector("#road-class") as HTMLSelectElement).value as RoadClass;
   setRoadProfileControls(ROAD_PROFILE_PRESETS[roadClass], roadClass);

@@ -661,6 +661,33 @@ check(
   "Tax pressure did not change household demand over a simulated month."
 );
 
+const densityWorld = new World();
+const densityLot = densityWorld.lots.find(lot => lot.zone === "residential")!;
+const mediumDensityCapacity = densityWorld.lotDevelopmentCapacity(densityLot);
+check(
+  densityWorld.zoneLot(densityLot.id, densityLot.zone, "low"),
+  "A same-use low-intensity zoning change was rejected."
+);
+const lowDensityCapacity = densityWorld.lotDevelopmentCapacity(densityLot);
+check(
+  densityWorld.zoneLot(densityLot.id, densityLot.zone, "high"),
+  "A same-use high-intensity zoning change was rejected."
+);
+const highDensityCapacity = densityWorld.lotDevelopmentCapacity(densityLot);
+check(
+  lowDensityCapacity.households < mediumDensityCapacity.households
+    && highDensityCapacity.households > mediumDensityCapacity.households
+    && lowDensityCapacity.businesses === 0
+    && highDensityCapacity.businesses === 0,
+  "Zoning intensity did not produce ordered, use-aware development capacity."
+);
+const restoredDensityWorld = new World();
+check(
+  restoredDensityWorld.restore(densityWorld.serialize())
+    && restoredDensityWorld.lotDensity(restoredDensityWorld.lots.find(lot => lot.id === densityLot.id)!) === "high",
+  "Zoning intensity did not survive save and restore."
+);
+
 const policyWorld = new World();
 const policyLot = policyWorld.lots.find(candidate => Boolean(policyWorld.districtForLot(candidate)))!;
 const policyDistrict = policyWorld.districtForLot(policyLot)!;
@@ -3753,6 +3780,12 @@ console.log(JSON.stringify({
     noiseBefore: environmentalHealthBefore.noiseLevel,
     noiseAfter: environmentalHealthAfter.noiseLevel,
     mitigations: environmentalHealthAfter.mitigations
+  },
+  zoningIntensity: {
+    lowHouseholds: lowDensityCapacity.households,
+    mediumHouseholds: mediumDensityCapacity.households,
+    highHouseholds: highDensityCapacity.households,
+    restored: restoredDensityWorld.lotDensity(restoredDensityWorld.lots.find(lot => lot.id === densityLot.id)!)
   },
   localizedSoundCue: emergencyStreetSound.focus,
   shelteredEmergencyLevel: shelteredEmergencySound.emergency,
