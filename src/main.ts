@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -522,6 +522,7 @@ app.innerHTML = `
       <button id="auto-assign-rooms" type="button">Smart assign rooms</button>
       <button id="approve-home-move-in" type="button" disabled>Approve move-in</button>
       <button id="pin-home-move-in-goals" type="button" disabled>Track move-in goals</button>
+      <button id="begin-home-first-night" type="button" disabled>Begin first night</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
@@ -5735,6 +5736,7 @@ function updateHomeBuildControls(home: Home | null) {
   const autoAssignRooms = document.querySelector<HTMLButtonElement>("#auto-assign-rooms")!;
   const approveMoveIn = document.querySelector<HTMLButtonElement>("#approve-home-move-in")!;
   const pinMoveInGoals = document.querySelector<HTMLButtonElement>("#pin-home-move-in-goals")!;
+  const beginFirstNight = document.querySelector<HTMLButtonElement>("#begin-home-first-night")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
@@ -5889,6 +5891,10 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Move-in goals ${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length} complete · ${moveInGoals.filter(goal => !goal.complete).map(goal => goal.label).join(" · ") || "all tracked goals complete"}`
     : "No move-in goals pinned";
   moveInGoalsElement.classList.toggle("warning", moveInGoals.some(goal => !goal.complete));
+  beginFirstNight.disabled = !home || !moveInAuthorization?.active || home.firstNightAt !== undefined || !home.residents.length;
+  beginFirstNight.textContent = home?.firstNightAt !== undefined
+    ? `First night complete · +${home.firstNightComfortGain ?? 0} comfort`
+    : moveInAuthorization?.active ? "Begin first night" : "Approve home before first night";
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -6023,6 +6029,7 @@ function updateHouseholdSummary(home: Home) {
         <div title="Safety ${readiness.components.safety}% · circulation ${readiness.components.circulation}% · space ${readiness.components.space}% · organization ${readiness.components.organization}% · energy ${readiness.components.energy}% · privacy ${readiness.components.privacy}% · condition ${readiness.components.condition}%"><span>Move-in readiness</span><strong>${readiness.score}% · ${readiness.status}</strong></div>
         <div title="${moveInAuthorization.reason}"><span>Move-in decision</span><strong>${moveInAuthorization.status}${moveInAuthorization.approvedScore ? ` · ${moveInAuthorization.approvedScore}%` : ""}</strong></div>
         <div title="${moveInGoals.map(goal => `${goal.label}: ${goal.complete ? "complete" : goal.detail}`).join(" · ") || "No goals pinned"}"><span>Move-in goals</span><strong>${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length || 0} complete</strong></div>
+        <div><span>First night</span><strong>${home.firstNightAt !== undefined ? `Complete · +${home.firstNightComfortGain ?? 0} comfort` : "Not begun"}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -9098,6 +9105,13 @@ document.querySelector("#pin-home-move-in-goals")!.addEventListener("click", () 
   const home = currentHome();
   if (!home) return;
   const result = pinSuggestedHomeMoveInGoals(world, home);
+  renderWorld();
+  notice(result.reason);
+});
+document.querySelector("#begin-home-first-night")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home) return;
+  const result = beginApprovedHomeFirstNight(world, home);
   renderWorld();
   notice(result.reason);
 });

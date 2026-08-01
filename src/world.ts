@@ -523,7 +523,7 @@ export type ResidentWorkTask =
   | "develop-commission"
   | "refine-portfolio"
   | "deliver-project";
-export type ResidentMilestoneKind = "arrival" | "life-stage" | "promotion" | "career-branch" | "aspiration" | "collection" | "move";
+export type ResidentMilestoneKind = "arrival" | "life-stage" | "promotion" | "career-branch" | "aspiration" | "collection" | "move" | "homecoming";
 export type ResidentMilestone = {
   id: string;
   kind: ResidentMilestoneKind;
@@ -764,7 +764,7 @@ const CAREER_WORKPLACE_SECTORS: Record<ResidentCareerTrack, [BusinessSector, Bus
 };
 
 export const RESIDENT_MILESTONE_KINDS: ResidentMilestoneKind[] = [
-  "arrival", "life-stage", "promotion", "career-branch", "aspiration", "collection", "move"
+  "arrival", "life-stage", "promotion", "career-branch", "aspiration", "collection", "move", "homecoming"
 ];
 export const MAX_RESIDENT_MILESTONES = 12;
 
@@ -1249,6 +1249,8 @@ export type Home = {
   moveInApprovedScore?: number;
   moveInGoalKinds?: HomeMoveInGoalKind[];
   moveInGoalsPinnedAt?: number;
+  firstNightAt?: number;
+  firstNightComfortGain?: number;
   lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
   gatherings?: HouseholdGathering[];
   residents: Resident[];
@@ -4981,6 +4983,64 @@ export class World {
     return true;
   }
 
+  beginHomeFirstNight(homeId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    if (!home || !home.residents.length || home.firstNightAt !== undefined) {
+      return { ok: false, residents: 0, comfortGain: 0, reason: home?.firstNightAt !== undefined ? "This household has already completed its first night." : "Add residents before beginning the first night." };
+    }
+    const comfortBefore = home.residents.reduce((total, resident) => total + resident.comfort, 0);
+    this.checkpoint();
+    for (const resident of home.residents) {
+      const room = this.residentRoom(home, resident.id) ?? home.rooms[0];
+      const roomFurniture = home.furniture.filter(item =>
+        homeEntityFloor(item) === homeEntityFloor(room)
+        && Math.abs(item.x - room.x) <= room.width / 2
+        && Math.abs(item.z - room.z) <= room.depth / 2
+      );
+      const target = roomFurniture.find(item => item.ownerResidentId === resident.id && item.kind === "bed")
+        ?? roomFurniture.find(item => item.kind === "bed")
+        ?? roomFurniture.find(item => item.kind === "sofa" || item.kind === "table")
+        ?? home.furniture.find(item => item.kind === "sofa" || item.kind === "table")
+        ?? home.furniture[0];
+      const actionKind: ResidentActionKind = target?.kind === "bed"
+        ? "sleep"
+        : target?.kind === "table" || target?.kind === "fridge"
+          ? "eat"
+          : target?.kind === "plant"
+            ? "tend-plants"
+            : target?.kind === "desk" || target?.kind === "bookcase"
+              ? "study"
+              : target?.kind === "shower" ? "shower" : target ? "relax" : "idle";
+      resident.homeFloor = target ? homeEntityFloor(target) : homeEntityFloor(room);
+      resident.homePosition = target ? { x: target.x, z: target.z } : { x: room.x, z: room.z };
+      resident.currentAction = {
+        kind: actionKind,
+        startedAt: this.clock.elapsedMinutes,
+        endsAt: this.clock.elapsedMinutes + 90,
+        targetFurnitureId: target?.id,
+        directed: true
+      };
+      resident.comfort = clamp(resident.comfort + 8, 0, 100);
+      resident.energy = clamp(resident.energy + 4, 0, 100);
+      resident.stress = clamp(resident.stress - 6, 0, 100);
+      this.recordResidentMilestone(
+        resident,
+        "homecoming",
+        "First night at home",
+        `${resident.name} settled into ${home.name} for the first time.`
+      );
+    }
+    const comfortAfter = home.residents.reduce((total, resident) => total + resident.comfort, 0);
+    home.firstNightAt = this.clock.elapsedMinutes;
+    home.firstNightComfortGain = comfortAfter - comfortBefore;
+    return {
+      ok: true,
+      residents: home.residents.length,
+      comfortGain: home.firstNightComfortGain,
+      reason: `${home.residents.length} resident${home.residents.length === 1 ? "" : "s"} began the first night at home with ${home.firstNightComfortGain} total comfort gained.`
+    };
+  }
+
   moveResidentToHome(sourceHomeId: string, residentId: string, destinationHomeId: string) {
     const source = this.homes.find(home => home.id === sourceHomeId);
     const destination = this.homes.find(home => home.id === destinationHomeId);
@@ -6955,6 +7015,12 @@ export class World {
         moveInGoalsPinnedAt: home.moveInGoalsPinnedAt === undefined
           ? undefined
           : Math.round(clamp(home.moveInGoalsPinnedAt, 0, savedElapsedMinutes)),
+        firstNightAt: home.firstNightAt === undefined
+          ? undefined
+          : Math.round(clamp(home.firstNightAt, 0, savedElapsedMinutes)),
+        firstNightComfortGain: home.firstNightComfortGain === undefined
+          ? undefined
+          : Math.max(0, Math.round(home.firstNightComfortGain)),
         lastPurchase: home.lastPurchase && RESIDENT_PURCHASES[home.lastPurchase.kind]
           ? {
               ...home.lastPurchase,

@@ -217,3 +217,14 @@ export function pinSuggestedHomeMoveInGoals(world: World, home: Home) {
   if (!world.setHomeMoveInGoals(home.id, kinds)) return { ok: false, reason: "These move-in goals are already pinned.", kinds };
   return { ok: true, reason: `${kinds.length} move-in goal${kinds.length === 1 ? "" : "s"} pinned from live home evidence.`, kinds };
 }
+
+export function beginApprovedHomeFirstNight(world: World, home: Home) {
+  const authorization = homeMoveInAuthorization(world, home);
+  if (!authorization.active) return {
+    ok: false,
+    residents: 0,
+    comfortGain: 0,
+    reason: authorization.status === "Suspended" ? authorization.reason : "Approve this ready home before beginning the first night."
+  };
+  return world.beginHomeFirstNight(home.id);
+}
