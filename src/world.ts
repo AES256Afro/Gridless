@@ -1224,6 +1224,15 @@ export type HomeRoofStyle = "gable" | "hip" | "flat" | "green";
 export type HomeFoundationStyle = "slab" | "crawlspace" | "raised";
 export const HOME_MOVE_IN_GOAL_KINDS = ["safety", "space", "organization", "energy", "privacy", "condition"] as const;
 export type HomeMoveInGoalKind = typeof HOME_MOVE_IN_GOAL_KINDS[number];
+export type HomeInspectionResult = "Passed" | "Conditional" | "Failed";
+export type HomeInspectionRecord = {
+  at: number;
+  score: number;
+  result: HomeInspectionResult;
+  readyRooms: number;
+  totalRooms: number;
+  corrections: number;
+};
 
 export type Home = {
   id: string;
@@ -1251,6 +1260,7 @@ export type Home = {
   moveInGoalsPinnedAt?: number;
   firstNightAt?: number;
   firstNightComfortGain?: number;
+  inspections?: HomeInspectionRecord[];
   lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
   gatherings?: HouseholdGathering[];
   residents: Resident[];
@@ -4983,6 +4993,30 @@ export class World {
     return true;
   }
 
+  recordHomeInspection(homeId: string, record: Omit<HomeInspectionRecord, "at">) {
+    const home = this.homes.find(item => item.id === homeId);
+    const normalized = {
+      at: this.clock.elapsedMinutes,
+      score: Math.round(record.score),
+      result: record.result,
+      readyRooms: Math.round(record.readyRooms),
+      totalRooms: Math.round(record.totalRooms),
+      corrections: Math.round(record.corrections)
+    } satisfies HomeInspectionRecord;
+    if (
+      !home
+      || normalized.score < 0 || normalized.score > 100
+      || !["Passed", "Conditional", "Failed"].includes(normalized.result)
+      || normalized.totalRooms < 1 || normalized.readyRooms < 0 || normalized.readyRooms > normalized.totalRooms
+      || normalized.corrections < 0
+    ) return false;
+    const latest = home.inspections?.at(-1);
+    if (latest && latest.at === normalized.at && latest.score === normalized.score && latest.result === normalized.result) return false;
+    this.checkpoint();
+    home.inspections = [...(home.inspections ?? []), normalized].slice(-12);
+    return true;
+  }
+
   beginHomeFirstNight(homeId: string) {
     const home = this.homes.find(item => item.id === homeId);
     if (!home || !home.residents.length || home.firstNightAt !== undefined) {
@@ -7021,6 +7055,21 @@ export class World {
         firstNightComfortGain: home.firstNightComfortGain === undefined
           ? undefined
           : Math.max(0, Math.round(home.firstNightComfortGain)),
+        inspections: (home.inspections ?? []).filter(record =>
+          Number.isFinite(record.at)
+          && Number.isFinite(record.score)
+          && Number.isFinite(record.readyRooms)
+          && Number.isFinite(record.totalRooms)
+          && Number.isFinite(record.corrections)
+          && (record.result === "Passed" || record.result === "Conditional" || record.result === "Failed")
+        ).map(record => ({
+          at: Math.round(clamp(record.at, 0, savedElapsedMinutes)),
+          score: Math.round(clamp(record.score, 0, 100)),
+          result: record.result,
+          readyRooms: Math.round(clamp(record.readyRooms, 0, Math.max(1, record.totalRooms))),
+          totalRooms: Math.max(1, Math.round(record.totalRooms)),
+          corrections: Math.max(0, Math.round(record.corrections))
+        })).slice(-12),
         lastPurchase: home.lastPurchase && RESIDENT_PURCHASES[home.lastPurchase.kind]
           ? {
               ...home.lastPurchase,

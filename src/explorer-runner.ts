@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals, recordCurrentHomeInspection } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1836,6 +1836,15 @@ const firstUnsafeRoomIssue = nextRoomReadinessIssue(roomClaimWorld, unsafeHome);
 const cycledUnsafeRoomIssue = nextRoomReadinessIssue(roomClaimWorld, unsafeHome, firstUnsafeRoomIssue?.room.id);
 const failedHomeInspection = inspectHome(roomClaimWorld, unsafeHome);
 const passedHomeInspection = inspectHome(roomClaimWorld, safeHome);
+const inspectionHistoryWorld = new World();
+const inspectionHistoryHome = structuredClone(unsafeHome);
+inspectionHistoryWorld.homes = [inspectionHistoryHome];
+const recordedFailedInspection = recordCurrentHomeInspection(inspectionHistoryWorld, inspectionHistoryHome);
+inspectionHistoryWorld.advanceMinutes(1, 0);
+inspectionHistoryHome.doors = structuredClone(safeHome.doors);
+inspectionHistoryHome.windows = structuredClone(safeHome.windows);
+const recordedPassedInspection = recordCurrentHomeInspection(inspectionHistoryWorld, inspectionHistoryHome);
+const restoredInspectionHistoryWorld = new World();
 const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
 const safeReadiness = assessHomeReadiness(roomClaimWorld, safeHome);
 const moveInApprovalWorld = new World();
@@ -1889,6 +1898,16 @@ check(
     && passedHomeInspection.readyRooms === passedHomeInspection.totalRooms
     && passedHomeInspection.score > failedHomeInspection.score,
   "Home inspection did not consolidate whole-home and room evidence into a clear pass or failure."
+);
+check(
+  recordedFailedInspection.ok
+    && recordedFailedInspection.inspection.result === "Failed"
+    && recordedPassedInspection.ok
+    && recordedPassedInspection.inspection.result === "Passed"
+    && inspectionHistoryHome.inspections?.map(record => record.result).join(",") === "Failed,Passed"
+    && restoredInspectionHistoryWorld.restore(inspectionHistoryWorld.serialize())
+    && restoredInspectionHistoryWorld.homes[0].inspections?.length === 2,
+  "Home inspection history did not preserve a bounded failed-to-passed record through save and restore."
 );
 check(
   unsafeReadiness.status === "Unsafe"
@@ -4529,6 +4548,7 @@ console.log(JSON.stringify({
   roomReadiness: { unsafe: unsafeRoomReadiness, safe: safeRoomReadiness },
   roomIssueNavigation: [firstUnsafeRoomIssue?.room.id, cycledUnsafeRoomIssue?.room.id],
   homeInspection: { failed: failedHomeInspection, passed: passedHomeInspection },
+  homeInspectionHistory: inspectionHistoryHome.inspections,
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,

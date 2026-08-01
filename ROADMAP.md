@@ -429,6 +429,7 @@ Exit gate: a player can build a distinctive two-story home, furnish it efficient
 - [Complete] Add live room-by-room readiness audits for purpose, access, daylight, condition, clearance, and sleeping-room egress, with direct correction advice in Home Simulator.
 - [Complete] Connect readiness evidence to a deterministic next-room workflow that jumps to the worst issue and cycles through the remaining home corrections.
 - [Complete] Consolidate home and room evidence into a live inspection result with a single score, pass state, unique correction count, and highest-priority next action.
+- [Complete] Make home inspections recordable as a bounded household history so players can preserve failed-to-passed improvement evidence across saves and command history.
 - [Complete] Derive lasting relationship-specific Warmth, Loyalty, Wariness, and Resentment from bounded social memories, then use those impressions in autonomous partner choice and future conversation outcomes.
 - [In progress] Directed and autonomous childcare, linked-dependent need recovery, caregiver skill growth, family-bond memories, and individual household moves are live; whole-household splits remain ahead.
 
