@@ -10,13 +10,117 @@ import {
 
 export type Point2 = { x: number; z: number };
 
+export type RoadClass = "street" | "avenue" | "arterial";
+
+export type RoadProfile = {
+  travelLanes: number;
+  speedLimitKph: number;
+  sidewalkWidth: number;
+  bikeLanes: boolean;
+  busLanes: boolean;
+  median: boolean;
+  curbParking: boolean;
+  streetTrees: boolean;
+};
+
 export type Road = {
   id: string;
   points: Point2[];
   width: number;
   name?: string;
-  class?: "street" | "avenue" | "arterial";
+  class?: RoadClass;
+  profile?: RoadProfile;
 };
+
+export const ROAD_PROFILE_PRESETS: Record<RoadClass, RoadProfile> = {
+  street: {
+    travelLanes: 2,
+    speedLimitKph: 30,
+    sidewalkWidth: 2.2,
+    bikeLanes: false,
+    busLanes: false,
+    median: false,
+    curbParking: true,
+    streetTrees: true
+  },
+  avenue: {
+    travelLanes: 4,
+    speedLimitKph: 40,
+    sidewalkWidth: 3,
+    bikeLanes: false,
+    busLanes: false,
+    median: false,
+    curbParking: false,
+    streetTrees: true
+  },
+  arterial: {
+    travelLanes: 4,
+    speedLimitKph: 50,
+    sidewalkWidth: 3,
+    bikeLanes: true,
+    busLanes: false,
+    median: true,
+    curbParking: false,
+    streetTrees: true
+  }
+};
+
+export function normalizeRoadProfile(profile: Partial<RoadProfile> | undefined, roadClass: RoadClass = "street"): RoadProfile {
+  const preset = ROAD_PROFILE_PRESETS[roadClass];
+  return {
+    travelLanes: Math.round(clamp(profile?.travelLanes ?? preset.travelLanes, 1, 8)),
+    speedLimitKph: Math.round(clamp(profile?.speedLimitKph ?? preset.speedLimitKph, 20, 100) / 5) * 5,
+    sidewalkWidth: Math.round(clamp(profile?.sidewalkWidth ?? preset.sidewalkWidth, 1.2, 6) * 10) / 10,
+    bikeLanes: Boolean(profile?.bikeLanes ?? preset.bikeLanes),
+    busLanes: Boolean(profile?.busLanes ?? preset.busLanes),
+    median: Boolean(profile?.median ?? preset.median),
+    curbParking: Boolean(profile?.curbParking ?? preset.curbParking),
+    streetTrees: Boolean(profile?.streetTrees ?? preset.streetTrees)
+  };
+}
+
+export function roadWidthForProfile(profile: RoadProfile) {
+  return Math.max(4.2, Math.round((profile.travelLanes * 3 + (profile.curbParking ? 3 : 0) + (profile.bikeLanes ? 2 : 0) + (profile.median ? 2 : 0)) * 10) / 10);
+}
+
+export function roadCapacityForProfile(profile: RoadProfile, roadClass: RoadClass = "street") {
+  const preset = ROAD_PROFILE_PRESETS[roadClass];
+  const baseCapacity = roadClass === "arterial" ? 620 : roadClass === "avenue" ? 440 : 280;
+  const designFactor = (candidate: RoadProfile) =>
+    (candidate.bikeLanes ? .96 : 1)
+    * (candidate.busLanes ? .88 : 1)
+    * (candidate.median ? 1.03 : 1)
+    * (candidate.curbParking ? .94 : 1);
+  const speedFactor = Math.pow(profile.speedLimitKph / preset.speedLimitKph, .3);
+  return Math.max(90, Math.round(
+    baseCapacity
+    * (profile.travelLanes / preset.travelLanes)
+    * speedFactor
+    * designFactor(profile) / designFactor(preset)
+  ));
+}
+
+export function roadConstructionCost(points: Point2[], profile: RoadProfile) {
+  const length = routeLength(points);
+  const featureCost = length * (
+    (profile.bikeLanes ? 520 : 0)
+    + (profile.busLanes ? 680 : 0)
+    + (profile.median ? 760 : 0)
+    + (profile.streetTrees ? 240 : 0)
+  );
+  return Math.max(25_000, Math.round((length * roadWidthForProfile(profile) * 1_350 + featureCost) / 1_000) * 1_000);
+}
+
+function normalizeRoadRecord(road: Road): Road {
+  const roadClass: RoadClass = road.class
+    ?? (road.width >= 15 ? "arterial" : road.width >= 11 ? "avenue" : "street");
+  return {
+    ...road,
+    class: roadClass,
+    width: Number.isFinite(road.width) && road.width >= 4 ? road.width : roadWidthForProfile(ROAD_PROFILE_PRESETS[roadClass]),
+    profile: normalizeRoadProfile(road.profile, roadClass)
+  };
+}
 
 export type Area = {
   id: string;
@@ -692,7 +796,7 @@ export class World {
   private revision = 0;
 
   constructor() {
-    this.roads = clone(NYC_TEMPLATE.roads);
+    this.roads = clone(NYC_TEMPLATE.roads).map(normalizeRoadRecord);
     this.areas = clone(NYC_TEMPLATE.areas);
     this.rebuildLots();
     this.parking = initialParking(this.roads);
@@ -871,13 +975,54 @@ export class World {
     this.revision++;
   }
 
-  addRoad(points: Point2[], width = 10, roadClass: Road["class"] = "street") {
-    if (points.length < 2) return;
+  roadProfile(road: Road) {
+    return normalizeRoadProfile(road.profile, road.class ?? "street");
+  }
+
+  roadCapacity(road: Road) {
+    return roadCapacityForProfile(this.roadProfile(road), road.class ?? "street");
+  }
+
+  addRoad(points: Point2[], width = 10, roadClass: RoadClass = "street", authoredProfile?: Partial<RoadProfile>) {
+    if (points.length < 2) return false;
+    const profile = normalizeRoadProfile(authoredProfile, roadClass);
+    const constructionCost = roadConstructionCost(points, profile);
+    if (this.clock.treasury < constructionCost) return false;
     this.checkpoint();
-    this.roads.push({ id: crypto.randomUUID(), points: clone(points), width, class: roadClass, name: `New ${roadClass}` });
+    this.clock.treasury -= constructionCost;
+    this.roads.push({
+      id: crypto.randomUUID(),
+      points: clone(points),
+      width: authoredProfile ? roadWidthForProfile(profile) : width,
+      class: roadClass,
+      profile,
+      name: `New ${roadClass}`
+    });
     this.rebuildLots();
     if (!this.transitLines.length) this.transitLines = initialTransitLines(this.roads);
     this.rebuildAccessibilityEntrances();
+    return true;
+  }
+
+  updateRoadProfile(roadId: string, authoredProfile: Partial<RoadProfile>, authoredClass?: RoadClass) {
+    const road = this.roads.find(candidate => candidate.id === roadId);
+    if (!road) return { ok: false, cost: 0, reason: "Choose a road to update" };
+    const roadClass = authoredClass ?? road.class ?? "street";
+    const profile = normalizeRoadProfile(authoredProfile, roadClass);
+    const unchanged = roadClass === (road.class ?? "street")
+      && JSON.stringify(profile) === JSON.stringify(this.roadProfile(road));
+    if (unchanged) return { ok: false, cost: 0, reason: "That road already uses this profile" };
+    const upgradeCost = Math.max(25_000, Math.round(roadConstructionCost(road.points, profile) * .35 / 1_000) * 1_000);
+    if (this.clock.treasury < upgradeCost) {
+      return { ok: false, cost: upgradeCost, reason: `This retrofit needs $${upgradeCost.toLocaleString()}` };
+    }
+    this.checkpoint();
+    this.clock.treasury -= upgradeCost;
+    road.class = roadClass;
+    road.profile = profile;
+    road.width = roadWidthForProfile(profile);
+    this.rebuildAccessibilityEntrances();
+    return { ok: true, cost: upgradeCost, reason: `${road.name ?? "Road"} profile updated` };
   }
 
   zoneLot(lotId: string, zone: Zone) {
@@ -1079,7 +1224,7 @@ export class World {
   }
 
   transitEffectiveHeadway(line: TransitLine, elapsedMinute = this.clock.elapsedMinutes) {
-    return this.activeCityEvents(elapsedMinute)
+    const scheduledHeadway = this.activeCityEvents(elapsedMinute)
       .filter(event => event.temporaryTransitLineId === line.id)
       .reduce(
         (headway, event) => Math.min(
@@ -1088,6 +1233,10 @@ export class World {
         ),
         line.headwayMinutes
       );
+    const sourceRoad = this.roads.find(road => road.id === line.roadId);
+    return sourceRoad && this.roadProfile(sourceRoad).busLanes
+      ? Math.max(4, Math.round(scheduledHeadway * .84))
+      : scheduledHeadway;
   }
 
   transitActiveFleetSize(line: TransitLine, elapsedMinute = this.clock.elapsedMinutes) {
@@ -1802,7 +1951,7 @@ export class World {
       const usesRoad = flow.route.some(point => distanceToPolyline(point, road.points) <= road.width / 2 + 5);
       return usesRoad ? total + flow.travelers : total;
     }, 0);
-    const classCapacity = road.class === "arterial" ? 620 : road.class === "avenue" ? 440 : 280;
+    const classCapacity = this.roadCapacity(road);
     const eventPressure = this.activeCityEvents().some(event => event.roadId === road.id)
       ? this.cityEventTrafficPressure() * .45
       : 0;
@@ -2478,7 +2627,13 @@ export class World {
       const evening = minute >= flow.returnMinute && minute <= flow.returnMinute + flow.travelMinutes * 2.35;
       return total + (morning || evening ? flow.travelers : 0);
     }, 0);
-    const networkCapacity = Math.max(280, this.roads.length * 16);
+    const baselineCapacity = this.roads.reduce((total, road) => {
+      const roadClass = road.class ?? "street";
+      return total + roadCapacityForProfile(ROAD_PROFILE_PRESETS[roadClass], roadClass);
+    }, 0);
+    const designedCapacity = this.roads.reduce((total, road) => total + this.roadCapacity(road), 0);
+    const capacityFactor = baselineCapacity > 0 ? designedCapacity / baselineCapacity : 1;
+    const networkCapacity = Math.max(280, this.roads.length * 16 * capacityFactor);
     return Math.min(1, travelers / networkCapacity);
   }
 
@@ -2658,7 +2813,7 @@ export class World {
     this.checkpoint();
     this.cityName = id === "nyc" ? "New Gridless City" : "Untitled Region";
     this.templateId = id;
-    this.roads = clone(template.roads);
+    this.roads = clone(template.roads).map(normalizeRoadRecord);
     this.areas = clone(template.areas);
     this.homes = [];
     this.services = [];
@@ -3135,7 +3290,7 @@ export class World {
       : "New Gridless City";
     this.templateId = snapshot.templateId ?? "nyc";
     this.spatialChunkSize = Math.round(clamp(snapshot.spatialChunkSize ?? 256, 128, 1024));
-    this.roads = clone(snapshot.roads);
+    this.roads = clone(snapshot.roads).map(normalizeRoadRecord);
     this.areas = clone(snapshot.areas ?? NYC_TEMPLATE.areas);
     this.lots = clone(snapshot.lots).map(lot => {
       const zone = lot.zone ?? "unassigned";

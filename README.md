@@ -25,7 +25,10 @@ The current vertical slice proves:
 - Freeform road placement without a tile grid
 - Curved road splines, intersections, generated lots, 40-step Undo and Redo history, manual browser saves, and crash-safe autosave recovery
 - NYC-inspired region template with editable street hierarchy, districts, park, waterfront, and blank-region alternative
-- Local street, avenue, and arterial construction plus parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
+- A persistent road designer for local streets, avenues, and arterials with one to eight travel lanes, speed limits, variable sidewalks, protected cycling, bus priority, medians, curb parking, and street trees
+- Profile-aware road construction and retrofit costs, treasury checks, capacity and congestion consequences, live previews, exact Undo and Redo, and deterministic legacy-save migration
+- Clean profile-driven street geometry with distinct lane markings, bike and bus bands, planted medians, variable sidewalk edges, and instanced street trees in both Builder and Explorer
+- Parcel inspection and residential, commercial, mixed-use, industrial, and civic zoning
 - A prioritized City Advisor that explains the strongest current pressure and opens the matching build tool or diagnostic view for roads, services, staffing, outages, budget, congestion, wellbeing, or growth
 - Persistent power, water, fire, health, and school facilities with coverage radii, operating costs, municipal balance, and demand feedback
 - Deterministic saved calendar with pause/speed controls plus drawable power, water, and sewage networks

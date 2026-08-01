@@ -11,8 +11,13 @@ import {
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
   HOME_ROOM_KINDS,
+  ROAD_PROFILE_PRESETS,
   RESIDENT_PERSONALITY_AXES,
   RESIDENT_PURCHASES,
+  normalizeRoadProfile,
+  roadCapacityForProfile,
+  roadConstructionCost,
+  roadWidthForProfile,
   type AccessibilityDestination,
   type AccessibilityDestinationKind,
   type AccessibilityEntrance,
@@ -32,6 +37,8 @@ import {
   type ParkingKind,
   type Point2,
   type Road,
+  type RoadClass,
+  type RoadProfile,
   type ResidentRole,
   type ResidentPersonality,
   type ResidentPurchaseKind,
@@ -197,13 +204,40 @@ app.innerHTML = `
         <button data-city-tool-group="views" role="tab">Views</button>
       </div>
       <div class="city-tool-options active" data-city-group-panel="build">
-        <button data-city-tool="road" class="active">Draw road</button>
-        <select id="road-class" aria-label="Road class">
-          <option value="street">Local street · 9m</option>
-          <option value="avenue">Avenue · 12m</option>
-          <option value="arterial">Arterial · 16m</option>
-        </select>
-        <button data-city-tool="inspect">Inspect parcels</button>
+        <div class="city-tool-actions">
+          <button data-city-tool="road" class="active">Road designer</button>
+          <button data-city-tool="inspect">Inspect parcels</button>
+        </div>
+        <div class="city-tool-settings road-profile-settings active" data-city-tool-settings="road">
+          <select id="road-target" aria-label="Road profile target"><option value="">New road</option></select>
+          <select id="road-class" aria-label="Road class">
+            <option value="street">Local street</option>
+            <option value="avenue">Avenue</option>
+            <option value="arterial">Arterial</option>
+          </select>
+          <select id="road-lanes" aria-label="Travel lanes">
+            <option value="1">1 lane</option><option value="2" selected>2 lanes</option><option value="3">3 lanes</option>
+            <option value="4">4 lanes</option><option value="5">5 lanes</option><option value="6">6 lanes</option>
+            <option value="7">7 lanes</option><option value="8">8 lanes</option>
+          </select>
+          <select id="road-speed" aria-label="Speed limit">
+            <option value="20">20 km/h</option><option value="30" selected>30 km/h</option><option value="40">40 km/h</option>
+            <option value="50">50 km/h</option><option value="60">60 km/h</option><option value="80">80 km/h</option>
+          </select>
+          <select id="road-sidewalk" aria-label="Sidewalk width">
+            <option value="1.5">1.5m walks</option><option value="2.2" selected>2.2m walks</option>
+            <option value="3">3m walks</option><option value="4">4m walks</option><option value="6">6m walks</option>
+          </select>
+          <div class="road-profile-toggles" aria-label="Road features">
+            <button type="button" data-road-feature="bikeLanes" aria-pressed="false">Bike</button>
+            <button type="button" data-road-feature="busLanes" aria-pressed="false">Bus</button>
+            <button type="button" data-road-feature="median" aria-pressed="false">Median</button>
+            <button type="button" data-road-feature="curbParking" aria-pressed="true" class="active">Parking</button>
+            <button type="button" data-road-feature="streetTrees" aria-pressed="true" class="active">Trees</button>
+          </div>
+          <output id="road-profile-summary" aria-live="polite"></output>
+          <button type="button" id="apply-road-profile" disabled>Apply profile</button>
+        </div>
       </div>
       <div class="city-tool-options" data-city-group-panel="zone">
         <span class="tool-label">Paint zone</span>
@@ -585,6 +619,7 @@ let selectedTransitLineId: string | null = world.transitLines[0]?.id ?? null;
 let cityTool: CityTool = "road";
 let cityToolGroup: CityToolGroup = "build";
 let cityView: CityView = "normal";
+let roadTargetKey = "";
 let homeTool: HomeTool = "select";
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
@@ -657,6 +692,9 @@ let photoFov = 55;
 const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x303533, roughness: .94 });
 const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b4aa, roughness: .98 });
 const curbMaterial = new THREE.MeshStandardMaterial({ color: 0x777b74, roughness: 1 });
+const bikeLaneMaterial = new THREE.MeshStandardMaterial({ color: 0x416f58, roughness: .96 });
+const busLaneMaterial = new THREE.MeshStandardMaterial({ color: 0x704541, roughness: .96 });
+const medianMaterial = new THREE.MeshStandardMaterial({ color: 0x718666, roughness: 1 });
 const lotMaterial = new THREE.MeshBasicMaterial({ color: 0xb9d69a, transparent: true, opacity: .22, side: THREE.DoubleSide });
 const lotSelectedMaterial = new THREE.MeshBasicMaterial({ color: 0xf6d773, transparent: true, opacity: .58, side: THREE.DoubleSide });
 const zoneLotMaterials: Record<Zone, THREE.MeshBasicMaterial> = {
@@ -832,9 +870,131 @@ function roadCenterLine(road: Road) {
   return line;
 }
 
+function roadOffsetPoints(road: Road, offset: number) {
+  const curve = new THREE.CatmullRomCurve3(
+    road.points.map(point => new THREE.Vector3(point.x, 0, point.z)),
+    false,
+    "centripetal"
+  );
+  return curve.getSpacedPoints(Math.max(8, Math.ceil(curve.getLength() / 5))).map((point, index, points) => {
+    const tangent = curve.getTangent(index / Math.max(1, points.length - 1)).normalize();
+    return { x: point.x + tangent.z * offset, z: point.z - tangent.x * offset };
+  });
+}
+
+function roadOffsetRibbon(road: Road, offset: number, width: number, material: THREE.Material) {
+  const band = ribbon(roadOffsetPoints(road, offset), width, material);
+  band.position.y = .19;
+  return band;
+}
+
+function roadOffsetLine(road: Road, offset: number, color = 0xd8d7c9, opacity = .62) {
+  const geometry = new THREE.BufferGeometry().setFromPoints(
+    roadOffsetPoints(road, offset).map(point => new THREE.Vector3(point.x, .35, point.z))
+  );
+  const material = new THREE.LineDashedMaterial({
+    color,
+    dashSize: 2.2,
+    gapSize: 3.8,
+    transparent: true,
+    opacity
+  });
+  const line = new THREE.Line(geometry, material);
+  line.computeLineDistances();
+  return line;
+}
+
+function roadProfileGeometry(road: Road) {
+  const group = new THREE.Group();
+  const profile = world.roadProfile(road);
+  const edgeOffset = Math.max(0, road.width / 2 - .85);
+  if (profile.busLanes) {
+    const offset = Math.max(0, road.width / 2 - 1.55 - (profile.bikeLanes ? 1.35 : 0));
+    group.add(roadOffsetRibbon(road, offset, 2.55, busLaneMaterial));
+    if (profile.travelLanes > 1) group.add(roadOffsetRibbon(road, -offset, 2.55, busLaneMaterial));
+  }
+  if (profile.bikeLanes) {
+    group.add(roadOffsetRibbon(road, edgeOffset, 1.25, bikeLaneMaterial));
+    if (profile.travelLanes > 1) group.add(roadOffsetRibbon(road, -edgeOffset, 1.25, bikeLaneMaterial));
+  }
+  if (profile.median) {
+    const median = ribbon(road.points, 1.35, medianMaterial);
+    median.position.y = .205;
+    group.add(median);
+  } else {
+    group.add(roadCenterLine(road));
+  }
+  for (let divider = 1; divider < profile.travelLanes; divider++) {
+    const offset = (divider - profile.travelLanes / 2) * 3;
+    if (Math.abs(offset) < .2) continue;
+    if (Math.abs(offset) > road.width / 2 - .5) continue;
+    group.add(roadOffsetLine(road, offset));
+  }
+  if (profile.curbParking) {
+    const parkingOffset = Math.max(0, road.width / 2 - 1.45);
+    group.add(roadOffsetLine(road, parkingOffset, 0xe4e1d1, .42));
+    if (profile.travelLanes > 1) group.add(roadOffsetLine(road, -parkingOffset, 0xe4e1d1, .42));
+  }
+  return group;
+}
+
+function roadTreeGeometry(roads: Road[]) {
+  const positions: Array<{ x: number; z: number }> = [];
+  for (const road of roads) {
+    const profile = world.roadProfile(road);
+    if (!profile.streetTrees) continue;
+    const curve = new THREE.CatmullRomCurve3(
+      road.points.map(point => new THREE.Vector3(point.x, 0, point.z)),
+      false,
+      "centripetal"
+    );
+    const count = Math.min(24, Math.max(2, Math.floor(curve.getLength() / 34)));
+    for (let index = 1; index < count; index++) {
+      const progress = index / count;
+      const point = curve.getPoint(progress);
+      const tangent = curve.getTangent(progress).normalize();
+      const offset = road.width / 2 + profile.sidewalkWidth * .62;
+      for (const side of [-1, 1]) {
+        positions.push({
+          x: point.x + tangent.z * offset * side,
+          z: point.z - tangent.x * offset * side
+        });
+      }
+    }
+  }
+  const group = new THREE.Group();
+  if (!positions.length) return group;
+  const trunks = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(.16, .22, 2.2, 7),
+    new THREE.MeshStandardMaterial({ color: 0x695441, roughness: 1 }),
+    positions.length
+  );
+  const canopies = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(1.05, 1),
+    new THREE.MeshStandardMaterial({ color: 0x607c59, roughness: 1 }),
+    positions.length
+  );
+  const transform = new THREE.Object3D();
+  positions.forEach((position, index) => {
+    transform.position.set(position.x, 1.3, position.z);
+    transform.updateMatrix();
+    trunks.setMatrixAt(index, transform.matrix);
+    transform.position.y = 3;
+    const scale = .82 + (index % 5) * .055;
+    transform.scale.setScalar(scale);
+    transform.updateMatrix();
+    canopies.setMatrixAt(index, transform.matrix);
+    transform.scale.setScalar(1);
+  });
+  trunks.instanceMatrix.needsUpdate = true;
+  canopies.instanceMatrix.needsUpdate = true;
+  group.add(trunks, canopies);
+  return group;
+}
+
 function rebuildExplorerRoadNavigation() {
   const key = world.roads
-    .map(road => `${road.id}:${road.width}:${road.points.map(point => `${point.x.toFixed(2)},${point.z.toFixed(2)}`).join(";")}`)
+    .map(road => `${road.id}:${road.width}:${JSON.stringify(road.profile)}:${road.points.map(point => `${point.x.toFixed(2)},${point.z.toFixed(2)}`).join(";")}`)
     .join("|");
   if (key === explorerRoadKey) return;
   explorerRoadKey = key;
@@ -1959,6 +2119,8 @@ function renderWorld() {
   scheduleAutosave();
   renderStarterJourney();
   document.querySelector("#city-name-label")!.textContent = world.cityName;
+  syncRoadTargetOptions();
+  updateRoadProfileSummary();
   const cityNameInput = document.querySelector<HTMLInputElement>("#city-name-input")!;
   if (document.activeElement !== cityNameInput) cityNameInput.value = world.cityName;
   document.title = `${world.cityName} · Gridless`;
@@ -1988,10 +2150,11 @@ function renderWorld() {
       .flatMap(chunk => chunk.lotIds))
     : undefined;
   for (const road of world.roads) {
-    const curb = ribbon(road.points, road.width + 5.2, curbMaterial);
+    const profile = world.roadProfile(road);
+    const curb = ribbon(road.points, road.width + profile.sidewalkWidth * 2 + 1.2, curbMaterial);
     curb.position.y = 0;
     worldGroup.add(curb);
-    const sidewalk = ribbon(road.points, road.width + 4.4, sidewalkMaterial);
+    const sidewalk = ribbon(road.points, road.width + profile.sidewalkWidth * 2, sidewalkMaterial);
     sidewalk.position.y = .08;
     worldGroup.add(sidewalk);
   }
@@ -2002,19 +2165,26 @@ function renderWorld() {
     const roadway = ribbon(road.points, road.width, activeRoadMaterial);
     roadway.position.y = road.class === "arterial" ? .166 : road.class === "avenue" ? .163 : .16;
     worldGroup.add(roadway);
-    worldGroup.add(roadCenterLine(road));
+    if (activeCityView === "normal") worldGroup.add(roadProfileGeometry(road));
   }
+  if (activeCityView === "normal") worldGroup.add(roadTreeGeometry(world.roads));
   for (const intersection of streetIntersections) {
     const width = Math.max(intersection.roadAWidth, intersection.roadBWidth);
+    const roadA = world.roads.find(road => road.id === intersection.roadAId);
+    const roadB = world.roads.find(road => road.id === intersection.roadBId);
+    const sidewalkWidth = Math.max(
+      roadA ? world.roadProfile(roadA).sidewalkWidth : 2.2,
+      roadB ? world.roadProfile(roadB).sidewalkWidth : 2.2
+    );
     const curbJunction = new THREE.Mesh(
-      new THREE.CircleGeometry((width + 5.2) * .56, 32),
+      new THREE.CircleGeometry((width + sidewalkWidth * 2 + 1.2) * .56, 32),
       curbMaterial
     );
     curbJunction.rotation.x = -Math.PI / 2;
     curbJunction.position.set(intersection.point.x, .15, intersection.point.z);
     worldGroup.add(curbJunction);
     const sidewalkJunction = new THREE.Mesh(
-      new THREE.CircleGeometry((width + 4.4) * .56, 32),
+      new THREE.CircleGeometry((width + sidewalkWidth * 2) * .56, 32),
       sidewalkMaterial
     );
     sidewalkJunction.rotation.x = -Math.PI / 2;
@@ -3110,11 +3280,86 @@ function renderDraft() {
 }
 
 function currentRoadConfig() {
-  const roadClass = (document.querySelector("#road-class") as HTMLSelectElement).value as "street" | "avenue" | "arterial";
+  const roadClass = (document.querySelector("#road-class") as HTMLSelectElement).value as RoadClass;
+  const profile = normalizeRoadProfile({
+    travelLanes: Number((document.querySelector("#road-lanes") as HTMLSelectElement).value),
+    speedLimitKph: Number((document.querySelector("#road-speed") as HTMLSelectElement).value),
+    sidewalkWidth: Number((document.querySelector("#road-sidewalk") as HTMLSelectElement).value),
+    bikeLanes: roadFeatureEnabled("bikeLanes"),
+    busLanes: roadFeatureEnabled("busLanes"),
+    median: roadFeatureEnabled("median"),
+    curbParking: roadFeatureEnabled("curbParking"),
+    streetTrees: roadFeatureEnabled("streetTrees")
+  }, roadClass);
   return {
     class: roadClass,
-    width: roadClass === "street" ? 9 : roadClass === "avenue" ? 12 : 16
+    profile,
+    width: roadWidthForProfile(profile)
   };
+}
+
+function roadFeatureEnabled(feature: keyof RoadProfile) {
+  return document.querySelector<HTMLButtonElement>(`[data-road-feature="${feature}"]`)?.getAttribute("aria-pressed") === "true";
+}
+
+function setRoadFeature(feature: keyof RoadProfile, enabled: boolean) {
+  const button = document.querySelector<HTMLButtonElement>(`[data-road-feature="${feature}"]`);
+  if (!button) return;
+  button.setAttribute("aria-pressed", String(enabled));
+  button.classList.toggle("active", enabled);
+}
+
+function setRoadProfileControls(profile: RoadProfile, roadClass: RoadClass) {
+  (document.querySelector("#road-class") as HTMLSelectElement).value = roadClass;
+  (document.querySelector("#road-lanes") as HTMLSelectElement).value = String(profile.travelLanes);
+  (document.querySelector("#road-speed") as HTMLSelectElement).value = String(profile.speedLimitKph);
+  (document.querySelector("#road-sidewalk") as HTMLSelectElement).value = String(profile.sidewalkWidth);
+  setRoadFeature("bikeLanes", profile.bikeLanes);
+  setRoadFeature("busLanes", profile.busLanes);
+  setRoadFeature("median", profile.median);
+  setRoadFeature("curbParking", profile.curbParking);
+  setRoadFeature("streetTrees", profile.streetTrees);
+  renderDraft();
+  updateRoadProfileSummary();
+}
+
+function syncRoadTargetOptions() {
+  const target = document.querySelector<HTMLSelectElement>("#road-target")!;
+  const key = world.roads.map(road => `${road.id}:${road.name ?? ""}:${road.class ?? "street"}:${JSON.stringify(road.profile)}`).join("|");
+  if (key !== roadTargetKey) {
+    const previous = target.value;
+    target.replaceChildren(
+      new Option("New road", ""),
+      ...world.roads.map(road => new Option(road.name ?? "Unnamed road", road.id))
+    );
+    target.value = world.roads.some(road => road.id === previous) ? previous : "";
+    roadTargetKey = key;
+    const selectedRoad = world.roads.find(road => road.id === target.value);
+    if (selectedRoad) setRoadProfileControls(world.roadProfile(selectedRoad), selectedRoad.class ?? "street");
+  }
+  document.querySelector<HTMLButtonElement>("#apply-road-profile")!.disabled = !target.value;
+}
+
+function roadProfileEffects(profile: RoadProfile) {
+  const effects = [
+    profile.busLanes ? "transit priority" : "general traffic",
+    profile.bikeLanes ? "protected cycling" : "mixed cycling",
+    profile.streetTrees ? "shade" : "open verge",
+    profile.curbParking ? "curb parking" : "clear curb"
+  ];
+  return effects.join(" · ");
+}
+
+function updateRoadProfileSummary() {
+  const summary = document.querySelector<HTMLOutputElement>("#road-profile-summary");
+  if (!summary) return;
+  const road = currentRoadConfig();
+  const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
+  const targetRoad = world.roads.find(candidate => candidate.id === targetId);
+  const pricedPoints = targetRoad?.points ?? draft;
+  const rawCost = pricedPoints.length > 1 ? roadConstructionCost(pricedPoints, road.profile) : 0;
+  const cost = targetRoad ? Math.max(25_000, Math.round(rawCost * .35 / 1_000) * 1_000) : rawCost;
+  summary.textContent = `${road.width}m · ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} veh/h${cost ? ` · $${cost.toLocaleString()}` : " · draw to price"} · ${roadProfileEffects(road.profile)}`;
 }
 
 function currentServiceKind() {
@@ -4870,7 +5115,14 @@ function renderParcelDetails(lot: Lot) {
 
 function updateCityToolPanel(lot?: Lot) {
   if (cityTool === "road") {
-    setPanel("NYC FLEXIBLE FOUNDATION", "Draw beyond the grid", "Use the avenue and street structure as a head start. Extend it, curve it, break blocks apart, or build an entirely different borough.", "Click|Add a curve point;Enter|Finish road;⌘ Z|Undo construction");
+    const road = currentRoadConfig();
+    const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
+    setPanel(
+      "STREET DESIGNER",
+      targetId ? "Retrofit a living street" : "Draw beyond the grid",
+      `${road.profile.travelLanes} travel lanes at ${road.profile.speedLimitKph} km/h · ${road.width}m roadway · capacity ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} vehicles per hour. ${roadProfileEffects(road.profile)}. Every choice changes cost, traffic capacity, and visible street geometry.`,
+      targetId ? "Profile controls|Design retrofit;Apply profile|Commit changes;⌘ Z|Undo" : "Click|Add a curve point;Enter|Build and pay;Target menu|Edit an existing road;⌘ Z|Undo"
+    );
   } else if (cityTool === "inspect") {
     const roadName = lot ? world.roads.find(road => road.id === lot.roadId)?.name ?? "Unnamed road" : "";
     const address = lot ? `${100 + hash(lot.id) % 900} ${roadName}` : "Choose a city parcel";
@@ -5347,7 +5599,10 @@ renderer.domElement.addEventListener("pointerdown", event => {
   if (hit) {
     draft.push({ x: hit.point.x, z: hit.point.z });
     renderDraft();
-    notice(`${draft.length} road points`);
+    updateRoadProfileSummary();
+    const road = currentRoadConfig();
+    const cost = draft.length > 1 ? roadConstructionCost(draft, road.profile) : 0;
+    notice(`${draft.length} road points${cost ? ` · $${cost.toLocaleString()} estimate` : ""}`);
   }
 });
 
@@ -5538,13 +5793,18 @@ addEventListener("keydown", event => {
       notice(`${utilityName(kind)} connected`);
     } else if (cityTool === "road") {
       const road = currentRoadConfig();
-      world.addRoad(draft, road.width, road.class);
-      notice("Road and parcels built");
+      const cost = roadConstructionCost(draft, road.profile);
+      if (!world.addRoad(draft, road.width, road.class, road.profile)) {
+        notice(`The city needs $${cost.toLocaleString()} for this road`);
+        return;
+      }
+      notice(`Road and parcels built · $${cost.toLocaleString()}`);
     } else {
       return;
     }
     draft = [];
     renderDraft();
+    updateRoadProfileSummary();
     renderWorld();
   }
   if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ") {
@@ -5833,9 +6093,50 @@ document.querySelectorAll<HTMLButtonElement>("[data-city-tool]").forEach(button 
   );
 }));
 document.querySelector("#road-class")!.addEventListener("change", () => {
+  const roadClass = (document.querySelector("#road-class") as HTMLSelectElement).value as RoadClass;
+  setRoadProfileControls(ROAD_PROFILE_PRESETS[roadClass], roadClass);
+  updateCityToolPanel();
+  notice(`${roadClass[0].toUpperCase()}${roadClass.slice(1)} preset loaded · customize any feature`);
+});
+document.querySelector("#road-target")!.addEventListener("change", () => {
+  const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
+  const road = world.roads.find(candidate => candidate.id === targetId);
+  document.querySelector<HTMLButtonElement>("#apply-road-profile")!.disabled = !road;
+  if (road) setRoadProfileControls(world.roadProfile(road), road.class ?? "street");
+  else {
+    const roadClass = (document.querySelector("#road-class") as HTMLSelectElement).value as RoadClass;
+    setRoadProfileControls(ROAD_PROFILE_PRESETS[roadClass], roadClass);
+  }
+  draft = [];
   renderDraft();
+  updateCityToolPanel();
+  notice(road ? `${road.name ?? "Road"} selected for retrofit` : "New road profile selected");
+});
+document.querySelectorAll<HTMLSelectElement>("#road-lanes, #road-speed, #road-sidewalk").forEach(control => control.addEventListener("change", () => {
+  renderDraft();
+  updateRoadProfileSummary();
+  updateCityToolPanel();
+}));
+document.querySelectorAll<HTMLButtonElement>("[data-road-feature]").forEach(button => button.addEventListener("click", () => {
+  const enabled = button.getAttribute("aria-pressed") !== "true";
+  button.setAttribute("aria-pressed", String(enabled));
+  button.classList.toggle("active", enabled);
+  renderDraft();
+  updateRoadProfileSummary();
+  updateCityToolPanel();
+}));
+document.querySelector("#apply-road-profile")!.addEventListener("click", () => {
+  const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
   const road = currentRoadConfig();
-  notice(`${road.class[0].toUpperCase()}${road.class.slice(1)} selected · ${road.width}m`);
+  const result = world.updateRoadProfile(targetId, road.profile, road.class);
+  if (!result.ok) {
+    notice(result.reason);
+    return;
+  }
+  explorerRoadKey = "";
+  renderWorld();
+  updateCityToolPanel();
+  notice(`${result.reason} · $${result.cost.toLocaleString()}`);
 });
 document.querySelector("#service-kind")!.addEventListener("change", () => {
   if (cityTool === "service") updateCityToolPanel();
