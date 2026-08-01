@@ -405,6 +405,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] One-click furnishing duplication preserves the selected object's visual design and floor, clears personal ownership, finds the nearest collision-free placement, charges exact catalog cost, selects the copy, and reverts as one Undo operation.
 - [Complete] The furnishing catalog supports live search across names, categories, and lifestyle tags plus persistent favorites promoted to the top, exact prices, and safe empty-result handling.
 - [Complete] The furnishing eyedropper samples style, design variant, and custom tint from a selected object, visibly carries that design across catalog choices, applies it atomically during placement, and offers an explicit reset.
+- [Complete] A unified move-in readiness scorecard weighs safety, circulation, household capacity, organization, energy, privacy, and condition. Unsafe homes stay blocked regardless of their aggregate score, while the Home Simulator and parcel inspector show the same severity-ranked corrections and strengths.
 - Add multi-select. Recolors and object variants are already live.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 
