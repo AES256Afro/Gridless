@@ -102,6 +102,7 @@ import {
 } from "./explorer";
 import {
   homeEntryStatus,
+  homeCirculation,
   interiorDoorways,
   interiorEntryPoint,
   interiorExteriorDoorway,
@@ -513,6 +514,7 @@ app.innerHTML = `
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
+      <div class="home-budget" id="home-circulation">Circulation unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
     <div class="room-editor" id="room-editor" aria-label="Selected room finishes">
@@ -5585,6 +5587,10 @@ function updateHomeBuildControls(home: Home | null) {
   document.querySelector("#home-budget")!.textContent = home
     ? `Floor ${homeFloor + 1} of ${home.floors} · ${formatHomeCurrency(world.homeRemainingBudget(home))} left`
     : "Design budget unavailable";
+  const circulation = home ? homeCirculation(home) : null;
+  const circulationElement = document.querySelector<HTMLElement>("#home-circulation")!;
+  circulationElement.textContent = circulation ? `Circulation ${circulation.score}% · ${circulation.summary}` : "Circulation unavailable";
+  circulationElement.classList.toggle("warning", Boolean(circulation && !circulation.connected));
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -5644,8 +5650,12 @@ function updateHouseholdSummary(home: Home) {
       : "";
     const homeCondition = world.homeCondition(home);
     const homeDaylight = world.homeDaylight(home);
+    const circulation = homeCirculation(home);
+    const unreachableRooms = home.rooms
+      .filter(room => circulation.unreachableRoomIds.includes(room.id))
+      .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5668,6 +5678,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
+        <div title="${circulation.summary}"><span>Circulation</span><strong>${circulation.score}% · ${circulation.connected ? "Connected" : `${circulation.unreachableRoomIds.length} blocked`}</strong></div>
         <div><span>Utilities</span><strong>${utility}%</strong></div>
         <div><span>Neighborhood</span><strong>${neighborhood}%</strong></div>
         <div><span>Entrance</span><strong>${entrance ? entranceAccessLabel(entrance) : "Not connected"}</strong></div>

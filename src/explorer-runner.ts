@@ -8,6 +8,7 @@ import {
 import {
   homeEntryStatus,
   furnitureInteraction,
+  homeCirculation,
   interiorDoorways,
   interiorEntryPoint,
   interiorExteriorDoorway,
@@ -1401,7 +1402,9 @@ check(
 );
 check(
   interiorDoorways(authoredDoorHome).length === 1
-    && isInteriorPositionValid(authoredDoorHome, { x: 4, z: 0 }),
+    && isInteriorPositionValid(authoredDoorHome, { x: 4, z: 0 })
+    && homeCirculation(authoredDoorHome).connected
+    && homeCirculation(authoredDoorHome).accessibleWidthShare === 100,
   "An authored doorway did not open a traversable shared wall segment."
 );
 const restoredDoorWorld = new World();
@@ -1413,7 +1416,10 @@ check(
 check(
   Boolean(authoredDoor)
     && authoredDoorWorld.removeHomeDoor(authoredDoorHome.id, authoredDoor!.id)
-    && !isInteriorPositionValid(authoredDoorHome, { x: 4, z: 0 }),
+    && !isInteriorPositionValid(authoredDoorHome, { x: 4, z: 0 })
+    && !homeCirculation(authoredDoorHome).connected
+    && homeCirculation(authoredDoorHome).accessibleWidthShare === 0
+    && homeCirculation(authoredDoorHome).unreachableRoomIds.includes("bedroom"),
   "Removing an authored doorway did not close traversal through the shared wall."
 );
 check(
@@ -3950,6 +3956,8 @@ console.log(JSON.stringify({
   interiorDoorways: interiorDoorways(interiorHome).length,
   authoredDoorWidth: restoredDoorWorld.homes[0].doors?.[0].width,
   authoredDoorTraversal: isInteriorPositionValid(restoredDoorWorld.homes[0], { x: 4, z: 0 }),
+  connectedCirculation: homeCirculation(restoredDoorWorld.homes[0]),
+  disconnectedCirculation: homeCirculation(authoredDoorHome),
   homeExteriorWalls: interiorExteriorWalls.length,
   homeDaylight: furniturePlacementWorld.homeDaylight(furniturePlacementWorld.homes[0]),
   authoredWindows: authoredWindowHome.windows?.length ?? 0,

@@ -31,6 +31,17 @@ export type InteriorEntryStatus = {
   reason: string;
 };
 
+export type HomeCirculation = {
+  connected: boolean;
+  reachableRoomIds: string[];
+  unreachableRoomIds: string[];
+  doorwayCount: number;
+  wideDoorwayCount: number;
+  accessibleWidthShare: number;
+  score: number;
+  summary: string;
+};
+
 export type FurnitureInteraction = {
   action: ResidentActionKind;
   label: string;
@@ -103,6 +114,59 @@ export function interiorDoorways(home: Home): InteriorDoorway[] {
     width: Math.min(1.35, wall.end - wall.start - .2),
     roomIds: wall.roomIds
   }));
+}
+
+export function homeCirculation(home: Home): HomeCirculation {
+  const roomIds = new Set(home.rooms.map(room => room.id));
+  const graph = new Map([...roomIds].map(id => [id, new Set<string>()]));
+  const doorways = interiorDoorways(home);
+  for (const doorway of doorways) {
+    const [first, second] = doorway.roomIds;
+    if (!graph.has(first) || !graph.has(second)) continue;
+    graph.get(first)!.add(second);
+    graph.get(second)!.add(first);
+  }
+  const roomAtFloorPoint = (floor: number, point: Point2) => home.rooms.find(room =>
+    Math.round(room.floor ?? 0) === floor
+    && Math.abs(point.x - room.x) <= room.width / 2
+    && Math.abs(point.z - room.z) <= room.depth / 2
+  );
+  for (const stair of home.stairs ?? []) {
+    const lower = roomAtFloorPoint(stair.fromFloor, stair);
+    const upper = roomAtFloorPoint(stair.toFloor, stair);
+    if (!lower || !upper) continue;
+    graph.get(lower.id)?.add(upper.id);
+    graph.get(upper.id)?.add(lower.id);
+  }
+  const root = home.rooms.find(room => Math.round(room.floor ?? 0) === 0) ?? home.rooms[0];
+  const reachable = new Set<string>();
+  const queue = root ? [root.id] : [];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (reachable.has(id)) continue;
+    reachable.add(id);
+    for (const neighbor of graph.get(id) ?? []) if (!reachable.has(neighbor)) queue.push(neighbor);
+  }
+  const unreachableRoomIds = home.rooms.map(room => room.id).filter(id => !reachable.has(id));
+  const wideDoorwayCount = doorways.filter(doorway => doorway.width >= 1.2).length;
+  const accessibleWidthShare = doorways.length
+    ? Math.round(wideDoorwayCount / doorways.length * 100)
+    : home.rooms.length <= 1 ? 100 : 0;
+  const reachableShare = home.rooms.length ? reachable.size / home.rooms.length : 1;
+  const score = Math.round(reachableShare * 70 + accessibleWidthShare / 100 * 30);
+  const connected = unreachableRoomIds.length === 0;
+  return {
+    connected,
+    reachableRoomIds: [...reachable],
+    unreachableRoomIds,
+    doorwayCount: doorways.length,
+    wideDoorwayCount,
+    accessibleWidthShare,
+    score,
+    summary: connected
+      ? `${reachable.size} of ${home.rooms.length} rooms connected · ${accessibleWidthShare}% wide-access openings`
+      : `${unreachableRoomIds.length} unreachable room${unreachableRoomIds.length === 1 ? "" : "s"} · ${accessibleWidthShare}% wide-access openings`
+  };
 }
 
 export function interiorExteriorDoorway(home: Home, preferred: Point2): InteriorExteriorDoorway | undefined {
