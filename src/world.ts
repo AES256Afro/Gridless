@@ -476,6 +476,24 @@ export type WorkplaceActivity = {
 };
 
 export type ResidentRole = "office" | "service" | "student" | "home";
+export type HomeSpaceDeficit = {
+  kind: "sleep" | "hygiene" | "work" | "social" | "area";
+  label: string;
+  missing: number;
+  severity: "advisory" | "important" | "critical";
+  recommendation: string;
+};
+
+export type HomeSpacePlan = {
+  score: number;
+  residents: number;
+  beds: { capacity: number; demand: number };
+  hygiene: { capacity: number; demand: number };
+  work: { capacity: number; demand: number };
+  social: { capacity: number; demand: number };
+  area: { squareMeters: number; targetSquareMeters: number };
+  deficits: HomeSpaceDeficit[];
+};
 export type ResidentLifeStage = "infant" | "toddler" | "child" | "teen" | "young-adult" | "adult" | "elder";
 export type ResidentAspiration = "family" | "mastery" | "community" | "prosperity" | "creative";
 export type ResidentCareerTrack = "civic" | "enterprise" | "hospitality" | "care" | "creative";
@@ -4376,6 +4394,99 @@ export class World {
       completeness: Math.round(completeness),
       alignment: Math.round(alignment),
       score: Math.round(completeness * .72 + alignment * .28)
+    };
+  }
+
+  homeSpacePlan(home: Home): HomeSpacePlan {
+    const residents = home.residents.length;
+    if (!residents) {
+      return {
+        score: 100,
+        residents: 0,
+        beds: { capacity: home.furniture.filter(item => item.kind === "bed").length, demand: 0 },
+        hygiene: { capacity: home.furniture.filter(item => item.kind === "shower").length * 3, demand: 0 },
+        work: { capacity: home.furniture.filter(item => item.kind === "desk").length, demand: 0 },
+        social: {
+          capacity: home.furniture.filter(item => item.kind === "sofa").length * 3
+            + home.furniture.filter(item => item.kind === "table").length * 4,
+          demand: 0
+        },
+        area: { squareMeters: Math.round(home.rooms.reduce((total, room) => total + room.width * room.depth, 0)), targetSquareMeters: 0 },
+        deficits: []
+      };
+    }
+    const beds = home.furniture.filter(item => item.kind === "bed").length;
+    const hygiene = home.furniture.filter(item => item.kind === "shower").length * 3;
+    const workDemand = home.residents.filter(resident => resident.role === "student" || resident.role === "office" || resident.role === "service").length;
+    const work = home.furniture.filter(item => item.kind === "desk").length;
+    const socialDemand = residents + Math.min(2, Math.ceil(residents / 2));
+    const social = home.furniture.filter(item => item.kind === "sofa").length * 3
+      + home.furniture.filter(item => item.kind === "table").length * 4;
+    const squareMeters = Math.round(home.rooms.reduce((total, room) => total + room.width * room.depth, 0));
+    const targetSquareMeters = residents * 18;
+    const deficits: HomeSpaceDeficit[] = [];
+    const sleepMissing = Math.max(0, residents - beds);
+    if (sleepMissing) {
+      const hasYoungChildren = home.residents.some(resident => ["infant", "toddler"].includes(this.residentLifeStage(resident)));
+      deficits.push({
+        kind: "sleep",
+        label: `${sleepMissing} resident${sleepMissing === 1 ? "" : "s"} without a bed`,
+        missing: sleepMissing,
+        severity: "critical",
+        recommendation: `Add ${sleepMissing} bed${sleepMissing === 1 ? "" : "s"}${hasYoungChildren ? " and prioritize a Nursery for young children" : " in Bedrooms or Studios"}.`
+      });
+    }
+    const hygieneMissing = Math.max(0, residents - hygiene);
+    if (hygieneMissing) deficits.push({
+      kind: "hygiene",
+      label: `Hygiene capacity is short for ${hygieneMissing} resident${hygieneMissing === 1 ? "" : "s"}`,
+      missing: hygieneMissing,
+      severity: residents > hygiene * 2 ? "critical" : "important",
+      recommendation: "Create a Bathroom and add a shower. One shower supports up to three residents."
+    });
+    const workMissing = Math.max(0, workDemand - work);
+    if (workMissing) deficits.push({
+      kind: "work",
+      label: `${workMissing} ${workMissing === 1 ? "worker or student lacks" : "workers or students lack"} a work surface`,
+      missing: workMissing,
+      severity: "important",
+      recommendation: `Add ${workMissing} desk${workMissing === 1 ? "" : "s"} in a Study, Bedroom, or Studio.`
+    });
+    const socialMissing = Math.max(0, socialDemand - social);
+    if (socialMissing) deficits.push({
+      kind: "social",
+      label: `${socialMissing} social seat${socialMissing === 1 ? "" : "s"} missing`,
+      missing: socialMissing,
+      severity: "advisory",
+      recommendation: "Add a sofa or dining table so the household can host together."
+    });
+    const areaMissing = Math.max(0, targetSquareMeters - squareMeters);
+    if (areaMissing) deficits.push({
+      kind: "area",
+      label: `${areaMissing} m² below the household space target`,
+      missing: areaMissing,
+      severity: areaMissing > targetSquareMeters * .35 ? "important" : "advisory",
+      recommendation: "Add or enlarge rooms to provide about 18 m² per resident."
+    });
+    const ratio = (capacity: number, demand: number) => demand ? Math.min(1, capacity / demand) : 1;
+    const score = Math.round(clamp(
+      ratio(beds, residents) * 30
+      + ratio(hygiene, residents) * 20
+      + ratio(work, workDemand) * 20
+      + ratio(social, socialDemand) * 15
+      + ratio(squareMeters, targetSquareMeters) * 15,
+      0,
+      100
+    ));
+    return {
+      score,
+      residents,
+      beds: { capacity: beds, demand: residents },
+      hygiene: { capacity: hygiene, demand: residents },
+      work: { capacity: work, demand: workDemand },
+      social: { capacity: social, demand: socialDemand },
+      area: { squareMeters, targetSquareMeters },
+      deficits
     };
   }
 

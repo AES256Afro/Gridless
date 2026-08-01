@@ -1245,6 +1245,20 @@ kbd {
 .home-advisor button:hover { border-color: rgba(240,217,128,.45); background: rgba(240,217,128,.08); }
 .home-advisor button strong { font: 650 11px "Manrope", sans-serif; }
 .home-advisor button span { color: #91a198; font-size: 9px; line-height: 1.3; }
+.home-space-recommendation {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-left: 3px solid #8aa38f;
+  border-radius: 8px;
+  color: #dce6de;
+  background: rgba(13,21,17,.4);
+}
+.home-space-recommendation.important { border-left-color: #e0ba68; }
+.home-space-recommendation.critical { border-left-color: #ef8e82; }
+.home-space-recommendation strong { font: 650 11px "Manrope", sans-serif; }
+.home-space-recommendation span { color: #91a198; font-size: 9px; line-height: 1.3; }
 .household-shop {
   display: grid;
   gap: 7px;
