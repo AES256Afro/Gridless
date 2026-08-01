@@ -475,6 +475,8 @@ Exit gate: four players can build, travel, and inhabit one city for an hour with
 
 ## Architecture boundaries
 
+Competitive brief coverage is tracked in [FEATURE_COVERAGE.md](./FEATURE_COVERAGE.md) so roadmap work does not confuse a live foundation with a complete genre-scale feature.
+
 - **Simulation core:** deterministic TypeScript or Rust/Wasm with no rendering dependencies
 - **World model:** versioned entities and components serialized by spatial chunk
 - **Transport graph:** roads and paths are continuous graphs, never visual meshes as source-of-truth
