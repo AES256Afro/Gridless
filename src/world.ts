@@ -4610,6 +4610,115 @@ export class World {
     };
   }
 
+  familyMoveResidentIds(sourceHomeId: string, residentId: string) {
+    const source = this.homes.find(home => home.id === sourceHomeId);
+    if (!source?.residents.some(resident => resident.id === residentId)) return [];
+    const movingIds = new Set([residentId]);
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      for (const dependent of source.residents) {
+        if (
+          !["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(dependent))
+          || !(dependent.caregiverIds ?? []).some(id => movingIds.has(id))
+        ) continue;
+        if (!movingIds.has(dependent.id)) {
+          movingIds.add(dependent.id);
+          expanded = true;
+        }
+        for (const caregiverId of dependent.caregiverIds ?? []) {
+          if (!source.residents.some(resident => resident.id === caregiverId) || movingIds.has(caregiverId)) continue;
+          movingIds.add(caregiverId);
+          expanded = true;
+        }
+      }
+    }
+    return source.residents.filter(resident => movingIds.has(resident.id)).map(resident => resident.id);
+  }
+
+  moveHouseholdGroup(sourceHomeId: string, residentIds: string[], destinationHomeId: string) {
+    const source = this.homes.find(home => home.id === sourceHomeId);
+    const destination = this.homes.find(home => home.id === destinationHomeId);
+    const uniqueIds = [...new Set(residentIds)];
+    const movingIds = new Set(uniqueIds);
+    const movingResidents = source?.residents.filter(resident => movingIds.has(resident.id)) ?? [];
+    if (
+      !source
+      || !destination
+      || source.id === destination.id
+      || uniqueIds.length < 2
+      || movingResidents.length !== uniqueIds.length
+    ) {
+      return { ok: false, reason: "Choose a linked family group and a different household.", transferred: 0, residentIds: [] as string[] };
+    }
+    if (destination.residents.length + movingResidents.length > 8) {
+      return { ok: false, reason: `${destination.name} cannot hold that family group.`, transferred: 0, residentIds: [] as string[] };
+    }
+    const remainingResidents = source.residents.filter(resident => !movingIds.has(resident.id));
+    const futureDestinationResidents = [...destination.residents, ...movingResidents];
+    const hasLocalCaregiver = (resident: Resident, residents: Resident[]) =>
+      !["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(resident))
+      || (resident.caregiverIds ?? []).some(id => residents.some(candidate => candidate.id === id));
+    const unsupported = [...remainingResidents, ...movingResidents].find(resident =>
+      !hasLocalCaregiver(resident, movingIds.has(resident.id) ? futureDestinationResidents : remainingResidents)
+    );
+    if (unsupported) {
+      return { ok: false, reason: `${unsupported.name} needs a caregiver in the same household.`, transferred: 0, residentIds: [] as string[] };
+    }
+    const sourceFunds = this.homeHouseholdFunds(source);
+    const destinationFunds = this.homeHouseholdFunds(destination);
+    const transfer = Math.min(
+      50_000,
+      Math.max(0, Math.floor(sourceFunds * movingResidents.length / Math.max(1, source.residents.length))),
+      Math.max(0, 10_000_000 - destinationFunds)
+    );
+    const preservedRelationships = source.relationships.filter(relationship =>
+      relationship.residentIds.every(id => movingIds.has(id))
+    );
+    this.checkpoint();
+    for (const resident of source.residents) {
+      if (movingIds.has(resident.id) || (resident.currentAction?.partnerResidentId && movingIds.has(resident.currentAction.partnerResidentId))) {
+        resident.currentAction = undefined;
+      }
+    }
+    const destinationRoom = destination.rooms.find(room => homeEntityFloor(room) === 0) ?? destination.rooms[0];
+    for (const resident of movingResidents) {
+      resident.currentAction = undefined;
+      resident.homeFloor = 0;
+      resident.homePosition = destinationRoom ? { x: destinationRoom.x, z: destinationRoom.z } : { x: 0, z: 0 };
+      resident.caregiverIds = (resident.caregiverIds ?? []).filter(id => futureDestinationResidents.some(candidate => candidate.id === id));
+      this.recordResidentMilestone(
+        resident,
+        "move",
+        `Family move to ${destination.name}`,
+        `${resident.name} began a new household chapter with ${movingResidents.length - 1} family member${movingResidents.length === 2 ? "" : "s"}.`
+      );
+    }
+    for (const resident of remainingResidents) {
+      resident.caregiverIds = (resident.caregiverIds ?? []).filter(id => remainingResidents.some(candidate => candidate.id === id));
+    }
+    for (const furniture of source.furniture) {
+      if (furniture.ownerResidentId && movingIds.has(furniture.ownerResidentId)) furniture.ownerResidentId = undefined;
+    }
+    source.residents = remainingResidents;
+    source.relationships = normalizeRelationships(remainingResidents, source.relationships);
+    source.gatherings = (source.gatherings ?? []).filter(gathering => !movingIds.has(gathering.hostResidentId));
+    if (source.lastPurchase?.residentId && movingIds.has(source.lastPurchase.residentId)) source.lastPurchase = undefined;
+    destination.residents.push(...movingResidents);
+    destination.relationships = normalizeRelationships(
+      destination.residents,
+      [...destination.relationships, ...preservedRelationships]
+    );
+    source.householdFunds = sourceFunds - transfer;
+    destination.householdFunds = destinationFunds + transfer;
+    return {
+      ok: true,
+      reason: `${movingResidents.length} family members moved to ${destination.name} with ${transfer ? `$${transfer.toLocaleString("en-US")}` : "no household funds"}.`,
+      transferred: transfer,
+      residentIds: uniqueIds
+    };
+  }
+
   changeRevision() {
     return this.revision;
   }

@@ -119,6 +119,7 @@ The current vertical slice proves:
 - Persistent furniture design variants and a safe full-color tint picker, with classic, modern, and soft-edge geometry rendered directly in the seamless home view
 - Persistent room and furnishing condition with occupancy and use-driven wear, visible material fading, household-funded repair and renovation, affordability checks, condition-sensitive home quality, and safe legacy migration
 - Resident household moves between built homes, preserving identity, skills, inventory, wardrobe, learned routines, and life history while conserving transferred funds and safely releasing old-home ownership
+- Atomic family moves that keep linked caregivers and dependents together, validate destination capacity and care before changing state, transfer a proportional share of funds, and preserve internal relationships, portable collections, and shared life history
 - Persistent Communication, Creativity, Wellness, and Practical skills earned through household actions plus ten-level office, service, and student progression advanced by completed work or school days
 - Persistent household funds with career-level daily wages, readable living and home-maintenance costs, daily net results, personal-collection spending, save migration, and financial-security feedback into resident wellbeing
 - Household-funded meal delivery, creative supplies, and wellness care with immediate need and skill effects, persistent total discretionary spending, last-purchase history, affordability checks, and strict separation from the design budget
