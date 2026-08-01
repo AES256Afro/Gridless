@@ -26,7 +26,7 @@ The current vertical slice proves:
 - Curved road splines, intersections, generated lots, 40-step Undo and Redo history, manual browser saves, and crash-safe autosave recovery
 - Editable NYC, Chicago, Houston, Seattle, and Portland regional foundations with distinct geometry, street hierarchy, zoning, transit, parking, events, climate, districts, parks, waterfront, floodplain, steep-terrain, and growth-boundary constraints, plus a blank-region alternative
 - A persistent road designer for local streets, avenues, and arterials with one to eight travel lanes, speed limits, variable sidewalks, protected cycling, bus priority, medians, curb parking, and street trees
-- Optional exact endpoint snapping and 15-degree angle locking with live segment length, bearing, connection feedback, duplicate-point protection, point removal, and draft canceling without introducing a tile grid
+- Optional exact endpoint, 15-degree, tangent, and parallel road drawing guides with live segment length, bearing, target feedback, duplicate-point protection, point removal, and draft canceling without introducing a tile grid
 - Profile-aware road construction and retrofit costs, treasury checks, capacity and congestion consequences, live previews, exact Undo and Redo, and deterministic legacy-save migration
 - Clean profile-driven street geometry with distinct lane markings, bike and bus bands, planted medians, variable sidewalk edges, and instanced street trees in both Builder and Explorer
 - A city-economy workspace with separate residential, commercial, and industrial tax rates, immediate revenue and demand feedback, district policy operations, and undoable ten-year municipal bonds
