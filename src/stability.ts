@@ -1,5 +1,6 @@
 import {
   RESIDENT_PURCHASES,
+  RESIDENT_PERSONALITY_AXES,
   World,
   type Home,
   type ServiceKind,
@@ -508,6 +509,10 @@ function integrityFailures(world: World) {
       }
     }
     for (const resident of home.residents) {
+      const personality = world.residentPersonality(resident);
+      if (RESIDENT_PERSONALITY_AXES.some(axis =>
+        !Number.isInteger(personality[axis]) || personality[axis] < 0 || personality[axis] > 100
+      )) failures.push(`Resident ${resident.id} has an invalid personality matrix.`);
       if (resident.currentAction && !VALID_RESIDENT_ACTIONS.has(resident.currentAction.kind)) {
         failures.push(`Resident ${resident.id} has an invalid current action.`);
       }

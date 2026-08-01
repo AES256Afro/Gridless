@@ -40,7 +40,7 @@ The current vertical slice proves:
 - Opt-in procedural soundscapes generated in the browser, with quiet regional ambience in City Builder, traffic-responsive streets in City Explorer, sheltered room tone in Home Simulator, and weather plus day/night transitions across all three
 - Persistent street-graph commutes with named resident workplaces, representative walking and driving groups, visible 3D travelers, congestion, and traffic-sensitive staffing and emergency response
 - Persistent resident energy, social, comfort, health, and stress needs shaped by schedules, home design, utilities, neighborhood services, incidents, and commute burden
-- Persistent two-trait resident personalities with visible social style, compatibility, trait-weighted activity choices, and save migration for existing households
+- Persistent two-trait resident identities plus editable Cleanliness, Spontaneity, Sociability, Emotional intensity, and Activity axes, with visible personality spectra, matrix-weighted autonomy, compatibility, career fit, and deterministic save migration
 - Household and city wellbeing visible across planning, street exploration, and Home Simulator, with local wellbeing feeding back into daily growth
 - Degrading utility infrastructure with deterministic local outages, street-routed repair crews, traffic-sensitive restoration, affected-parcel consequences, and persistent recovery state
 - Persistent autonomous household actions chosen from resident needs, schedules, available furniture, and who is home, with visible 3D behavior, progress, completed-action history, and direct need effects

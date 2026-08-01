@@ -89,6 +89,16 @@ export type ResidentTrait =
   | "organized"
   | "empathetic";
 
+export type ResidentPersonality = {
+  cleanliness: number;
+  spontaneity: number;
+  sociability: number;
+  emotionality: number;
+  activity: number;
+};
+
+export type ResidentPersonalityAxis = keyof ResidentPersonality;
+
 export type ConversationIntent = "chat" | "support" | "joke" | "confront" | "apologize";
 
 export type SocialMemory = {
@@ -133,6 +143,7 @@ export type Resident = {
   health: number;
   stress: number;
   traits: ResidentTrait[];
+  personality?: ResidentPersonality;
   currentAction?: ResidentAction;
   lastActionKind?: ResidentActionKind;
   lastActionAt?: number;
@@ -143,7 +154,9 @@ export type Resident = {
   careerXp?: number;
 };
 
-export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits">;
+export type ResidentProfile = Pick<Resident, "name" | "age" | "role" | "traits"> & {
+  personality?: ResidentPersonality;
+};
 
 export type ResidentRelationship = {
   residentIds: [string, string];
@@ -633,6 +646,22 @@ const RESIDENT_TRAIT_DETAILS: Record<ResidentTrait, { label: string; description
   creative: { label: "Creative", description: "chooses expressive downtime" },
   organized: { label: "Organized", description: "likes reliable routines" },
   empathetic: { label: "Empathetic", description: "builds bonds easily" }
+};
+
+export const RESIDENT_PERSONALITY_AXES: ResidentPersonalityAxis[] = [
+  "cleanliness",
+  "spontaneity",
+  "sociability",
+  "emotionality",
+  "activity"
+];
+
+const RESIDENT_PERSONALITY_LABELS: Record<ResidentPersonalityAxis, string> = {
+  cleanliness: "Cleanliness",
+  spontaneity: "Spontaneity",
+  sociability: "Sociability",
+  emotionality: "Emotional intensity",
+  activity: "Activity"
 };
 
 export class World {
@@ -1908,10 +1937,60 @@ export class World {
     return RESIDENT_TRAIT_DETAILS[trait].description;
   }
 
+  residentPersonality(resident: Resident) {
+    return normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  }
+
+  residentPersonalityAxisLabel(axis: ResidentPersonalityAxis) {
+    return RESIDENT_PERSONALITY_LABELS[axis];
+  }
+
+  residentPersonalityAxisDescription(axis: ResidentPersonalityAxis, value: number) {
+    const low: Record<ResidentPersonalityAxis, string> = {
+      cleanliness: "comfortable with clutter",
+      spontaneity: "prefers a plan",
+      sociability: "protects quiet time",
+      emotionality: "emotionally steady",
+      activity: "enjoys a slower pace"
+    };
+    const high: Record<ResidentPersonalityAxis, string> = {
+      cleanliness: "keeps spaces orderly",
+      spontaneity: "welcomes surprises",
+      sociability: "seeks frequent company",
+      emotionality: "feels events intensely",
+      activity: "needs regular movement"
+    };
+    if (value <= 38) return low[axis];
+    if (value >= 62) return high[axis];
+    return "adapts to the situation";
+  }
+
   residentPersonalitySummary(resident: Resident) {
-    return resident.traits
-      .map(trait => RESIDENT_TRAIT_DETAILS[trait].description)
+    const personality = this.residentPersonality(resident);
+    const strongest = RESIDENT_PERSONALITY_AXES
+      .map(axis => ({ axis, distance: Math.abs(personality[axis] - 50), value: personality[axis] }))
+      .sort((first, second) => second.distance - first.distance || first.axis.localeCompare(second.axis))
+      .slice(0, 2);
+    if (!strongest.length || strongest[0].distance < 12) return "balanced across the personality matrix";
+    return strongest
+      .map(entry => this.residentPersonalityAxisDescription(entry.axis, entry.value))
       .join(" and ");
+  }
+
+  residentCareerFit(resident: Resident) {
+    const personality = this.residentPersonality(resident);
+    const score = resident.role === "office"
+      ? personality.cleanliness * .42 + (100 - Math.abs(personality.spontaneity - 42)) * .3 + personality.sociability * .18 + (100 - personality.emotionality) * .1
+      : resident.role === "service"
+        ? personality.activity * .34 + personality.sociability * .34 + personality.spontaneity * .2 + (100 - personality.emotionality) * .12
+        : resident.role === "student"
+          ? personality.cleanliness * .28 + personality.activity * .2 + personality.sociability * .18 + (100 - Math.abs(personality.spontaneity - 55)) * .22 + (100 - personality.emotionality) * .12
+          : personality.cleanliness * .3 + personality.spontaneity * .24 + personality.activity * .18 + (100 - personality.emotionality) * .16 + (100 - Math.abs(personality.sociability - 50)) * .12;
+    return Math.round(clamp(score, 0, 100));
+  }
+
+  residentActionPersonalityInfluence(resident: Resident, action: ResidentActionKind) {
+    return residentActionPersonalityBonus(resident, action);
   }
 
   residentSkills(resident: Resident): ResidentSkills {
@@ -3003,6 +3082,7 @@ export class World {
         || authoredTraits.some(trait => !RESIDENT_TRAITS.includes(trait))
       )
     ) return false;
+    if (profile?.personality && !isValidResidentPersonality(profile.personality)) return false;
     this.checkpoint();
     const roles: ResidentRole[] = ["office", "service", "home"];
     const age = profile?.age ?? "adult";
@@ -3018,6 +3098,11 @@ export class World {
       health: 84,
       stress: 24,
       traits: authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
+      personality: normalizeResidentPersonality(
+        profile?.personality,
+        authoredTraits ? [...authoredTraits] : initialResidentTraits(`${home.id}-${name}-${home.residents.length}`),
+        `${home.id}-${name}-${home.residents.length}`
+      ),
       completedActions: 0,
       skills: normalizeResidentSkills(undefined),
       careerLevel: 1,
@@ -3069,31 +3154,33 @@ export class World {
     });
     this.homes = clone(snapshot.homes).map(home => {
       const savedHomeName = home.name?.trim().replace(/\s+/g, " ") ?? "New household";
-      const residents = (home.residents ?? []).map((resident, index) => ({
-        ...resident,
-        role: resident.role ?? (resident.age === "child" ? "student" : index % 2 === 0 ? "office" : "service"),
-        energy: clamp(resident.energy ?? 82, 0, 100),
-        social: clamp(resident.social ?? 68, 0, 100),
-        comfort: clamp(resident.comfort ?? 74, 0, 100),
-        health: clamp(resident.health ?? 84, 0, 100),
-        stress: clamp(resident.stress ?? 24, 0, 100),
-        traits: normalizeResidentTraits(
-          resident.traits,
-          `${home.id}-${resident.id}-${resident.name}-${index}`
-        ),
-        currentAction: resident.currentAction
-          ? {
-              ...resident.currentAction,
-              conversationIntent: resident.currentAction.kind === "socialize"
-                ? normalizeConversationIntent(resident.currentAction.conversationIntent)
-                : undefined
-            }
-          : undefined,
-        completedActions: resident.completedActions ?? 0,
-        skills: normalizeResidentSkills(resident.skills),
-        careerLevel: Math.round(clamp(resident.careerLevel ?? 1, 1, 10)),
-        careerXp: Math.max(0, Math.round(resident.careerXp ?? 0))
-      }));
+      const residents = (home.residents ?? []).map((resident, index) => {
+        const seed = `${home.id}-${resident.id}-${resident.name}-${index}`;
+        const traits = normalizeResidentTraits(resident.traits, seed);
+        return {
+          ...resident,
+          role: resident.role ?? (resident.age === "child" ? "student" : index % 2 === 0 ? "office" : "service"),
+          energy: clamp(resident.energy ?? 82, 0, 100),
+          social: clamp(resident.social ?? 68, 0, 100),
+          comfort: clamp(resident.comfort ?? 74, 0, 100),
+          health: clamp(resident.health ?? 84, 0, 100),
+          stress: clamp(resident.stress ?? 24, 0, 100),
+          traits,
+          personality: normalizeResidentPersonality(resident.personality, traits, seed),
+          currentAction: resident.currentAction
+            ? {
+                ...resident.currentAction,
+                conversationIntent: resident.currentAction.kind === "socialize"
+                  ? normalizeConversationIntent(resident.currentAction.conversationIntent)
+                  : undefined
+              }
+            : undefined,
+          completedActions: resident.completedActions ?? 0,
+          skills: normalizeResidentSkills(resident.skills),
+          careerLevel: Math.round(clamp(resident.careerLevel ?? 1, 1, 10)),
+          careerXp: Math.max(0, Math.round(resident.careerXp ?? 0))
+        };
+      });
       return {
         ...home,
         name: savedHomeName.length >= 2
@@ -3807,6 +3894,7 @@ export class World {
     for (const candidate of candidates) {
       candidate.score += hashString(`${resident.id}-${candidate.kind}-${Math.floor(now / 60)}`) % 9;
       candidate.score += residentActionTraitBonus(resident, candidate.kind);
+      candidate.score += residentActionPersonalityBonus(resident, candidate.kind);
       if (
         resident.lastActionKind === candidate.kind
         && resident.lastActionAt !== undefined
@@ -4104,6 +4192,55 @@ function normalizeResidentTraits(traits: ResidentTrait[] | undefined, seed: stri
   return normalized;
 }
 
+function personalityFromTraits(traits: ResidentTrait[], seed: string): ResidentPersonality {
+  const personality: ResidentPersonality = {
+    cleanliness: 50,
+    spontaneity: 50,
+    sociability: 50,
+    emotionality: 50,
+    activity: 50
+  };
+  const influence: Record<ResidentTrait, Partial<Record<ResidentPersonalityAxis, number>>> = {
+    outgoing: { sociability: 28, spontaneity: 10 },
+    homebody: { sociability: -24, activity: -12, cleanliness: 8 },
+    active: { activity: 30, spontaneity: 6 },
+    creative: { spontaneity: 24, cleanliness: -8, emotionality: 8 },
+    organized: { cleanliness: 30, spontaneity: -22, emotionality: -6 },
+    empathetic: { sociability: 8, emotionality: -10 }
+  };
+  for (const trait of traits) {
+    for (const [axis, value] of Object.entries(influence[trait]) as Array<[ResidentPersonalityAxis, number]>) {
+      personality[axis] += value;
+    }
+  }
+  for (const axis of RESIDENT_PERSONALITY_AXES) {
+    const variation = hashString(`${seed}-${axis}`) % 11 - 5;
+    personality[axis] = Math.round(clamp(personality[axis] + variation, 0, 100));
+  }
+  return personality;
+}
+
+function normalizeResidentPersonality(
+  personality: Partial<ResidentPersonality> | undefined,
+  traits: ResidentTrait[],
+  seed: string
+): ResidentPersonality {
+  const fallback = personalityFromTraits(traits, seed);
+  return {
+    cleanliness: Math.round(clamp(Number.isFinite(personality?.cleanliness) ? personality!.cleanliness! : fallback.cleanliness, 0, 100)),
+    spontaneity: Math.round(clamp(Number.isFinite(personality?.spontaneity) ? personality!.spontaneity! : fallback.spontaneity, 0, 100)),
+    sociability: Math.round(clamp(Number.isFinite(personality?.sociability) ? personality!.sociability! : fallback.sociability, 0, 100)),
+    emotionality: Math.round(clamp(Number.isFinite(personality?.emotionality) ? personality!.emotionality! : fallback.emotionality, 0, 100)),
+    activity: Math.round(clamp(Number.isFinite(personality?.activity) ? personality!.activity! : fallback.activity, 0, 100))
+  };
+}
+
+function isValidResidentPersonality(personality: ResidentPersonality | undefined) {
+  return Boolean(personality && RESIDENT_PERSONALITY_AXES.every(axis =>
+    Number.isInteger(personality[axis]) && personality[axis] >= 0 && personality[axis] <= 100
+  ));
+}
+
 function normalizeResidentSkills(skills: Partial<ResidentSkills> | undefined): ResidentSkills {
   return {
     communication: clamp(Math.round(skills?.communication ?? 0), 0, 100),
@@ -4154,7 +4291,14 @@ function residentCompatibility(firstResident: Resident, secondResident: Resident
     (firstTraits.has("active") && secondTraits.has("homebody"))
     || (firstTraits.has("homebody") && secondTraits.has("active"))
   ) score -= 4;
-  return Math.round(clamp(score, 25, 95));
+  const firstPersonality = normalizeResidentPersonality(firstResident.personality, firstResident.traits, firstResident.id);
+  const secondPersonality = normalizeResidentPersonality(secondResident.personality, secondResident.traits, secondResident.id);
+  const matrixSimilarity = RESIDENT_PERSONALITY_AXES.reduce(
+    (total, axis) => total + 100 - Math.abs(firstPersonality[axis] - secondPersonality[axis]),
+    0
+  ) / RESIDENT_PERSONALITY_AXES.length;
+  const emotionalBalance = 100 - Math.max(0, firstPersonality.emotionality + secondPersonality.emotionality - 130) * .55;
+  return Math.round(clamp(score * .45 + matrixSimilarity * .45 + emotionalBalance * .1, 25, 95));
 }
 
 function residentActionTraitBonus(resident: Resident, action: ResidentActionKind) {
@@ -4181,6 +4325,18 @@ function residentActionTraitBonus(resident: Resident, action: ResidentActionKind
       bonus += 18;
     }
   }
+  return bonus;
+}
+
+function residentActionPersonalityBonus(resident: Resident, action: ResidentActionKind) {
+  let bonus = 0;
+  const personality = normalizeResidentPersonality(resident.personality, resident.traits, resident.id);
+  if (action === "socialize") bonus += (personality.sociability - 50) * .52;
+  if (action === "study") bonus += (personality.cleanliness - 50) * .18 - (personality.spontaneity - 50) * .08;
+  if (action === "tend-plants") bonus += (personality.activity - 50) * .34 + (personality.cleanliness - 50) * .12;
+  if (action === "relax") bonus += (personality.emotionality - 50) * .2 - (personality.activity - 50) * .12;
+  if (action === "idle") bonus -= (personality.activity - 50) * .22;
+  if (action === "eat" || action === "shower") bonus += (personality.cleanliness - 50) * .12;
   return bonus;
 }
 
