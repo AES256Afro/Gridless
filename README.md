@@ -175,6 +175,8 @@ This is a visual and interaction prototype with local persistence and a determin
 
 See [ROADMAP.md](./ROADMAP.md) for staged delivery.
 
+See [FEATURE_COVERAGE.md](./FEATURE_COVERAGE.md) for an honest live, partial, and planned comparison against the city-building and life-simulation feature briefs.
+
 ## Hosting
 
 The production build can run on bigBox in a hardened, loopback-only Docker container and publish through Cloudflare Tunnel without taking ports 80 or 443 from Pi-hole. See [DEPLOY_BIGBOX.md](./DEPLOY_BIGBOX.md).
