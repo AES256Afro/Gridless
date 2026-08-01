@@ -1243,6 +1243,8 @@ export type Home = {
   lastDailyExpenses?: number;
   lastDailyUtilityCost?: number;
   discretionarySpent?: number;
+  moveInApprovedAt?: number;
+  moveInApprovedScore?: number;
   lastPurchase?: { kind: ResidentPurchaseKind; residentId: string; cost: number; at: number };
   gatherings?: HouseholdGathering[];
   residents: Resident[];
@@ -4953,6 +4955,17 @@ export class World {
     return true;
   }
 
+  recordHomeMoveInApproval(homeId: string, score: number) {
+    const home = this.homes.find(item => item.id === homeId);
+    const normalizedScore = Math.round(score);
+    if (!home || !Number.isFinite(score) || normalizedScore < 82 || normalizedScore > 100) return false;
+    if (home.moveInApprovedAt === this.clock.elapsedMinutes && home.moveInApprovedScore === normalizedScore) return false;
+    this.checkpoint();
+    home.moveInApprovedAt = this.clock.elapsedMinutes;
+    home.moveInApprovedScore = normalizedScore;
+    return true;
+  }
+
   moveResidentToHome(sourceHomeId: string, residentId: string, destinationHomeId: string) {
     const source = this.homes.find(home => home.id === sourceHomeId);
     const destination = this.homes.find(home => home.id === destinationHomeId);
@@ -6917,6 +6930,12 @@ export class World {
         lastDailyExpenses: Math.max(0, Math.round(home.lastDailyExpenses ?? 0)),
         lastDailyUtilityCost: Math.max(0, Math.round(home.lastDailyUtilityCost ?? 0)),
         discretionarySpent: Math.max(0, Math.round(home.discretionarySpent ?? 0)),
+        moveInApprovedAt: home.moveInApprovedAt === undefined
+          ? undefined
+          : Math.round(clamp(home.moveInApprovedAt, 0, savedElapsedMinutes)),
+        moveInApprovedScore: home.moveInApprovedScore === undefined
+          ? undefined
+          : Math.round(clamp(home.moveInApprovedScore, 82, 100)),
         lastPurchase: home.lastPurchase && RESIDENT_PURCHASES[home.lastPurchase.kind]
           ? {
               ...home.lastPurchase,

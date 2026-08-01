@@ -28,6 +28,14 @@ export type HomeReadiness = {
   strengths: string[];
 };
 
+export type HomeMoveInAuthorization = {
+  active: boolean;
+  status: "Approved" | "Suspended" | "Not approved";
+  approvedAt?: number;
+  approvedScore?: number;
+  reason: string;
+};
+
 function safetyPriority(issue: HomeSafetyIssue): HomeReadinessPriority {
   return {
     kind: "safety",
@@ -132,4 +140,43 @@ export function assessHomeReadiness(world: World, home: Home): HomeReadiness {
     priorities,
     strengths
   };
+}
+
+export function homeMoveInAuthorization(world: World, home: Home): HomeMoveInAuthorization {
+  const readiness = assessHomeReadiness(world, home);
+  const recorded = home.moveInApprovedAt !== undefined && home.moveInApprovedScore !== undefined;
+  if (!recorded) return {
+    active: false,
+    status: "Not approved",
+    reason: readiness.ready ? "The home is ready for a player move-in decision." : readiness.blockers[0]?.recommendation ?? "Resolve the move-in checklist first."
+  };
+  if (!readiness.ready) return {
+    active: false,
+    status: "Suspended",
+    approvedAt: home.moveInApprovedAt,
+    approvedScore: home.moveInApprovedScore,
+    reason: readiness.blockers[0]?.recommendation ?? "The home no longer meets move-in readiness."
+  };
+  return {
+    active: true,
+    status: "Approved",
+    approvedAt: home.moveInApprovedAt,
+    approvedScore: home.moveInApprovedScore,
+    reason: `Approved at ${home.moveInApprovedScore}% readiness and still clear of move-in blockers.`
+  };
+}
+
+export function approveHomeMoveIn(world: World, home: Home) {
+  const readiness = assessHomeReadiness(world, home);
+  if (!readiness.ready) return {
+    ok: false,
+    readiness,
+    reason: readiness.blockers[0]?.recommendation ?? `The home is ${readiness.status.toLowerCase()} at ${readiness.score}%.`
+  };
+  if (!world.recordHomeMoveInApproval(home.id, readiness.score)) return {
+    ok: false,
+    readiness,
+    reason: "Move-in approval is already current."
+  };
+  return { ok: true, readiness, reason: `${home.name} approved for move-in at ${readiness.score}% readiness.` };
 }

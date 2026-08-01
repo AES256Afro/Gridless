@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { assessHomeReadiness } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1832,6 +1832,14 @@ safeHome.windows = [
 const safeAudit = homeSafetyAudit(safeHome);
 const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
 const safeReadiness = assessHomeReadiness(roomClaimWorld, safeHome);
+const moveInApprovalWorld = new World();
+moveInApprovalWorld.homes = [safeHome];
+const refusedUnsafeMoveIn = approveHomeMoveIn(moveInApprovalWorld, unsafeHome);
+const approvedSafeMoveIn = approveHomeMoveIn(moveInApprovalWorld, safeHome);
+const activeMoveInAuthorization = homeMoveInAuthorization(moveInApprovalWorld, safeHome);
+const suspendedMoveInHome = structuredClone(safeHome);
+suspendedMoveInHome.doors = [];
+const suspendedMoveInAuthorization = homeMoveInAuthorization(moveInApprovalWorld, suspendedMoveInHome);
 check(
   !unsafeAudit.safe
     && unsafeAudit.egressCoverage === 0
@@ -1850,6 +1858,18 @@ check(
     && safeReadiness.score > unsafeReadiness.score
     && safeReadiness.components.space === equippedSpacePlan.score,
   "Move-in readiness did not combine household safety, space, and home performance into a blocking decision."
+);
+const restoredMoveInApprovalWorld = new World();
+check(
+  !refusedUnsafeMoveIn.ok
+    && approvedSafeMoveIn.ok
+    && activeMoveInAuthorization.active
+    && activeMoveInAuthorization.status === "Approved"
+    && !suspendedMoveInAuthorization.active
+    && suspendedMoveInAuthorization.status === "Suspended"
+    && restoredMoveInApprovalWorld.restore(moveInApprovalWorld.serialize())
+    && restoredMoveInApprovalWorld.homes[0].moveInApprovedScore === safeReadiness.score,
+  "Move-in approval did not block unsafe homes, persist, or suspend after a new readiness failure."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -4439,6 +4459,7 @@ console.log(JSON.stringify({
   homeSafetyAudit: { unsafe: unsafeAudit, safe: safeAudit },
   roomDrawingPreview: { valid: validRoomPreview, overlap: overlappingRoomPreview.reason, outside: outsideRoomPreview.reason },
   homeReadiness: { unsafe: unsafeReadiness, safe: safeReadiness },
+  homeMoveInDecision: { approved: activeMoveInAuthorization, suspended: suspendedMoveInAuthorization },
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,

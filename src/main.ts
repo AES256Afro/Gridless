@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { assessHomeReadiness } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, homeMoveInAuthorization } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -520,6 +520,7 @@ app.innerHTML = `
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
       <button id="auto-assign-rooms" type="button">Smart assign rooms</button>
+      <button id="approve-home-move-in" type="button" disabled>Approve move-in</button>
       <input id="home-name-input" aria-label="Home or household name" maxlength="40" value="New household">
       <button id="rename-home" type="button">Rename home</button>
       <div class="home-budget" id="home-budget">Design budget unavailable</div>
@@ -5730,6 +5731,7 @@ function updateHomeBuildControls(home: Home | null) {
   const repair = document.querySelector<HTMLButtonElement>("#repair-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const autoAssignRooms = document.querySelector<HTMLButtonElement>("#auto-assign-rooms")!;
+  const approveMoveIn = document.querySelector<HTMLButtonElement>("#approve-home-move-in")!;
   const homeNameInput = document.querySelector<HTMLInputElement>("#home-name-input")!;
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
@@ -5862,11 +5864,18 @@ function updateHomeBuildControls(home: Home | null) {
     : "Organization unavailable";
   organizationElement.classList.toggle("warning", Boolean(organization && organization.score < 68));
   const readiness = home ? assessHomeReadiness(world, home) : null;
+  const moveInAuthorization = home ? homeMoveInAuthorization(world, home) : null;
   const readinessElement = document.querySelector<HTMLElement>("#home-readiness")!;
   readinessElement.textContent = readiness
     ? `Move-in readiness ${readiness.score}% · ${readiness.status} · ${readiness.blockers.length} blocker${readiness.blockers.length === 1 ? "" : "s"}`
     : "Move-in readiness unavailable";
   readinessElement.classList.toggle("warning", Boolean(readiness && !readiness.ready));
+  approveMoveIn.disabled = !home || !readiness?.ready || Boolean(moveInAuthorization?.active);
+  approveMoveIn.textContent = moveInAuthorization?.active
+    ? `Move-in approved · ${moveInAuthorization.approvedScore}%`
+    : moveInAuthorization?.status === "Suspended"
+      ? "Reapprove after repairs"
+      : readiness?.ready ? "Approve move-in" : "Resolve move-in blockers";
 }
 
 function updateRoomEditor(home: Home | null) {
@@ -5965,6 +5974,7 @@ function updateHouseholdSummary(home: Home) {
     const safety = homeSafetyAudit(home);
     const organization = world.homeOrganization(home);
     const readiness = assessHomeReadiness(world, home);
+    const moveInAuthorization = homeMoveInAuthorization(world, home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${homeRoomLabel(room)} on Floor ${homeEntityFloor(room) + 1}`);
@@ -5997,6 +6007,7 @@ function updateHouseholdSummary(home: Home) {
         <div title="${safety.egressCoverage}% sleeping-room egress · ${safety.clearanceShare}% clear floor"><span>Safety</span><strong>${safety.score}% · ${safety.safe ? "No critical hazards" : "Action needed"}</strong></div>
         <div title="${organization.storageCapacity} storage for ${organization.possessionDemand} demand · ${organization.clearFloorShare}% clear floor"><span>Organization</span><strong>${organization.score}% · ${organization.status}</strong></div>
         <div title="Safety ${readiness.components.safety}% · circulation ${readiness.components.circulation}% · space ${readiness.components.space}% · organization ${readiness.components.organization}% · energy ${readiness.components.energy}% · privacy ${readiness.components.privacy}% · condition ${readiness.components.condition}%"><span>Move-in readiness</span><strong>${readiness.score}% · ${readiness.status}</strong></div>
+        <div title="${moveInAuthorization.reason}"><span>Move-in decision</span><strong>${moveInAuthorization.status}${moveInAuthorization.approvedScore ? ` · ${moveInAuthorization.approvedScore}%` : ""}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -9050,6 +9061,13 @@ document.querySelector("#auto-assign-rooms")!.addEventListener("click", () => {
   }
   renderWorld();
   notice(`${result.assigned} resident${result.assigned === 1 ? "" : "s"} matched to personal rooms · ${result.unassigned} unassigned · ${result.privacy}% privacy`);
+});
+document.querySelector("#approve-home-move-in")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home) return;
+  const result = approveHomeMoveIn(world, home);
+  renderWorld();
+  notice(result.reason);
 });
 document.querySelector("#resident-creator-close")!.addEventListener("click", closeResidentCreator);
 document.querySelector("#resident-creator-cancel")!.addEventListener("click", closeResidentCreator);
