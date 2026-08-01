@@ -5673,6 +5673,48 @@ export class World {
     return true;
   }
 
+  previewFurnitureDuplicate(home: Home, furnitureId: string) {
+    const source = home.furniture.find(item => item.id === furnitureId);
+    if (!source) return undefined;
+    const floor = homeEntityFloor(source);
+    const candidates: Array<{ x: number; z: number; distance: number }> = [];
+    for (let radius = .75; radius <= 4; radius += .5) {
+      for (let step = 0; step < 16; step++) {
+        const angle = step / 16 * Math.PI * 2;
+        candidates.push({
+          x: Math.round((source.x + Math.cos(angle) * radius) * 4) / 4,
+          z: Math.round((source.z + Math.sin(angle) * radius) * 4) / 4,
+          distance: radius
+        });
+      }
+    }
+    candidates.sort((first, second) => first.distance - second.distance || first.x - second.x || first.z - second.z);
+    const position = candidates.find(candidate => this.canPlaceFurniture(home, source.kind, candidate.x, candidate.z, source.rotation, undefined, floor));
+    return position ? { ...position, floor, cost: HOME_BUILD_COSTS[source.kind] } : undefined;
+  }
+
+  duplicateFurniture(homeId: string, furnitureId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const source = home?.furniture.find(item => item.id === furnitureId);
+    const preview = home && this.previewFurnitureDuplicate(home, furnitureId);
+    if (!home || !source || !preview) return { ok: false, furnitureId: undefined, cost: 0, reason: "No clear nearby position can hold this furnishing." };
+    if (this.homeRemainingBudget(home) < preview.cost) return { ok: false, furnitureId: undefined, cost: preview.cost, reason: `Duplicating this ${source.kind} needs $${preview.cost}. The design budget has $${this.homeRemainingBudget(home)} left.` };
+    const duplicate = {
+      ...clone(source),
+      id: crypto.randomUUID(),
+      x: preview.x,
+      z: preview.z,
+      floor: preview.floor,
+      ownerResidentId: undefined,
+      condition: 100,
+      lastRepairedAt: undefined
+    };
+    this.checkpoint();
+    home.furniture.push(duplicate);
+    home.designSpent += preview.cost;
+    return { ok: true, furnitureId: duplicate.id, cost: preview.cost, reason: `${source.kind[0].toUpperCase()}${source.kind.slice(1)} duplicated for $${preview.cost}.` };
+  }
+
   addHomeFloor(homeId: string) {
     const home = this.homes.find(item => item.id === homeId);
     if (!home || home.floors >= MAX_HOME_FLOORS || this.homeRemainingBudget(home) < HOME_BUILD_COSTS.floorShell) return false;

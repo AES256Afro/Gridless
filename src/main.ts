@@ -529,6 +529,7 @@ app.innerHTML = `
         <option value="">Shared household</option>
       </select>
       <button id="sell-furniture" disabled>Sell</button>
+      <button id="duplicate-furniture" disabled>Duplicate</button>
       <button id="repair-furniture" disabled>Repair</button>
       <div class="tool-divider"></div>
       <button id="add-resident">+ Resident</button>
@@ -5648,6 +5649,7 @@ function updateHomeBuildControls(home: Home | null) {
   const tint = document.querySelector<HTMLInputElement>("#furniture-tint")!;
   const owner = document.querySelector<HTMLSelectElement>("#furniture-owner")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
+  const duplicateFurniture = document.querySelector<HTMLButtonElement>("#duplicate-furniture")!;
   const repair = document.querySelector<HTMLButtonElement>("#repair-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
   const autoAssignRooms = document.querySelector<HTMLButtonElement>("#auto-assign-rooms")!;
@@ -5716,6 +5718,11 @@ function updateHomeBuildControls(home: Home | null) {
   owner.disabled = !selected || !home?.residents.length;
   owner.value = selected?.ownerResidentId ?? "";
   sell.disabled = !selected;
+  const furnitureDuplicatePreview = home && selected ? world.previewFurnitureDuplicate(home, selected.id) : null;
+  duplicateFurniture.disabled = !selected || !furnitureDuplicatePreview || !home || world.homeRemainingBudget(home) < furnitureDuplicatePreview.cost;
+  duplicateFurniture.textContent = selected && furnitureDuplicatePreview
+    ? `Duplicate ${selected.kind} · ${formatHomeCurrency(furnitureDuplicatePreview.cost)}`
+    : "Duplicate";
   const repairCost = selected ? world.furnitureRepairCost(selected) : 0;
   repair.disabled = !selected || !repairCost;
   addResident.disabled = !home || home.residents.length >= 8;
@@ -8687,6 +8694,19 @@ document.querySelector("#repair-furniture")!.addEventListener("click", () => {
   }
   renderWorld();
   notice(`${homeFurnitureLabel(item.kind)} repaired for ${formatHomeCurrency(result.cost)}`);
+});
+document.querySelector("#duplicate-furniture")!.addEventListener("click", () => {
+  const home = currentHome();
+  if (!home || !selectedFurnitureId) return;
+  const result = world.duplicateFurniture(home.id, selectedFurnitureId);
+  if (!result.ok) {
+    renderHome();
+    notice(result.reason);
+    return;
+  }
+  selectedFurnitureId = result.furnitureId ?? selectedFurnitureId;
+  renderWorld();
+  notice(result.reason);
 });
 document.querySelector("#room-kind")!.addEventListener("change", event => {
   const home = currentHome();

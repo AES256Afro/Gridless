@@ -402,6 +402,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 - [Complete] A whole-home safety audit scores ground-floor entry, room circulation, stair continuity, sleeping-room escape windows, clear floor area, and mobility-sensitive egress. Critical hazards and exact corrections appear at home and parcel scales.
 - [Complete] One-click room duplication finds the nearest valid adjacent footprint, preserves purpose, size, finishes, and furnishings, clears resident claims and ownership, charges the exact shell-plus-furnishing cost, and reverts as one Undo operation.
 - [Complete] Rooms support safe custom names that persist through saves and Undo or Redo, then replace generic purpose labels in Home Simulator selection, resident claims, circulation and safety evidence, and City Explorer wayfinding.
+- [Complete] One-click furnishing duplication preserves the selected object's visual design and floor, clears personal ownership, finds the nearest collision-free placement, charges exact catalog cost, selects the copy, and reverts as one Undo operation.
 - Add multi-select, eyedropper, search, and favorites. Recolors and object variants are already live.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 

@@ -1467,6 +1467,32 @@ check(
     && furniturePlacementWorld.homes[0].furniture.length === interiorHome.furniture.length,
   "Undo did not remove an entire duplicated room and its copied furnishings."
 );
+const furnitureDuplicateHome = furniturePlacementWorld.homes[0];
+const sourceTable = furnitureDuplicateHome.furniture.find(item => item.id === "interior-table")!;
+sourceTable.style = "colorful";
+sourceTable.variant = "modern";
+sourceTable.tint = "#7654aa";
+sourceTable.ownerResidentId = "temporary-owner";
+const furnitureDuplicateBudget = furniturePlacementWorld.homeRemainingBudget(furnitureDuplicateHome);
+const furnitureDuplicate = furniturePlacementWorld.duplicateFurniture(furnitureDuplicateHome.id, sourceTable.id);
+const copiedTable = furnitureDuplicateHome.furniture.find(item => item.id === furnitureDuplicate.furnitureId);
+check(
+  furnitureDuplicate.ok
+    && furnitureDuplicate.cost === HOME_BUILD_COSTS.table
+    && copiedTable?.style === "colorful"
+    && copiedTable.variant === "modern"
+    && copiedTable.tint === "#7654aa"
+    && copiedTable.rotation === sourceTable.rotation
+    && copiedTable.ownerResidentId === undefined
+    && furniturePlacementWorld.homeRemainingBudget(furnitureDuplicateHome) === furnitureDuplicateBudget - HOME_BUILD_COSTS.table,
+  "Furnishing duplication did not preserve its design, find valid space, clear ownership, and charge exact cost."
+);
+check(
+  furniturePlacementWorld.undo()
+    && furniturePlacementWorld.homes[0].furniture.length === interiorHome.furniture.length,
+  "Undo did not remove the duplicated furnishing atomically."
+);
+furniturePlacementWorld.homes[0].furniture.find(item => item.id === "interior-table")!.ownerResidentId = undefined;
 const interiorExteriorWalls = interiorHome.rooms.flatMap(room => homeRoomExteriorWalls(interiorHome, room));
 check(
   interiorExteriorWalls.length === 6,
@@ -4304,6 +4330,11 @@ console.log(JSON.stringify({
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,
     undoRestoredSource: furniturePlacementWorld.homes[0].rooms.length === interiorHome.rooms.length
+  },
+  furnitureDuplication: {
+    cost: furnitureDuplicate.cost,
+    preservedStyle: copiedTable?.style,
+    ownershipCleared: copiedTable?.ownerResidentId === undefined
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
