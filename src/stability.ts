@@ -2,6 +2,7 @@ import {
   HOUSEHOLD_GATHERING_DEFINITIONS,
   MAX_HOUSEHOLD_GATHERINGS,
   MAX_RESIDENT_ACTIVITY_PREFERENCES,
+  HOME_FURNITURE_VARIANTS,
   RESIDENT_ASPIRATION_DEFINITIONS,
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
@@ -130,6 +131,7 @@ const VALID_HOME_FLOOR_FINISHES = new Set(["oak", "tile", "concrete", "carpet"])
 const VALID_HOME_WALL_FINISHES = new Set(["warm-white", "sage", "clay", "slate"]);
 const VALID_HOME_FURNITURE = new Set(["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"]);
 const VALID_HOME_FURNITURE_STYLES = new Set(["natural", "light", "dark", "colorful"]);
+const VALID_HOME_FURNITURE_VARIANTS = new Set(HOME_FURNITURE_VARIANTS);
 const VALID_RESIDENT_ACTIONS = new Set(["sleep", "eat", "relax", "study", "shower", "socialize", "tend-plants", "idle"]);
 
 export function createStabilityScenario() {
@@ -657,6 +659,8 @@ function integrityFailures(world: World) {
     for (const item of home.furniture) {
       if (!VALID_HOME_FURNITURE.has(item.kind)) failures.push(`Furniture ${item.id} has an unknown catalog kind.`);
       if (!VALID_HOME_FURNITURE_STYLES.has(item.style ?? "natural")) failures.push(`Furniture ${item.id} has an invalid style.`);
+      if (!VALID_HOME_FURNITURE_VARIANTS.has(item.variant ?? "classic")) failures.push(`Furniture ${item.id} has an invalid design variant.`);
+      if (item.tint !== undefined && !/^#[0-9a-f]{6}$/.test(item.tint)) failures.push(`Furniture ${item.id} has an invalid custom color.`);
       if (item.ownerResidentId && !residentIds.has(item.ownerResidentId)) failures.push(`Furniture ${item.id} has a missing resident owner.`);
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
         failures.push(`Furniture ${item.id} has an invalid rotation.`);

@@ -1375,6 +1375,20 @@ check(
   "Reapplying the selected furniture style created a redundant world change."
 );
 check(
+  catalogWorld.setFurnitureVariant(catalogHome.id, catalogDesk.id, "modern")
+    && catalogWorld.setFurnitureTint(catalogHome.id, catalogDesk.id, "#7C3AED")
+    && catalogDesk.variant === "modern"
+    && catalogDesk.tint === "#7c3aed"
+    && catalogWorld.homeRemainingBudget(catalogHome) === budgetBeforeStyle,
+  "Furniture design and custom color did not persist as cost-free cosmetic choices."
+);
+check(
+  !catalogWorld.setFurnitureVariant(catalogHome.id, catalogDesk.id, "modern")
+    && !catalogWorld.setFurnitureTint(catalogHome.id, catalogDesk.id, "#7c3aed")
+    && !catalogWorld.setFurnitureTint(catalogHome.id, catalogDesk.id, "purple"),
+  "Furniture customization accepted a redundant or unsafe value."
+);
+check(
   furnitureInteraction("desk").action === "study"
     && furnitureInteraction("bookcase").action === "study"
     && furnitureInteraction("fridge").action === "eat"
@@ -1409,8 +1423,28 @@ check(
 );
 check(
   catalogWorld.snapshot().homes[0].furniture.some(item => item.kind === "fridge")
-    && catalogWorld.snapshot().homes[0].furniture.find(item => item.id === catalogDesk.id)?.style === "colorful",
-  "Expanded catalog furniture or its selected style was omitted from the world snapshot."
+    && catalogWorld.snapshot().homes[0].furniture.find(item => item.id === catalogDesk.id)?.style === "colorful"
+    && catalogWorld.snapshot().homes[0].furniture.find(item => item.id === catalogDesk.id)?.variant === "modern"
+    && catalogWorld.snapshot().homes[0].furniture.find(item => item.id === catalogDesk.id)?.tint === "#7c3aed",
+  "Expanded catalog furniture or its cosmetic choices were omitted from the world snapshot."
+);
+const restoredCatalogWorld = new World();
+check(
+  restoredCatalogWorld.restore(catalogWorld.serialize())
+    && restoredCatalogWorld.homes[0].furniture.find(item => item.id === catalogDesk.id)?.variant === "modern"
+    && restoredCatalogWorld.homes[0].furniture.find(item => item.id === catalogDesk.id)?.tint === "#7c3aed",
+  "Furniture design and custom color did not survive save and restore."
+);
+const unsafeCatalogSnapshot = catalogWorld.snapshot();
+const unsafeCatalogFurniture = unsafeCatalogSnapshot.homes[0].furniture[0] as { variant?: string; tint?: string };
+unsafeCatalogFurniture.variant = "ornate";
+unsafeCatalogFurniture.tint = "javascript:paint";
+const migratedCatalogWorld = new World();
+check(
+  migratedCatalogWorld.restore(JSON.stringify(unsafeCatalogSnapshot))
+    && migratedCatalogWorld.homes[0].furniture[0].variant === "classic"
+    && migratedCatalogWorld.homes[0].furniture[0].tint === undefined,
+  "Unsafe legacy furniture customization did not migrate to safe defaults."
 );
 const functionalRoomHome: Home = {
   ...structuredClone(interiorHome),
@@ -3169,6 +3203,8 @@ console.log(JSON.stringify({
   interiorEntry: interiorEntry,
   interiorDoorways: interiorDoorways(interiorHome).length,
   interiorFurnitureCollision: furnitureMove.blocked,
+  furnitureVariant: catalogDesk.variant,
+  furnitureTint: catalogDesk.tint,
   interiorWallCollision: wallMove.blocked,
   interiorAccessGate: entryStatus.allowed,
   multiFloorHomeFloors: restoredMultiFloorWorld.homes[0].floors,

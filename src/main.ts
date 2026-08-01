@@ -12,6 +12,7 @@ import {
   HOME_BUILD_COSTS,
   HOME_FINISH_COSTS,
   HOME_FURNITURE_SIZE,
+  HOME_FURNITURE_VARIANTS,
   HOME_ROOM_KINDS,
   HOUSEHOLD_GATHERING_DEFINITIONS,
   MAX_HOME_FLOORS,
@@ -47,6 +48,7 @@ import {
   type Home,
   type HomeFloorFinish,
   type HomeFurnitureStyle,
+  type HomeFurnitureVariant,
   type HomeRoomKind,
   type HomeWallFinish,
   type HouseholdGatheringKind,
@@ -457,6 +459,12 @@ app.innerHTML = `
         <option value="dark">Dark</option>
         <option value="colorful">Colorful</option>
       </select>
+      <select id="furniture-variant" aria-label="Selected furniture design" disabled>
+        <option value="classic">Classic</option>
+        <option value="modern">Modern</option>
+        <option value="soft">Soft edge</option>
+      </select>
+      <input id="furniture-tint" type="color" aria-label="Selected furniture custom color" title="Custom furniture color" value="#9a7654" disabled>
       <select id="furniture-owner" aria-label="Selected furniture owner" disabled>
         <option value="">Shared household</option>
       </select>
@@ -4577,7 +4585,8 @@ function addWall(group: THREE.Group, x: number, z: number, length: number, thick
 
 function createFurniture(item: Home["furniture"][number]) {
   const group = new THREE.Group();
-  const palette = furnitureStylePalette(item.style ?? "natural");
+  const palette = furnitureStylePalette(item.style ?? "natural", item.tint);
+  const variant = item.variant ?? "classic";
   group.userData.furnitureId = item.id;
   group.position.set(item.x, .25, item.z);
   group.rotation.y = item.rotation;
@@ -4643,6 +4652,36 @@ function createFurniture(item: Home["furniture"][number]) {
     showerHead.position.set(0, 1.55, .38);
     group.add(base, back, side, showerHead);
   }
+  const designedParts = [...group.children];
+  if (variant === "modern") {
+    for (const child of designedParts) {
+      child.position.y *= .86;
+      child.scale.y *= .86;
+    }
+    const size = HOME_FURNITURE_SIZE[item.kind];
+    const plinth = new THREE.Mesh(
+      new THREE.BoxGeometry(size.width * .72, .08, size.depth * .72),
+      new THREE.MeshStandardMaterial({ color: 0x242a29, metalness: .38, roughness: .48 })
+    );
+    plinth.position.y = .04;
+    group.add(plinth);
+  } else if (variant === "soft") {
+    for (const child of designedParts) {
+      child.scale.x *= .94;
+      child.scale.z *= .94;
+    }
+    if (item.kind === "sofa" || item.kind === "bed") {
+      for (const x of [-.42, .42]) {
+        const cushion = new THREE.Mesh(
+          new THREE.SphereGeometry(.3, 18, 12),
+          new THREE.MeshStandardMaterial({ color: palette.secondary, roughness: .96 })
+        );
+        cushion.scale.set(1.25, .5, .75);
+        cushion.position.set(x, item.kind === "sofa" ? .58 : .48, item.kind === "sofa" ? .12 : -.72);
+        group.add(cushion);
+      }
+    }
+  }
   group.traverse(child => {
     if (child instanceof THREE.Mesh) child.castShadow = child.receiveShadow = true;
   });
@@ -4662,13 +4701,21 @@ function createFurniture(item: Home["furniture"][number]) {
   return group;
 }
 
-function furnitureStylePalette(style: HomeFurnitureStyle) {
-  return {
+function furnitureStylePalette(style: HomeFurnitureStyle, tint?: string) {
+  const palette = {
     natural: { primary: 0x9a7654, secondary: 0x5f765f },
     light: { primary: 0xe4ded1, secondary: 0xbec9c3 },
     dark: { primary: 0x3f4544, secondary: 0x222827 },
     colorful: { primary: 0xd36b62, secondary: 0x4f8792 }
   }[style];
+  if (!tint || !/^#[0-9a-f]{6}$/i.test(tint)) return palette;
+  const primary = new THREE.Color(tint);
+  const secondary = primary.clone().offsetHSL(.055, -.08, -.14);
+  return { primary: primary.getHex(), secondary: secondary.getHex() };
+}
+
+function furniturePaletteColor(style: HomeFurnitureStyle) {
+  return `#${furnitureStylePalette(style).primary.toString(16).padStart(6, "0")}`;
 }
 
 function formatHomeCurrency(value: number) {
@@ -4825,6 +4872,8 @@ function updateHomeBuildControls(home: Home | null) {
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
   const style = document.querySelector<HTMLSelectElement>("#furniture-style")!;
+  const variant = document.querySelector<HTMLSelectElement>("#furniture-variant")!;
+  const tint = document.querySelector<HTMLInputElement>("#furniture-tint")!;
   const owner = document.querySelector<HTMLSelectElement>("#furniture-owner")!;
   const sell = document.querySelector<HTMLButtonElement>("#sell-furniture")!;
   const addResident = document.querySelector<HTMLButtonElement>("#add-resident")!;
@@ -4843,6 +4892,10 @@ function updateHomeBuildControls(home: Home | null) {
   rotate.disabled = !selected;
   style.disabled = !selected;
   style.value = selected?.style ?? "natural";
+  variant.disabled = !selected;
+  variant.value = selected?.variant ?? "classic";
+  tint.disabled = !selected;
+  tint.value = selected?.tint ?? furniturePaletteColor(selected?.style ?? "natural");
   owner.replaceChildren(
     new Option("Shared household", ""),
     ...(home?.residents ?? []).map(resident => new Option(`Owned by ${resident.name}`, resident.id))
@@ -7259,6 +7312,22 @@ document.querySelector("#furniture-style")!.addEventListener("change", event => 
   if (!home || !item || !world.setFurnitureStyle(home.id, item.id, style)) return;
   renderWorld();
   notice(`${homeFurnitureLabel(item.kind)} style changed to ${style}`);
+});
+document.querySelector("#furniture-variant")!.addEventListener("change", event => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const variant = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureVariant;
+  if (!home || !item || !HOME_FURNITURE_VARIANTS.includes(variant) || !world.setFurnitureVariant(home.id, item.id, variant)) return;
+  renderWorld();
+  notice(`${homeFurnitureLabel(item.kind)} design changed to ${variant === "soft" ? "soft edge" : variant}`);
+});
+document.querySelector("#furniture-tint")!.addEventListener("change", event => {
+  const home = currentHome();
+  const item = home?.furniture.find(candidate => candidate.id === selectedFurnitureId);
+  const tint = (event.currentTarget as HTMLInputElement).value;
+  if (!home || !item || !world.setFurnitureTint(home.id, item.id, tint)) return;
+  renderWorld();
+  notice(`${homeFurnitureLabel(item.kind)} color changed to ${tint.toUpperCase()}`);
 });
 document.querySelector("#furniture-owner")!.addEventListener("change", event => {
   const home = currentHome();
