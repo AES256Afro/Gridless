@@ -33,6 +33,8 @@ import {
   RESIDENT_ROUTINE_DEFINITIONS,
   normalizeRoadProfile,
   normalizeRoadStructure,
+  defaultHomeRoofColor,
+  defaultHomeRoofStyle,
   homeEntityFloor,
   homeFloorView,
   homeRoomExteriorWalls,
@@ -56,6 +58,7 @@ import {
   type HomeFurnitureStyle,
   type HomeFurnitureVariant,
   type HomeRoomKind,
+  type HomeRoofStyle,
   type HomeWindowGlazing,
   type HomeWallFinish,
   type HouseholdGatheringKind,
@@ -465,6 +468,14 @@ app.innerHTML = `
         <option value="wide">Wide access · 1.35m · +$400</option>
       </select>
       <button id="remove-home-door" type="button" disabled>Remove doorway</button>
+      <select id="home-roof-style" aria-label="Home roof style">
+        <option value="gable">Gable roof · $2.8k</option>
+        <option value="hip">Hip roof · $2.8k</option>
+        <option value="flat">Flat roof · $2.8k</option>
+        <option value="green">Planted roof · $5k</option>
+      </select>
+      <input id="home-roof-color" type="color" aria-label="Roof color" title="Roof color" value="#625044">
+      <button id="apply-home-roof" type="button">Apply roof</button>
       <div class="tool-divider"></div>
       <select id="home-catalog" aria-label="Home object catalog">
         <optgroup label="Living">
@@ -2592,9 +2603,15 @@ function renderWorld() {
         }
       }
       if (lotHome && progress >= 1 && mode === "explore") {
-        const roof = createHomeRoof(lot.width * .68, lot.depth * .64, shellColor);
+        const roof = createHomeRoof(
+          lot.width * .68,
+          lot.depth * .64,
+          lotHome.roofColor ?? defaultHomeRoofColor(world.templateId),
+          false,
+          lotHome.roofStyle ?? defaultHomeRoofStyle(world.templateId)
+        );
         roof.position.set(lot.center.x, height + .66, lot.center.z);
-        roof.rotation.y = lot.rotation + Math.PI / 4;
+        roof.rotation.y = lot.rotation;
         worldGroup.add(roof);
       }
     }
@@ -4804,7 +4821,13 @@ function renderHome() {
     const maxX = Math.max(...floorHome.rooms.map(room => room.x + room.width / 2));
     const minZ = Math.min(...floorHome.rooms.map(room => room.z - room.depth / 2));
     const maxZ = Math.max(...floorHome.rooms.map(room => room.z + room.depth / 2));
-    const roof = createHomeRoof(maxX - minX + .45, maxZ - minZ + .45, 0x625044, true);
+    const roof = createHomeRoof(
+      maxX - minX + .45,
+      maxZ - minZ + .45,
+      home.roofColor ?? defaultHomeRoofColor(world.templateId),
+      true,
+      home.roofStyle ?? defaultHomeRoofStyle(world.templateId)
+    );
     roof.position.set((minX + maxX) / 2, 3.74, (minZ + maxZ) / 2);
     homeGroup.add(roof);
   }
@@ -4890,24 +4913,53 @@ function renderHome() {
   }
 }
 
-function createHomeRoof(width: number, depth: number, color: number, cutaway = false) {
-  const roof = new THREE.Mesh(
-    new THREE.ConeGeometry(1, 1.35, 4),
-    new THREE.MeshStandardMaterial({
-      color,
-      roughness: .88,
-      transparent: cutaway,
-      opacity: cutaway ? .18 : 1,
-      wireframe: cutaway,
-      depthWrite: !cutaway,
-      side: THREE.DoubleSide
-    })
-  );
-  roof.scale.set(width * .72, 1, depth * .72);
-  roof.rotation.y = Math.PI / 4;
-  roof.castShadow = !cutaway;
-  roof.receiveShadow = !cutaway;
+function createHomeRoof(
+  width: number,
+  depth: number,
+  color: number | string,
+  cutaway = false,
+  style: HomeRoofStyle = "hip"
+) {
+  const roof = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    roughness: .88,
+    transparent: cutaway,
+    opacity: cutaway ? .18 : 1,
+    wireframe: cutaway,
+    depthWrite: !cutaway,
+    side: THREE.DoubleSide
+  });
+  if (style === "flat" || style === "green") {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(width, .28, depth), material);
+    deck.position.y = .14;
+    roof.add(deck);
+    if (style === "green") {
+      const planting = new THREE.Mesh(
+        new THREE.BoxGeometry(width * .86, .16, depth * .82),
+        new THREE.MeshStandardMaterial({ color: 0x60795a, roughness: .98, transparent: cutaway, opacity: cutaway ? .22 : 1 })
+      );
+      planting.position.y = .36;
+      roof.add(planting);
+    }
+  } else if (style === "gable") {
+    for (const side of [-1, 1]) {
+      const slope = new THREE.Mesh(new THREE.BoxGeometry(width * .57, .16, depth * 1.04), material);
+      slope.position.set(side * width * .215, .35, 0);
+      slope.rotation.z = side * .5;
+      roof.add(slope);
+    }
+  } else {
+    const hip = new THREE.Mesh(new THREE.ConeGeometry(1, 1.35, 4), material);
+    hip.scale.set(width * .72, 1, depth * .72);
+    hip.rotation.y = Math.PI / 4;
+    roof.add(hip);
+  }
+  roof.traverse(object => {
+    if (object instanceof THREE.Mesh) object.castShadow = object.receiveShadow = !cutaway;
+  });
   roof.userData.homeRoof = true;
+  roof.userData.homeRoofStyle = style;
   return roof;
 }
 
@@ -5534,6 +5586,9 @@ function updateHomeBuildControls(home: Home | null) {
   const windowGlazing = document.querySelector<HTMLSelectElement>("#home-window-glazing")!;
   const removeDoor = document.querySelector<HTMLButtonElement>("#remove-home-door")!;
   const doorWidth = document.querySelector<HTMLSelectElement>("#home-door-width")!;
+  const roofStyle = document.querySelector<HTMLSelectElement>("#home-roof-style")!;
+  const roofColor = document.querySelector<HTMLInputElement>("#home-roof-color")!;
+  const applyRoof = document.querySelector<HTMLButtonElement>("#apply-home-roof")!;
   floorSelect.replaceChildren(...Array.from({ length: home?.floors ?? 1 }, (_, floor) => new Option(`Floor ${floor + 1}`, String(floor))));
   if (home) homeFloor = Math.max(0, Math.min(home.floors - 1, homeFloor));
   floorSelect.value = String(homeFloor);
@@ -5551,6 +5606,17 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Remove ${selectedDoor.widthKind} doorway · ${formatHomeCurrency(world.homeDoorCost(selectedDoor.widthKind) * .5)}`
     : "Remove doorway";
   doorWidth.disabled = !home;
+  roofStyle.disabled = !home;
+  roofColor.disabled = !home;
+  applyRoof.disabled = !home;
+  if (home && document.activeElement !== roofStyle) roofStyle.value = home.roofStyle ?? defaultHomeRoofStyle(world.templateId);
+  if (home && document.activeElement !== roofColor) roofColor.value = home.roofColor ?? defaultHomeRoofColor(world.templateId);
+  if (home) {
+    const pendingRoofStyle = roofStyle.value as HomeRoofStyle;
+    applyRoof.textContent = `Apply ${pendingRoofStyle} roof · ${formatHomeCurrency(world.homeRoofCost(pendingRoofStyle))}`;
+  } else {
+    applyRoof.textContent = "Apply roof";
+  }
   move.disabled = !selected;
   rotate.disabled = !selected;
   style.disabled = !selected;
@@ -5655,7 +5721,7 @@ function updateHouseholdSummary(home: Home) {
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${room.kind} on Floor ${homeEntityFloor(room) + 1}`);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms, a ${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)} roof, and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. Circulation is ${circulation.score}%: ${circulation.summary}.${unreachableRooms.length ? ` Unreachable spaces: ${unreachableRooms.join(", ")}.` : ""} The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5675,6 +5741,7 @@ function updateHouseholdSummary(home: Home) {
     details.innerHTML = `
       <div class="home-wellbeing-overview">
         <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
+        <div><span>Roof</span><strong>${home.roofStyle ?? defaultHomeRoofStyle(world.templateId)}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
@@ -8313,6 +8380,24 @@ document.querySelector("#remove-home-door")!.addEventListener("click", () => {
   selectedHomeDoorId = null;
   renderWorld();
   notice(`Doorway removed · ${formatHomeCurrency(refund)} returned. Room traversal updates immediately.`);
+});
+document.querySelector("#home-roof-style")!.addEventListener("change", event => {
+  const style = (event.currentTarget as HTMLSelectElement).value as HomeRoofStyle;
+  document.querySelector<HTMLButtonElement>("#apply-home-roof")!.textContent = `Apply ${style} roof · ${formatHomeCurrency(world.homeRoofCost(style))}`;
+});
+document.querySelector("#apply-home-roof")!.addEventListener("click", () => {
+  const home = currentHome();
+  const style = (document.querySelector("#home-roof-style") as HTMLSelectElement).value as HomeRoofStyle;
+  const color = (document.querySelector("#home-roof-color") as HTMLInputElement).value;
+  const cost = world.homeRoofCost(style);
+  if (!home || !world.setHomeRoof(home.id, style, color)) {
+    notice(home && world.homeRemainingBudget(home) < cost
+      ? `${formatHomeCurrency(cost)} needed. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+      : "Choose a different roof style or color before applying");
+    return;
+  }
+  renderWorld();
+  notice(`${style === "green" ? "Planted" : `${style[0].toUpperCase()}${style.slice(1)}`} roof applied for ${formatHomeCurrency(cost)}`);
 });
 document.querySelector("#move-furniture")!.addEventListener("click", () => {
   const home = currentHome();

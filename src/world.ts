@@ -1186,6 +1186,8 @@ export type HomeDoor = {
   widthKind: HomeDoorWidth;
 };
 
+export type HomeRoofStyle = "gable" | "hip" | "flat" | "green";
+
 export type Home = {
   id: string;
   lotId: string;
@@ -1196,6 +1198,8 @@ export type Home = {
   stairs?: HomeStair[];
   windows?: HomeWindow[];
   doors?: HomeDoor[];
+  roofStyle?: HomeRoofStyle;
+  roofColor?: string;
   designBudget: number;
   designSpent: number;
   householdFunds?: number;
@@ -1308,6 +1312,8 @@ export const HOME_BUILD_COSTS = {
   privacyGlazing: 200,
   door: 1_400,
   wideDoor: 400,
+  roof: 2_800,
+  greenRoof: 2_200,
   sofa: 1_400,
   table: 650,
   bed: 1_200,
@@ -1317,6 +1323,24 @@ export const HOME_BUILD_COSTS = {
   fridge: 1_100,
   shower: 1_650
 } as const;
+
+export function defaultHomeRoofStyle(templateId: WorldTemplate["id"]): HomeRoofStyle {
+  if (templateId === "houston" || templateId === "nyc" || templateId === "blank") return "flat";
+  if (templateId === "seattle") return "green";
+  if (templateId === "portland") return "gable";
+  return "hip";
+}
+
+export function defaultHomeRoofColor(templateId: WorldTemplate["id"]) {
+  return {
+    nyc: "#5e5148",
+    chicago: "#4f5960",
+    houston: "#b8b2a5",
+    seattle: "#587052",
+    portland: "#6c4c3d",
+    blank: "#625044"
+  }[templateId];
+}
 
 export const HOUSEHOLD_GATHERING_DEFINITIONS: Record<HouseholdGatheringKind, {
   label: string;
@@ -4976,6 +5000,8 @@ export class World {
         { id: crypto.randomUUID(), kind: "plant", x: 2.2, z: 1.8, rotation: 0, style: "natural", floor: 0, condition: 100 }
       ],
       stairs: [],
+      roofStyle: defaultHomeRoofStyle(this.templateId),
+      roofColor: defaultHomeRoofColor(this.templateId),
       designBudget: 60_000,
       designSpent: HOME_BUILD_COSTS.sofa + HOME_BUILD_COSTS.plant,
       householdFunds: 15_000,
@@ -5349,6 +5375,30 @@ export class World {
     this.checkpoint();
     home.doors = home.doors!.filter(item => item.id !== doorId);
     home.designSpent = Math.max(0, home.designSpent - Math.round(this.homeDoorCost(door.widthKind) * .5));
+    return true;
+  }
+
+  homeRoofCost(style: HomeRoofStyle) {
+    return HOME_BUILD_COSTS.roof + (style === "green" ? HOME_BUILD_COSTS.greenRoof : 0);
+  }
+
+  setHomeRoof(homeId: string, style: HomeRoofStyle, color: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const normalizedColor = /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : undefined;
+    const styles: HomeRoofStyle[] = ["gable", "hip", "flat", "green"];
+    const cost = this.homeRoofCost(style);
+    if (
+      !home
+      || !styles.includes(style)
+      || !normalizedColor
+      || ((home.roofStyle ?? defaultHomeRoofStyle(this.templateId)) === style
+        && (home.roofColor ?? defaultHomeRoofColor(this.templateId)) === normalizedColor)
+      || this.homeRemainingBudget(home) < cost
+    ) return false;
+    this.checkpoint();
+    home.roofStyle = style;
+    home.roofColor = normalizedColor;
+    home.designSpent += cost;
     return true;
   }
 
@@ -6055,12 +6105,19 @@ export class World {
               && Number.isFinite(door.center)
               && (door.widthKind === "standard" || door.widthKind === "wide")
             ).map(door => ({ ...door, width: door.widthKind === "wide" ? 1.35 : .95 })),
+        roofStyle: home.roofStyle === "gable" || home.roofStyle === "hip" || home.roofStyle === "flat" || home.roofStyle === "green"
+          ? home.roofStyle
+          : defaultHomeRoofStyle(this.templateId),
+        roofColor: /^#[0-9a-f]{6}$/i.test(home.roofColor ?? "")
+          ? home.roofColor!.toLowerCase()
+          : defaultHomeRoofColor(this.templateId),
         designBudget: Math.max(0, Math.round(home.designBudget ?? 60_000)),
         designSpent: Math.max(0, Math.round(
           home.designSpent
           ?? (home.furniture ?? []).reduce((total, item) => total + HOME_BUILD_COSTS[item.kind], 0)
             + (home.windows ?? []).reduce((total, window) => total + this.homeWindowCost(window.glazing), 0)
             + (home.doors ?? []).reduce((total, door) => total + this.homeDoorCost(door.widthKind), 0)
+            + (home.roofStyle ? this.homeRoofCost(home.roofStyle) : 0)
         )),
         householdFunds: Math.round(clamp(home.householdFunds ?? 15_000, -100_000, 10_000_000)),
         lastDailyIncome: Math.max(0, Math.round(home.lastDailyIncome ?? 0)),
