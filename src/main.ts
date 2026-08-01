@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, inspectHome, nextRoomReadinessIssue, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -534,6 +534,7 @@ app.innerHTML = `
       <div class="home-budget" id="home-safety">Safety audit unavailable</div>
       <div class="home-budget" id="home-organization">Organization unavailable</div>
       <div class="home-budget" id="home-readiness">Move-in readiness unavailable</div>
+      <div class="home-budget" id="home-inspection">Home inspection unavailable</div>
       <div class="home-budget" id="home-move-in-goals">Move-in goals unavailable</div>
       <div class="household-summary" id="household-summary">No residents yet</div>
     </div>
@@ -5872,6 +5873,7 @@ function updateHomeBuildControls(home: Home | null) {
     : "Organization unavailable";
   organizationElement.classList.toggle("warning", Boolean(organization && organization.score < 68));
   const readiness = home ? assessHomeReadiness(world, home) : null;
+  const inspection = home ? inspectHome(world, home) : null;
   const moveInAuthorization = home ? homeMoveInAuthorization(world, home) : null;
   const moveInGoals = home ? homeMoveInGoals(world, home) : [];
   const readinessElement = document.querySelector<HTMLElement>("#home-readiness")!;
@@ -5879,6 +5881,11 @@ function updateHomeBuildControls(home: Home | null) {
     ? `Move-in readiness ${readiness.score}% · ${readiness.status} · ${readiness.blockers.length} blocker${readiness.blockers.length === 1 ? "" : "s"}`
     : "Move-in readiness unavailable";
   readinessElement.classList.toggle("warning", Boolean(readiness && !readiness.ready));
+  const inspectionElement = document.querySelector<HTMLElement>("#home-inspection")!;
+  inspectionElement.textContent = inspection
+    ? `Inspection ${inspection.score}% · ${inspection.result} · rooms ${inspection.readyRooms}/${inspection.totalRooms} · ${inspection.corrections} correction${inspection.corrections === 1 ? "" : "s"}`
+    : "Home inspection unavailable";
+  inspectionElement.classList.toggle("warning", Boolean(inspection && inspection.result !== "Passed"));
   approveMoveIn.disabled = !home || !readiness?.ready || Boolean(moveInAuthorization?.active);
   approveMoveIn.textContent = moveInAuthorization?.active
     ? `Move-in approved · ${moveInAuthorization.approvedScore}%`
@@ -6006,6 +6013,7 @@ function updateHouseholdSummary(home: Home) {
     const moveInAuthorization = homeMoveInAuthorization(world, home);
     const moveInGoals = homeMoveInGoals(world, home);
     const roomReadiness = home.rooms.map(room => assessRoomReadiness(world, home, room));
+    const inspection = inspectHome(world, home);
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${homeRoomLabel(room)} on Floor ${homeEntityFloor(room) + 1}`);
@@ -6042,6 +6050,7 @@ function updateHouseholdSummary(home: Home) {
         <div title="${moveInGoals.map(goal => `${goal.label}: ${goal.complete ? "complete" : goal.detail}`).join(" · ") || "No goals pinned"}"><span>Move-in goals</span><strong>${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length || 0} complete</strong></div>
         <div><span>First night</span><strong>${home.firstNightAt !== undefined ? `Complete · +${home.firstNightComfortGain ?? 0} comfort` : "Not begun"}</strong></div>
         <div title="${roomReadiness.flatMap(result => result.issues).join(" · ") || "Every room passes its live purpose, access, daylight, condition, clearance, and egress checks."}"><span>Ready rooms</span><strong>${roomReadiness.filter(result => result.status === "Ready").length}/${roomReadiness.length}</strong></div>
+        <div title="${inspection.priority}"><span>Home inspection</span><strong>${inspection.score}% · ${inspection.result}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
