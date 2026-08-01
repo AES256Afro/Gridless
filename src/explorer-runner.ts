@@ -27,6 +27,7 @@ import { neighborhoodPulse } from "./neighborhood";
 import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
+import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -79,6 +80,16 @@ import {
 } from "./world";
 
 const architectureTemplates = ["nyc", "chicago", "houston", "seattle", "portland"] as const;
+const catalogFavorites = new Set(normalizeHomeCatalogFavorites(["bookcase", "desk", "desk", "not-real"]));
+const catalogWorkSearch = filterHomeCatalog("work storage", catalogFavorites);
+check(
+  catalogFavorites.size === 2
+    && catalogWorkSearch.length === 2
+    && catalogWorkSearch[0].kind === "bookcase"
+    && catalogWorkSearch.map(item => item.kind).join(",") === "bookcase,desk"
+    && filterHomeCatalog("hygiene", catalogFavorites)[0]?.kind === "shower",
+  "Searchable furnishing catalog did not normalize favorites or match category tags deterministically."
+);
 const architectureProfiles = architectureTemplates.map((templateId, index) => ({
   templateId,
   profile: buildingArchitecture(templateId, "commercial", 431 + index * 97)
@@ -4203,6 +4214,7 @@ console.log(JSON.stringify({
     widthScale: Number(profile.widthScale.toFixed(2)),
     heightScale: Number(profile.heightScale.toFixed(2))
   })),
+  homeCatalogSearch: { favorites: [...catalogFavorites], workStorage: catalogWorkSearch.map(item => item.kind) },
   architectureRoofStyles: [...regionalRoofStyles].sort(),
   mixedUseProgram: {
     low: `${lowMixedProgram.commercialFloors} commercial + ${lowMixedProgram.residentialFloors} residential`,

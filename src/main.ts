@@ -7,6 +7,7 @@ import { neighborhoodPulse, type NeighborhoodPulse } from "./neighborhood";
 import { buildingProgram, type BuildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
+import { filterHomeCatalog, normalizeHomeCatalogFavorites, type HomeCatalogKind } from "./home-catalog";
 import { recordActivity, type ActivityEntry } from "./activity";
 import { WORLD_TEMPLATES } from "./templates";
 import {
@@ -487,28 +488,9 @@ app.innerHTML = `
       </select>
       <button id="apply-home-foundation" type="button">Apply foundation</button>
       <div class="tool-divider"></div>
-      <select id="home-catalog" aria-label="Home object catalog">
-        <optgroup label="Living">
-          <option value="sofa">Sofa · $1.4k</option>
-          <option value="table">Dining table · $650</option>
-        </optgroup>
-        <optgroup label="Bedroom">
-          <option value="bed">Bed · $1.2k</option>
-        </optgroup>
-        <optgroup label="Study">
-          <option value="desk">Desk · $900</option>
-          <option value="bookcase">Bookcase · $720</option>
-        </optgroup>
-        <optgroup label="Kitchen">
-          <option value="fridge">Fridge · $1.1k</option>
-        </optgroup>
-        <optgroup label="Bathroom">
-          <option value="shower">Shower · $1.65k</option>
-        </optgroup>
-        <optgroup label="Decor">
-          <option value="plant">Plant · $120</option>
-        </optgroup>
-      </select>
+      <input id="home-catalog-search" type="search" aria-label="Search home object catalog" placeholder="Search objects">
+      <select id="home-catalog" aria-label="Home object catalog"></select>
+      <button id="favorite-catalog-item" type="button" aria-label="Favorite selected catalog object">☆ Favorite</button>
       <button id="place-catalog-item">Place sofa</button>
       <div class="tool-divider"></div>
       <button id="move-furniture" disabled>Move</button>
@@ -841,6 +823,14 @@ function loadUiPreferences(): UiPreferences {
   }
 }
 let uiPreferences = loadUiPreferences();
+function loadHomeCatalogFavorites() {
+  try {
+    return new Set<HomeCatalogKind>(normalizeHomeCatalogFavorites(JSON.parse(localStorage.getItem("gridless-home-catalog-favorites-v1") ?? "[]")));
+  } catch {
+    return new Set<HomeCatalogKind>();
+  }
+}
+let homeCatalogFavorites = loadHomeCatalogFavorites();
 let starterJourneyDismissed = !uiPreferences.showStarterJourney;
 let activityLog: ActivityEntry[] = [];
 let unreadActivity = 0;
@@ -8543,9 +8533,42 @@ document.querySelector("#remove-home-floor")!.addEventListener("click", () => {
   renderWorld();
   notice(`Top floor removed. This home now has ${home.floors} floor${home.floors === 1 ? "" : "s"}.`);
 });
+function renderHomeCatalogOptions() {
+  const search = document.querySelector<HTMLInputElement>("#home-catalog-search")!;
+  const select = document.querySelector<HTMLSelectElement>("#home-catalog")!;
+  const previous = select.value as HomeCatalogKind;
+  const matches = filterHomeCatalog(search.value, homeCatalogFavorites);
+  select.replaceChildren(...matches.map(item => new Option(
+    `${homeCatalogFavorites.has(item.kind) ? "★ " : ""}${item.category} · ${item.label} · ${formatHomeCurrency(HOME_BUILD_COSTS[item.kind])}`,
+    item.kind
+  )));
+  if (matches.some(item => item.kind === previous)) select.value = previous;
+  const kind = select.value as HomeFurnitureKind;
+  const place = document.querySelector<HTMLButtonElement>("#place-catalog-item")!;
+  const favorite = document.querySelector<HTMLButtonElement>("#favorite-catalog-item")!;
+  select.disabled = !matches.length;
+  place.disabled = !matches.length;
+  favorite.disabled = !matches.length;
+  place.textContent = matches.length ? `Place ${homeFurnitureLabel(kind)}` : "No matching objects";
+  favorite.textContent = matches.length && homeCatalogFavorites.has(kind) ? "★ Favorited" : "☆ Favorite";
+  favorite.classList.toggle("active", Boolean(matches.length && homeCatalogFavorites.has(kind)));
+}
+renderHomeCatalogOptions();
+document.querySelector("#home-catalog-search")!.addEventListener("input", renderHomeCatalogOptions);
+document.querySelector("#favorite-catalog-item")!.addEventListener("click", () => {
+  const kind = (document.querySelector("#home-catalog") as HTMLSelectElement).value as HomeCatalogKind;
+  if (!kind) return;
+  if (homeCatalogFavorites.has(kind)) homeCatalogFavorites.delete(kind);
+  else homeCatalogFavorites.add(kind);
+  localStorage.setItem("gridless-home-catalog-favorites-v1", JSON.stringify([...homeCatalogFavorites]));
+  renderHomeCatalogOptions();
+  notice(`${homeFurnitureLabel(kind)} ${homeCatalogFavorites.has(kind) ? "added to" : "removed from"} catalog favorites`);
+});
 document.querySelector("#home-catalog")!.addEventListener("change", event => {
   const kind = (event.currentTarget as HTMLSelectElement).value as HomeFurnitureKind;
   document.querySelector("#place-catalog-item")!.textContent = `Place ${homeFurnitureLabel(kind)}`;
+  document.querySelector("#favorite-catalog-item")!.textContent = homeCatalogFavorites.has(kind) ? "★ Favorited" : "☆ Favorite";
+  document.querySelector("#favorite-catalog-item")!.classList.toggle("active", homeCatalogFavorites.has(kind));
   if (isHomeFurnitureKind(homeTool)) activateHomeTool(kind);
 });
 document.querySelector("#place-catalog-item")!.addEventListener("click", () => {
