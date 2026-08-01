@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `badbbaa7`
+Deterministic signature: `76dd66cd`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, persistent editable road profiles, neutral tax policy, district-policy and municipal-debt state, eight persistent spatial chunks, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent floor assignments, personality, skills, career growth, household finances, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
+The gate creates a fixed NYC reference city with 296 lots, persistent editable road profiles, neutral tax policy, district-policy and municipal-debt state, eight persistent spatial chunks, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent floor assignments, personality, life stage, aspiration, caregiver lineage, skill-linked career track and branch, household finances, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -27,13 +27,13 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Treasury | $25.00m | $292.22m |
 | City wellbeing | 78% | 74% |
 | Service staffing | 85% | 85% |
-| Resident wellbeing | 77% | 77% |
-| Completed resident actions | 0 | 14,399 |
+| Resident wellbeing | 77% | 87% |
+| Completed resident actions | 0 | 14,398 |
 | Event occurrences | 0 | 120 |
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 340 KB | 352 KB |
 
-The largest observed snapshot was 367,144 bytes.
+The largest observed snapshot was 367,317 bytes.
 
 ## Load and recovery
 
@@ -60,6 +60,7 @@ The run found no:
 - invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, conversation counts, or household purchase records
 - non-finite or out-of-range learned resident social preferences derived from relationship memories
 - non-integer or out-of-range resident skill points, career levels, or career experience
+- unknown or out-of-range life stages, aging clocks, aspirations, aspiration progress, career tracks, career branches, generations, caregiver links, or stage-change timestamps
 - non-integer, negative-income, negative-expense, out-of-range household balances, or invalid financial-security scores
 - broken home, incident, failure, service, utility, or commute references
 - missing or invalid saved city or home identity
@@ -78,7 +79,7 @@ The run found no:
 
 ## Performance finding
 
-The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With tax, district-policy, municipal-debt, land-value, persistent road-profile, spatial-chunk, parking, curb, event, transit, entrance, household, personality, relationship, identity, and recovery checks included, the latest complete deterministic gate took about 66 seconds for both decades on the development machine.
+The first attempt exposed redundant work in daily lot evaluation. Every lot and service combination independently recalculated citywide population and staffing. The simulation now calculates those shared values once per pass and reuses them. With tax, district-policy, municipal-debt, land-value, persistent road-profile, spatial-chunk, parking, curb, event, transit, entrance, household, personality, life-stage, aspiration, career, lineage, relationship, identity, and recovery checks included, the latest complete deterministic gate took about 61 seconds for both decades on the development machine.
 
 ## Boundary
 

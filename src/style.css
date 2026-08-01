@@ -717,6 +717,29 @@ kbd {
 .resident-field-row { margin-top: 8px; }
 .resident-creator fieldset { padding: 0; border: 0; margin: 12px 0 0; }
 .resident-creator legend { margin-bottom: 9px; color: #aebbb1; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.resident-caregiver-fields {
+  padding: 10px 12px 12px !important;
+  border: 1px solid rgba(109,169,200,.2) !important;
+  border-radius: 11px;
+  background: rgba(109,169,200,.055);
+}
+.resident-caregiver-fields[hidden] { display: none; }
+.resident-caregiver-fields .resident-field-row { margin-top: 0; }
+.resident-inheritance {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  margin-top: 9px;
+  color: #d7e1d9;
+  background: rgba(255,255,255,.04);
+  cursor: pointer;
+}
+.resident-inheritance input { accent-color: #f0d980; }
+.resident-inheritance span { display: grid; gap: 2px; }
+.resident-inheritance strong { font-size: 11px; }
+.resident-inheritance small { color: #829289; font-size: 9px; }
 .resident-trait-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .resident-trait-picker label { position: relative; cursor: pointer; }
 .resident-trait-picker input { position: absolute; opacity: 0; }
@@ -1017,6 +1040,23 @@ kbd {
 .resident-growth small, .resident-growth em { color: #899a90; font-size: 7px; font-style: normal; }
 .resident-growth i { overflow: hidden; height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); }
 .resident-growth i b { display: block; height: 100%; border-radius: inherit; background: #70b4d0; }
+.resident-aspiration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(240,217,128,.16);
+  border-radius: 7px;
+  margin-top: 7px;
+  background: rgba(240,217,128,.055);
+}
+.resident-aspiration span, .resident-aspiration strong, .resident-aspiration small { display: block; min-width: 0; }
+.resident-aspiration strong { color: #e7db9e; font-size: 8px; }
+.resident-aspiration small { overflow: hidden; margin-top: 1px; color: #9f9878; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.resident-aspiration i { overflow: hidden; height: 4px; border-radius: 999px; background: rgba(255,255,255,.09); }
+.resident-aspiration i b { display: block; height: 100%; border-radius: inherit; background: #d7bc65; }
+.resident-aspiration em { color: #a89f76; font-size: 7px; font-style: normal; }
 .resident-action-row {
   display: grid;
   grid-template-columns: auto 1fr auto;

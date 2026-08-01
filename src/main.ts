@@ -15,6 +15,10 @@ import {
   MAX_HOME_FLOORS,
   ROAD_PROFILE_PRESETS,
   RESIDENT_PERSONALITY_AXES,
+  RESIDENT_ASPIRATION_DEFINITIONS,
+  RESIDENT_CAREER_TRACK_DEFINITIONS,
+  RESIDENT_LIFE_STAGE_DEFINITIONS,
+  RESIDENT_LIFE_STAGES,
   RESIDENT_PURCHASES,
   normalizeRoadProfile,
   homeEntityFloor,
@@ -45,6 +49,9 @@ import {
   type RoadClass,
   type RoadProfile,
   type ResidentRole,
+  type ResidentAspiration,
+  type ResidentCareerTrack,
+  type ResidentLifeStage,
   type ResidentPersonality,
   type ResidentPurchaseKind,
   type ResidentTrait,
@@ -463,9 +470,21 @@ app.innerHTML = `
         </header>
         <label class="resident-field">Name<input id="resident-name" maxlength="24" autocomplete="off" required></label>
         <div class="resident-field-row">
-          <label class="resident-field">Life stage<select id="resident-age"><option value="adult">Adult</option><option value="child">Child</option></select></label>
+          <label class="resident-field">Life stage<select id="resident-age">${RESIDENT_LIFE_STAGES.map(stage => `<option value="${stage}" ${stage === "adult" ? "selected" : ""}>${RESIDENT_LIFE_STAGE_DEFINITIONS[stage].label}</option>`).join("")}</select></label>
           <label class="resident-field">Daily role<select id="resident-role"><option value="office">Office worker</option><option value="service">Service worker</option><option value="student">Student</option><option value="home">Home-based</option></select></label>
         </div>
+        <div class="resident-field-row">
+          <label class="resident-field">Career direction<select id="resident-career-track">${(Object.entries(RESIDENT_CAREER_TRACK_DEFINITIONS) as Array<[ResidentCareerTrack, (typeof RESIDENT_CAREER_TRACK_DEFINITIONS)[ResidentCareerTrack]]>).map(([track, definition]) => `<option value="${track}">${definition.label}</option>`).join("")}</select></label>
+          <label class="resident-field">Long-term aspiration<select id="resident-aspiration">${(Object.entries(RESIDENT_ASPIRATION_DEFINITIONS) as Array<[ResidentAspiration, (typeof RESIDENT_ASPIRATION_DEFINITIONS)[ResidentAspiration]]>).map(([aspiration, definition]) => `<option value="${aspiration}">${definition.label}</option>`).join("")}</select></label>
+        </div>
+        <fieldset class="resident-caregiver-fields" id="resident-caregiver-fields" hidden>
+          <legend>Generational continuity</legend>
+          <div class="resident-field-row">
+            <label class="resident-field">Caregiver one<select id="resident-caregiver-a"><option value="">None</option></select></label>
+            <label class="resident-field">Caregiver two<select id="resident-caregiver-b"><option value="">None</option></select></label>
+          </div>
+          <label class="resident-inheritance"><input type="checkbox" id="resident-inherit-personality" checked><span><strong>Blend caregiver tendencies</strong><small>Personality axes inherit a blended baseline with individual variation.</small></span></label>
+        </fieldset>
         <fieldset>
           <legend>Choose exactly two personality traits</legend>
           <div class="resident-trait-picker">
@@ -4395,16 +4414,24 @@ function creatorPersonality(): ResidentPersonality {
 
 function updateResidentCreatorPreview() {
   const name = (document.querySelector<HTMLInputElement>("#resident-name")!.value.trim() || "New resident").slice(0, 24);
-  const age = document.querySelector<HTMLSelectElement>("#resident-age")!.value as "adult" | "child";
+  const lifeStage = document.querySelector<HTMLSelectElement>("#resident-age")!.value as ResidentLifeStage;
   const roleSelect = document.querySelector<HTMLSelectElement>("#resident-role")!;
-  if (age === "child") {
+  const careerTrack = document.querySelector<HTMLSelectElement>("#resident-career-track")!.value as ResidentCareerTrack;
+  const dependent = ["infant", "toddler", "child", "teen"].includes(lifeStage);
+  if (lifeStage === "infant" || lifeStage === "toddler" || lifeStage === "elder") {
+    roleSelect.value = "home";
+    roleSelect.disabled = true;
+  } else if (lifeStage === "child" || lifeStage === "teen") {
     roleSelect.value = "student";
     roleSelect.disabled = true;
   } else {
     roleSelect.disabled = false;
-    if (roleSelect.value === "student") roleSelect.value = "office";
+    roleSelect.value = RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].role;
   }
   const role = roleSelect.value as ResidentRole;
+  const aspiration = document.querySelector<HTMLSelectElement>("#resident-aspiration")!.value as ResidentAspiration;
+  const caregiverFields = document.querySelector<HTMLElement>("#resident-caregiver-fields")!;
+  caregiverFields.hidden = !dependent;
   const traits = selectedCreatorTraits();
   const personality = creatorPersonality();
   document.querySelectorAll<HTMLInputElement>("[data-personality-axis]").forEach(input => {
@@ -4412,7 +4439,13 @@ function updateResidentCreatorPreview() {
     if (output) output.textContent = input.value;
   });
   document.querySelector("#resident-preview-name")!.textContent = name;
-  document.querySelector("#resident-preview-copy")!.textContent = `${age === "adult" ? "Adult" : "Child"} · ${residentRoleLabel(role)} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
+  const caregiverNames = dependent
+    ? ["#resident-caregiver-a", "#resident-caregiver-b"]
+        .map(selector => document.querySelector<HTMLSelectElement>(selector)!)
+        .filter(select => select.value)
+        .map(select => select.options[select.selectedIndex]?.text)
+    : [];
+  document.querySelector("#resident-preview-copy")!.textContent = `${RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].label} · ${residentRoleLabel(role)} · ${RESIDENT_CAREER_TRACK_DEFINITIONS[careerTrack].label} · ${RESIDENT_ASPIRATION_DEFINITIONS[aspiration].label}${caregiverNames.length ? ` · caregivers ${caregiverNames.join(" + ")}` : ""} · ${traits.length === 2 ? traits.map(trait => world.residentTraitLabel(trait)).join(" + ") : `Choose ${2 - traits.length} more ${2 - traits.length === 1 ? "trait" : "traits"}`}`;
   const strongest = RESIDENT_PERSONALITY_AXES
     .map(axis => ({ axis, value: personality[axis], distance: Math.abs(personality[axis] - 50) }))
     .filter(entry => entry.distance > 0)
@@ -4435,6 +4468,14 @@ function openResidentCreator() {
   const suggestion = suggestions.find(name => !usedNames.has(name.toLocaleLowerCase())) ?? `Resident ${home.residents.length + 1}`;
   const form = document.querySelector<HTMLFormElement>("#resident-creator-form")!;
   form.reset();
+  document.querySelector<HTMLSelectElement>("#resident-age")!.value = "adult";
+  document.querySelector<HTMLSelectElement>("#resident-career-track")!.value = "civic";
+  document.querySelector<HTMLSelectElement>("#resident-aspiration")!.value = "family";
+  const eligibleCaregivers = home.residents.filter(resident => ["young-adult", "adult", "elder"].includes(world.residentLifeStage(resident)));
+  for (const selector of ["#resident-caregiver-a", "#resident-caregiver-b"]) {
+    const select = document.querySelector<HTMLSelectElement>(selector)!;
+    select.replaceChildren(new Option("None", ""), ...eligibleCaregivers.map(resident => new Option(`${resident.name} · ${world.residentLifeStageLabel(resident)}`, resident.id)));
+  }
   document.querySelector<HTMLInputElement>("#resident-name")!.value = suggestion;
   document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input").forEach(input => {
     input.checked = input.value === "outgoing" || input.value === "empathetic";
@@ -4624,10 +4665,12 @@ function updateHouseholdSummary(home: Home) {
           const careerProgress = Math.round(world.residentCareerProgress(resident) * 100);
           const personality = world.residentPersonality(resident);
           const careerFit = world.residentCareerFit(resident);
+          const aspirationProgress = world.residentAspirationProgress(resident);
+          const caregiverNames = (resident.caregiverIds ?? []).map(id => home.residents.find(candidate => candidate.id === id)?.name).filter(Boolean);
           return `
             <div class="resident-card ${wellbeing.label.toLowerCase()} ${resident.id === controlledResidentId ? "selected" : ""}">
               <div class="resident-heading">
-                <span><strong>${resident.name}</strong><small>${world.residentActionLabel(resident)} · ${destination}</small></span>
+                <span><strong>${resident.name}</strong><small>${world.residentLifeStageLabel(resident)} · generation ${resident.generation ?? 1}${caregiverNames.length ? ` · raised by ${caregiverNames.join(" + ")}` : ""}<br>${world.residentActionLabel(resident)} · ${destination}</small></span>
                 <b>${wellbeing.score}% ${wellbeing.label}</b>
               </div>
               <div class="resident-traits" title="${world.residentPersonalitySummary(resident)}">
@@ -4639,9 +4682,14 @@ function updateHouseholdSummary(home: Home) {
               </div>
               <div class="resident-preference">${world.residentPreferenceSummary(home, resident)}</div>
               <div class="resident-growth">
-                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentSkillLabel(topSkill[0])} · skill ${world.residentSkillLevel(resident, topSkill[0])} · role fit ${careerFit}%</small></span>
+                <span><strong>${world.residentCareerTitle(resident)}${world.residentDailyWage(resident) ? ` · ${formatHomeCurrency(world.residentDailyWage(resident))}/day` : ""}</strong><small>${world.residentCareerTrackLabel(resident)} · ${world.residentCareerBranchLabel(resident)} · ${world.residentSkillLabel(topSkill[0])} ${world.residentSkillLevel(resident, topSkill[0])} · fit ${careerFit}%</small></span>
                 <i><b style="width:${careerProgress}%"></b></i>
-                <em>${resident.role === "home" ? "Home" : `${careerProgress}%`}</em>
+                <em>${resident.role === "student" ? "School" : `${careerProgress}%`}</em>
+              </div>
+              <div class="resident-aspiration">
+                <span><strong>${world.residentAspirationLabel(resident)}</strong><small>${RESIDENT_ASPIRATION_DEFINITIONS[world.residentAspiration(resident)].summary}</small></span>
+                <i><b style="width:${aspirationProgress}%"></b></i>
+                <em>${aspirationProgress}%</em>
               </div>
               <div class="resident-action-row">
                 <span>${action ? `${Math.max(1, Math.ceil(action.endsAt - world.clock.elapsedMinutes))}m remaining` : world.residentStatus(resident)}</span>
@@ -6723,6 +6771,11 @@ document.querySelector("#resident-creator")!.addEventListener("click", event => 
 document.querySelector("#resident-name")!.addEventListener("input", updateResidentCreatorPreview);
 document.querySelector("#resident-age")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelector("#resident-role")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-career-track")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-aspiration")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-caregiver-a")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-caregiver-b")!.addEventListener("change", updateResidentCreatorPreview);
+document.querySelector("#resident-inherit-personality")!.addEventListener("change", updateResidentCreatorPreview);
 document.querySelectorAll<HTMLInputElement>("[data-personality-axis]").forEach(input => input.addEventListener("input", updateResidentCreatorPreview));
 document.querySelectorAll<HTMLInputElement>(".resident-trait-picker input").forEach(input => input.addEventListener("change", () => {
   const traits = selectedCreatorTraits();
@@ -6737,21 +6790,31 @@ document.querySelector("#resident-creator-form")!.addEventListener("submit", eve
   const home = currentHome();
   if (!home) return;
   const name = document.querySelector<HTMLInputElement>("#resident-name")!.value.trim();
-  const age = document.querySelector<HTMLSelectElement>("#resident-age")!.value as "adult" | "child";
+  const lifeStage = document.querySelector<HTMLSelectElement>("#resident-age")!.value as ResidentLifeStage;
+  const age = ["infant", "toddler", "child", "teen"].includes(lifeStage) ? "child" as const : "adult" as const;
   const role = document.querySelector<HTMLSelectElement>("#resident-role")!.value as ResidentRole;
+  const careerTrack = document.querySelector<HTMLSelectElement>("#resident-career-track")!.value as ResidentCareerTrack;
+  const aspiration = document.querySelector<HTMLSelectElement>("#resident-aspiration")!.value as ResidentAspiration;
+  const caregiverIds = [...new Set([
+    document.querySelector<HTMLSelectElement>("#resident-caregiver-a")!.value,
+    document.querySelector<HTMLSelectElement>("#resident-caregiver-b")!.value
+  ].filter(Boolean))];
+  const inheritPersonality = document.querySelector<HTMLInputElement>("#resident-inherit-personality")!.checked && caregiverIds.length > 0;
   const traits = selectedCreatorTraits();
-  const personality = creatorPersonality();
+  const personality = inheritPersonality ? undefined : creatorPersonality();
   if (traits.length !== 2) {
     notice("Choose exactly two personality traits");
     return;
   }
-  if (!world.addResident(home.id, { name, age, role, traits, personality })) {
+  if (!world.addResident(home.id, { name, age, lifeStage, role, traits, personality, careerTrack, aspiration, caregiverIds, inheritPersonality })) {
     notice("Use a unique name with letters, numbers, spaces, apostrophes, periods, or hyphens");
     return;
   }
   closeResidentCreator();
   renderWorld();
-  notice(`${name.trim()} joined the household`);
+  const lifeStageLabel = RESIDENT_LIFE_STAGE_DEFINITIONS[lifeStage].label.toLowerCase();
+  const article = /^[aeiou]/.test(lifeStageLabel) ? "an" : "a";
+  notice(`${name.trim()} joined the household as ${article} ${lifeStageLabel}`);
 });
 function updateHistoryControls() {
   document.querySelector<HTMLButtonElement>("#undo")!.disabled = !world.canUndo();

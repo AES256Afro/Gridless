@@ -48,6 +48,9 @@ import {
   DISTRICT_POLICY_DEFINITIONS,
   HOME_BUILD_COSTS,
   MAX_HOME_FLOORS,
+  RESIDENT_CAREER_TRACK_DEFINITIONS,
+  RESIDENT_LIFE_STAGE_DEFINITIONS,
+  RESIDENT_PERSONALITY_AXES,
   ROAD_PROFILE_PRESETS,
   World,
   homeEntityFloor,
@@ -1301,16 +1304,161 @@ residentCreatorHome.residents[0].careerXp = 38;
 residentCreatorWorld.advanceMinutes(24 * 60, 0);
 check(
   residentCreatorWorld.residentCareerLevel(residentCreatorHome.residents[0]) === 2
-    && residentCreatorWorld.residentCareerTitle(residentCreatorHome.residents[0]) === "Associate"
+    && residentCreatorWorld.residentCareerTitle(residentCreatorHome.residents[0]) === "Apprentice · Civic planning"
     && residentCreatorWorld.residentSkills(residentCreatorHome.residents[0]).communication === 1
-    && residentCreatorHome.lastDailyIncome === 280
+    && residentCreatorHome.lastDailyIncome === 275
     && residentCreatorHome.lastDailyExpenses === 132
-    && residentCreatorWorld.homeHouseholdFunds(residentCreatorHome) === 15_148,
+    && residentCreatorWorld.homeHouseholdFunds(residentCreatorHome) === 15_143,
   "A completed workday did not advance career skills or settle household finances."
 );
 check(
-  residentCreatorWorld.snapshot().homes[0].householdFunds === 15_148,
+  residentCreatorWorld.snapshot().homes[0].householdFunds === 15_143,
   "Household finances were omitted from the world snapshot."
+);
+
+const lifeCycleWorld = new World();
+const lifeCycleHome = structuredClone(interiorHome);
+lifeCycleHome.id = "life-cycle-home";
+lifeCycleHome.name = "Generational household";
+lifeCycleHome.residents = [];
+lifeCycleHome.relationships = [];
+lifeCycleHome.householdFunds = 15_000;
+lifeCycleWorld.homes = [lifeCycleHome];
+check(
+  lifeCycleWorld.addResident(lifeCycleHome.id, {
+    name: "Samira",
+    age: "adult",
+    lifeStage: "adult",
+    role: "office",
+    traits: ["organized", "empathetic"],
+    aspiration: "mastery",
+    careerTrack: "civic",
+    personality: { cleanliness: 84, spontaneity: 34, sociability: 68, emotionality: 46, activity: 58 }
+  })
+    && lifeCycleWorld.addResident(lifeCycleHome.id, {
+      name: "Devon",
+      age: "adult",
+      lifeStage: "young-adult",
+      role: "home",
+      traits: ["creative", "outgoing"],
+      aspiration: "creative",
+      careerTrack: "creative",
+      personality: { cleanliness: 38, spontaneity: 88, sociability: 72, emotionality: 66, activity: 52 }
+    }),
+  "The resident creator rejected a valid multigenerational household foundation."
+);
+const samira = lifeCycleHome.residents[0];
+const devon = lifeCycleHome.residents[1];
+check(
+  lifeCycleWorld.addResident(lifeCycleHome.id, {
+    name: "Kai",
+    age: "child",
+    lifeStage: "infant",
+    role: "home",
+    traits: ["empathetic", "creative"],
+    aspiration: "family",
+    caregiverIds: [samira.id, devon.id],
+    inheritPersonality: true
+  }),
+  "The resident creator rejected a valid dependent with caregivers."
+);
+const kai = lifeCycleHome.residents[2];
+const inheritedPersonality = lifeCycleWorld.residentPersonality(kai);
+check(
+  !lifeCycleWorld.addResident(lifeCycleHome.id, {
+    name: "Invalid Lineage",
+    age: "child",
+    lifeStage: "toddler",
+    role: "home",
+    traits: ["active", "homebody"],
+    caregiverIds: [kai.id]
+  }),
+  "A dependent resident was accepted as another dependent's caregiver."
+);
+check(
+  lifeCycleWorld.addResident(lifeCycleHome.id, {
+    name: "Rosa",
+    age: "adult",
+    lifeStage: "elder",
+    role: "service",
+    traits: ["homebody", "empathetic"],
+    aspiration: "community",
+    careerTrack: "care"
+  })
+    && lifeCycleHome.residents[3].role === "home"
+    && lifeCycleWorld.residentCareerTitle(lifeCycleHome.residents[3]) === "Household mentor"
+    && lifeCycleWorld.residentDailyWage(lifeCycleHome.residents[3]) === 0,
+  "An elder profile did not normalize to a retired household mentor."
+);
+check(
+  kai.generation === 2
+    && kai.caregiverIds?.join(",") === `${samira.id},${devon.id}`
+    && lifeCycleWorld.relationshipBetween(lifeCycleHome, samira.id, kai.id)?.score === 78
+    && lifeCycleWorld.relationshipBetween(lifeCycleHome, devon.id, kai.id)?.score === 78
+    && RESIDENT_PERSONALITY_AXES.every(axis =>
+      Math.abs(inheritedPersonality[axis] - Math.round((lifeCycleWorld.residentPersonality(samira)[axis] + lifeCycleWorld.residentPersonality(devon)[axis]) / 2)) <= 7
+    ),
+  "Caregiver lineage did not establish generation, bonds, or blended personality."
+);
+samira.careerLevel = 3;
+samira.careerXp = 119;
+kai.lifeStageDays = RESIDENT_LIFE_STAGE_DEFINITIONS.infant.durationDays! - 1;
+lifeCycleWorld.advanceMinutes(24 * 60, 0);
+check(
+  lifeCycleWorld.residentLifeStage(kai) === "toddler"
+    && kai.role === "home"
+    && kai.lifeStageDays === 0
+    && kai.lifetimeDays === 1
+    && lifeCycleWorld.residentAspirationProgress(kai) === 10,
+  "The daily simulation did not advance a resident life stage and family aspiration."
+);
+check(
+  lifeCycleWorld.residentCareerLevel(samira) === 4
+    && RESIDENT_CAREER_TRACK_DEFINITIONS.civic.branches.includes(samira.careerBranch!)
+    && lifeCycleWorld.residentAspirationProgress(samira) === 10,
+  "Career progression did not unlock a deterministic branch or advance mastery."
+);
+lifeCycleWorld.clock.minute = 20 * 60;
+const familyProgressBeforeConversation = lifeCycleWorld.residentAspirationProgress(kai);
+check(
+  lifeCycleWorld.commandResidentConversation(lifeCycleHome.id, kai.id, samira.id, "support").ok,
+  "A dependent could not begin a directed family conversation while home."
+);
+lifeCycleWorld.advanceMinutes(60, 0);
+check(
+  lifeCycleWorld.residentAspirationProgress(kai) === familyProgressBeforeConversation + 4,
+  "A completed family interaction did not advance the resident aspiration."
+);
+const restoredLifeCycleWorld = new World();
+check(
+  restoredLifeCycleWorld.restore(lifeCycleWorld.serialize())
+    && restoredLifeCycleWorld.homes[0].residents[2].generation === 2
+    && restoredLifeCycleWorld.homes[0].residents[2].caregiverIds?.length === 2
+    && restoredLifeCycleWorld.homes[0].residents[0].careerBranch === samira.careerBranch
+    && restoredLifeCycleWorld.residentAspirationProgress(restoredLifeCycleWorld.homes[0].residents[2]) === familyProgressBeforeConversation + 4,
+  "Life stage, lineage, career branch, or aspiration state was lost during persistence."
+);
+const legacyLifeSnapshot = lifeCycleWorld.snapshot();
+const legacyDependent = legacyLifeSnapshot.homes[0].residents[2];
+delete legacyDependent.lifeStage;
+delete legacyDependent.generation;
+delete legacyDependent.caregiverIds;
+delete legacyDependent.aspiration;
+delete legacyDependent.careerTrack;
+legacyDependent.lifeStageDays = 9_999;
+legacyDependent.lastLifeStageChangeAt = lifeCycleWorld.clock.elapsedMinutes + 9_999;
+const migratedLifeWorld = new World();
+const migratedLifeRestored = migratedLifeWorld.restore(JSON.stringify(legacyLifeSnapshot));
+const migratedDependent = migratedLifeWorld.homes[0]?.residents[2];
+check(
+  migratedLifeRestored
+    && migratedLifeWorld.residentLifeStage(migratedDependent) === "child"
+    && migratedDependent.lifeStageDays === RESIDENT_LIFE_STAGE_DEFINITIONS.child.durationDays! - 1
+    && (migratedDependent.lastLifeStageChangeAt ?? 0) <= migratedLifeWorld.clock.elapsedMinutes
+    && migratedDependent.generation === 2
+    && migratedDependent.caregiverIds?.length === 2
+    && migratedLifeWorld.relationshipBetween(migratedLifeWorld.homes[0], migratedDependent.id, migratedDependent.caregiverIds[0])!.score >= 78,
+  "A legacy dependent did not receive safe life-stage and caregiver migration."
 );
 residentCreatorHome.householdFunds = -50_000;
 residentCreatorHome.lastDailyIncome = 0;
@@ -2270,6 +2418,12 @@ console.log(JSON.stringify({
   multiFloorHomeFloors: restoredMultiFloorWorld.homes[0].floors,
   multiFloorStairs: restoredMultiFloorWorld.homes[0].stairs?.length,
   legacyHomeFloorMigration: legacyFloorWorld.homes[0].floors,
+  lifeStageTransition: lifeCycleWorld.residentLifeStage(kai),
+  householdGeneration: kai.generation,
+  caregiverCount: kai.caregiverIds?.length,
+  inheritedPersonality: inheritedPersonality.cleanliness,
+  careerBranch: samira.careerBranch,
+  familyAspirationProgress: lifeCycleWorld.residentAspirationProgress(kai),
   directResidentAction: directControlHome.residents[0].lastActionKind,
   directedActionsCompleted: directControlHome.residents[0].completedActions,
   controlledResidentEnergy: directControlHome.residents[0].energy,
