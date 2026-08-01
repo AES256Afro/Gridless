@@ -9,6 +9,7 @@ import {
   homeEntryStatus,
   furnitureInteraction,
   homeCirculation,
+  homeSafetyAudit,
   interiorDoorways,
   interiorEntryPoint,
   interiorExteriorDoorway,
@@ -1705,6 +1706,37 @@ check(
   roomClaimWorld.homeSpacePlan(emptySpaceHome).score === 100
     && roomClaimWorld.homeSpacePlan(emptySpaceHome).deficits.length === 0,
   "An empty home incorrectly reported household space pressure."
+);
+const unsafeHome = structuredClone(roomClaimHome);
+unsafeHome.doors = [];
+unsafeHome.windows = [];
+unsafeHome.residents[0].lifeStage = "elder";
+const unsafeAudit = homeSafetyAudit(unsafeHome);
+const safeHome = structuredClone(unsafeHome);
+safeHome.doors = [{
+  id: "safety-wide-door",
+  roomIds: ["room-a", "room-b"],
+  floor: 0,
+  orientation: "x",
+  boundary: 4,
+  center: 0,
+  width: 1.35,
+  widthKind: "wide"
+}];
+safeHome.windows = [
+  { id: "safety-window-a", roomId: "room-a", floor: 0, orientation: "z", side: "negative", boundary: -3, center: 0, width: 1.3, glazing: "clear" },
+  { id: "safety-window-b", roomId: "room-b", floor: 0, orientation: "z", side: "negative", boundary: -3, center: 6, width: 1.3, glazing: "clear" }
+];
+const safeAudit = homeSafetyAudit(safeHome);
+check(
+  !unsafeAudit.safe
+    && unsafeAudit.egressCoverage === 0
+    && unsafeAudit.issues.some(issue => issue.kind === "circulation")
+    && unsafeAudit.issues.some(issue => issue.kind === "sleep-egress")
+    && safeAudit.safe
+    && safeAudit.egressCoverage === 100
+    && safeAudit.score > unsafeAudit.score,
+  "Whole-home safety auditing did not respond to connected wide egress and escape windows."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -4195,6 +4227,7 @@ console.log(JSON.stringify({
     constrained: constrainedSpacePlan,
     equipped: equippedSpacePlan
   },
+  homeSafetyAudit: { unsafe: unsafeAudit, safe: safeAudit },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
