@@ -4430,17 +4430,19 @@ export class World {
     const financialSecurity = home ? this.homeFinancialSecurity(home) : 50;
     const aspirationProgress = this.residentAspirationProgress(resident);
     const ownershipSatisfaction = this.residentOwnershipSatisfaction(home, resident);
+    const roomFit = home ? this.residentRoomFit(home, resident).score : 50;
     const dependent = ["infant", "toddler", "child", "teen"].includes(this.residentLifeStage(resident));
     const hasCaregiver = !dependent || Boolean(home && (resident.caregiverIds ?? []).some(id => home.residents.some(candidate => candidate.id === id)));
     const score = Math.round(clamp(
       resident.energy * .15
       + resident.social * .14
-      + resident.comfort * .13
+      + resident.comfort * .08
       + resident.health * .22
       + (100 - resident.stress) * .16
       + financialSecurity * .1
       + aspirationProgress * .06
       + ownershipSatisfaction * .04
+      + roomFit * .05
       + (hasCaregiver ? 0 : -8),
       0,
       100
@@ -4456,6 +4458,7 @@ export class World {
       { value: hasCaregiver ? 0 : 78, text: "Needs a household caregiver" },
       { value: (100 - aspirationProgress) * .48, text: `${this.residentAspirationLabel(resident)} needs progress` },
       { value: (100 - ownershipSatisfaction) * .5, text: "Needs a personal corner and belongings" },
+      { value: (100 - roomFit) * .55, text: "Personal room does not fit this resident" },
       { value: 100 - resident.social, text: "Social isolation" },
       { value: 100 - neighborhoodSupport, text: "Limited neighborhood support" }
     ].sort((a, b) => b.value - a.value);
@@ -5148,6 +5151,46 @@ export class World {
       const stage = this.residentLifeStage(resident);
       return stage === "infant" || stage === "toddler" || stage === "child" ? 85 : 65;
     })));
+  }
+
+  residentRoomFit(home: Home, resident: Resident) {
+    const room = this.residentRoom(home, resident.id);
+    if (!room) return { score: 25, room: undefined, factors: ["No claimed personal room"] };
+    const roomFurniture = home.furniture.filter(item =>
+      homeEntityFloor(item) === homeEntityFloor(room)
+      && Math.abs(item.x - room.x) <= room.width / 2
+      && Math.abs(item.z - room.z) <= room.depth / 2
+    );
+    const preference = this.residentDecorPreference(resident);
+    const decorMatches = roomFurniture.filter(item => (item.style ?? "natural") === preference).length;
+    const decorFit = roomFurniture.length ? decorMatches / roomFurniture.length * 100 : 40;
+    const occupants = (room.assignedResidentIds ?? []).length;
+    const privacy = occupants <= 1 ? 100 : ["infant", "toddler", "child"].includes(this.residentLifeStage(resident)) ? 85 : 65;
+    const purposeFit = this.residentLifeStage(resident) === "infant" || this.residentLifeStage(resident) === "toddler"
+      ? room.kind === "Nursery" ? 100 : room.kind === "Bedroom" ? 78 : 55
+      : room.kind === "Bedroom" ? 100 : room.kind === "Studio" ? 82 : 58;
+    const ownedFurniture = roomFurniture.filter(item => item.ownerResidentId === resident.id).length;
+    const belongingFit = Math.min(100, ownedFurniture * 42 + this.residentPersonalItems(resident).length * 22);
+    const daylight = this.roomDaylight(home, room);
+    const condition = this.roomCondition(room);
+    const score = Math.round(clamp(
+      privacy * .3
+      + daylight * .15
+      + condition * .15
+      + purposeFit * .15
+      + decorFit * .15
+      + belongingFit * .1,
+      0,
+      100
+    ));
+    const factors = [
+      `${privacy}% privacy`,
+      `${daylight}% daylight`,
+      `${Math.round(decorFit)}% ${this.residentDecorPreferenceLabel(resident).toLowerCase()} decor fit`,
+      `${ownedFurniture} owned furnishing${ownedFurniture === 1 ? "" : "s"}`,
+      `${condition}% room condition`
+    ];
+    return { score, room, factors };
   }
 
   autoFurnishRoom(homeId: string, roomId: string) {
