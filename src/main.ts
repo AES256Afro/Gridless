@@ -29,6 +29,7 @@ import {
   RESIDENT_PURCHASES,
   RESIDENT_ROUTINE_DEFINITIONS,
   normalizeRoadProfile,
+  normalizeRoadStructure,
   homeEntityFloor,
   homeFloorView,
   roadCapacityForProfile,
@@ -59,6 +60,7 @@ import {
   type Road,
   type RoadClass,
   type RoadProfile,
+  type RoadStructure,
   type RoadDrawingSnap,
   type Resident,
   type ResidentRole,
@@ -261,6 +263,12 @@ app.innerHTML = `
             <option value="1.5">1.5m walks</option><option value="2.2" selected>2.2m walks</option>
             <option value="3">3m walks</option><option value="4">4m walks</option><option value="6">6m walks</option>
           </select>
+          <select id="road-structure" aria-label="Road structure">
+            <option value="surface" selected>Surface road</option>
+            <option value="bridge">Bridge</option>
+            <option value="tunnel">Tunnel</option>
+          </select>
+          <select id="road-elevation" aria-label="Road elevation" disabled><option value="0">Ground level</option></select>
           <div class="road-profile-toggles" aria-label="Road features">
             <button type="button" data-road-feature="bikeLanes" aria-pressed="false">Bike</button>
             <button type="button" data-road-feature="busLanes" aria-pressed="false">Bus</button>
@@ -1106,14 +1114,57 @@ function roadTreeGeometry(roads: Road[]) {
   return group;
 }
 
+function roadStructureGeometry(road: Road) {
+  const group = new THREE.Group();
+  const structure = world.roadStructure(road);
+  if (structure.structure === "bridge") {
+    const curve = new THREE.CatmullRomCurve3(
+      road.points.map(point => new THREE.Vector3(point.x, 0, point.z)),
+      false,
+      "centripetal"
+    );
+    const supportCount = Math.max(1, Math.floor(curve.getLength() / 32));
+    const concrete = new THREE.MeshStandardMaterial({ color: 0x7f8582, roughness: .9 });
+    for (let index = 1; index <= supportCount; index += 1) {
+      const point = curve.getPoint(index / (supportCount + 1));
+      const pillar = new THREE.Mesh(
+        new THREE.CylinderGeometry(.72, .95, structure.elevationMeters, 12),
+        concrete
+      );
+      pillar.position.set(point.x, structure.elevationMeters / 2, point.z);
+      pillar.castShadow = pillar.receiveShadow = true;
+      group.add(pillar);
+    }
+  } else if (structure.structure === "tunnel") {
+    const portalMaterial = new THREE.MeshStandardMaterial({ color: 0x555b58, roughness: .92 });
+    for (const [index, point] of [road.points[0], road.points[road.points.length - 1]].entries()) {
+      const neighbor = index === 0 ? road.points[1] : road.points[road.points.length - 2];
+      const portal = new THREE.Group();
+      portal.position.set(point.x, 0, point.z);
+      portal.rotation.y = Math.atan2(neighbor.x - point.x, neighbor.z - point.z);
+      const left = new THREE.Mesh(new THREE.BoxGeometry(.75, 3.8, 1.2), portalMaterial);
+      const right = left.clone();
+      left.position.set(-road.width / 2 - .38, 1.9, 0);
+      right.position.set(road.width / 2 + .38, 1.9, 0);
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(road.width + 1.5, .75, 1.2), portalMaterial);
+      lintel.position.y = 3.45;
+      portal.add(left, right, lintel);
+      portal.traverse(child => { if (child instanceof THREE.Mesh) child.castShadow = child.receiveShadow = true; });
+      group.add(portal);
+    }
+  }
+  return group;
+}
+
 function rebuildExplorerRoadNavigation() {
   const key = world.roads
-    .map(road => `${road.id}:${road.width}:${JSON.stringify(road.profile)}:${road.points.map(point => `${point.x.toFixed(2)},${point.z.toFixed(2)}`).join(";")}`)
+    .map(road => `${road.id}:${road.width}:${road.structure ?? "surface"}:${road.elevationMeters ?? 0}:${JSON.stringify(road.profile)}:${road.points.map(point => `${point.x.toFixed(2)},${point.z.toFixed(2)}`).join(";")}`)
     .join("|");
   if (key === explorerRoadKey) return;
   explorerRoadKey = key;
   explorerRoadPaths = buildExplorerRoadPaths(world.roads);
-  streetIntersections = detectStreetIntersections(explorerRoadPaths);
+  const surfaceRoadIds = new Set(world.roads.filter(road => world.roadStructure(road).structure === "surface").map(road => road.id));
+  streetIntersections = detectStreetIntersections(explorerRoadPaths.filter(path => surfaceRoadIds.has(path.roadId)));
   lastSignalMinute = -1;
   renderStreetFurniture();
 }
@@ -1384,7 +1435,10 @@ function renderAccessibilityEntrances() {
 }
 
 function placeTransitVehicle(vehicle: THREE.Object3D, pose: TransitVehiclePose) {
-  vehicle.position.set(pose.point.x, .18, pose.point.z);
+  const location = nearestRoadLocation(explorerRoadPaths, pose.point);
+  const road = location ? world.roads.find(candidate => candidate.id === location.roadId) : undefined;
+  const elevation = road ? world.roadStructure(road).elevationMeters : 0;
+  vehicle.position.set(pose.point.x, elevation + .18, pose.point.z);
   vehicle.rotation.y = Math.atan2(-pose.tangent.x, -pose.tangent.z);
   vehicle.visible = true;
 }
@@ -2277,23 +2331,31 @@ function renderWorld() {
     : undefined;
   for (const road of world.roads) {
     const profile = world.roadProfile(road);
+    const elevation = world.roadStructure(road).elevationMeters;
     const curb = ribbon(road.points, road.width + profile.sidewalkWidth * 2 + 1.2, curbMaterial);
-    curb.position.y = 0;
+    curb.position.y = elevation;
     worldGroup.add(curb);
     const sidewalk = ribbon(road.points, road.width + profile.sidewalkWidth * 2, sidewalkMaterial);
-    sidewalk.position.y = .08;
+    sidewalk.position.y = elevation + .08;
     worldGroup.add(sidewalk);
   }
   for (const road of world.roads) {
+    const elevation = world.roadStructure(road).elevationMeters;
     const activeRoadMaterial = activeCityView === "traffic"
       ? trafficPlanningMaterial(roadTraffic.get(road.id) ?? 0)
       : roadMaterial;
     const roadway = ribbon(road.points, road.width, activeRoadMaterial);
-    roadway.position.y = road.class === "arterial" ? .166 : road.class === "avenue" ? .163 : .16;
+    roadway.position.y = elevation + (road.class === "arterial" ? .166 : road.class === "avenue" ? .163 : .16);
     worldGroup.add(roadway);
-    if (activeCityView === "normal") worldGroup.add(roadProfileGeometry(road));
+    if (activeCityView === "normal") {
+      const details = roadProfileGeometry(road);
+      details.position.y = elevation;
+      worldGroup.add(details, roadStructureGeometry(road));
+    }
   }
-  if (activeCityView === "normal") worldGroup.add(roadTreeGeometry(world.roads));
+  if (activeCityView === "normal") {
+    worldGroup.add(roadTreeGeometry(world.roads.filter(road => world.roadStructure(road).structure === "surface")));
+  }
   for (const intersection of streetIntersections) {
     const width = Math.max(intersection.roadAWidth, intersection.roadBWidth);
     const roadA = world.roads.find(road => road.id === intersection.roadAId);
@@ -3255,7 +3317,9 @@ function renderCommutes() {
       person.position.y = .75;
       traveler.add(person);
     }
-    traveler.position.set(point.x, .18, point.z);
+    const travelRoad = roadLocation ? world.roads.find(candidate => candidate.id === roadLocation.roadId) : undefined;
+    const travelElevation = travelRoad ? world.roadStructure(travelRoad).elevationMeters : 0;
+    traveler.position.set(point.x, travelElevation + .18, point.z);
     traveler.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
     traveler.userData.stoppedForSignal = vehiclePose?.stopped ?? false;
     traveler.userData.stoppedForClosure = Boolean(closure);
@@ -3493,13 +3557,17 @@ function hash(value: string) {
 
 function renderDraft() {
   previewGroup.clear();
+  const draftRoad = cityTool === "road" ? currentRoadConfig() : undefined;
+  const previewElevation = draftRoad?.structure === "tunnel" ? .35 : draftRoad?.elevationMeters ?? 0;
   if (draft.length > 1) {
     const utility = cityTool === "utility" ? currentUtilityKind() : null;
-    previewGroup.add(ribbon(
+    const preview = ribbon(
       draft,
-      utility ? 2.5 : currentRoadConfig().width,
-      new THREE.MeshBasicMaterial({ color: utility ? utilityColor(utility) : 0xe8cb68, transparent: true, opacity: .78 })
-    ));
+      utility ? 2.5 : draftRoad!.width,
+      new THREE.MeshBasicMaterial({ color: utility ? utilityColor(utility) : draftRoad?.structure === "tunnel" ? 0x6da9c8 : 0xe8cb68, transparent: true, opacity: draftRoad?.structure === "tunnel" ? .46 : .78 })
+    );
+    preview.position.y = previewElevation;
+    previewGroup.add(preview);
   }
   for (const [index, point] of draft.entries()) {
     const activeSnapKind = cityTool === "road" && index === draft.length - 1 ? lastRoadSnap?.kind : undefined;
@@ -3508,7 +3576,7 @@ function renderDraft() {
       new THREE.SphereGeometry(isGuided ? 2.1 : 1.5),
       new THREE.MeshBasicMaterial({ color: activeSnapKind === "endpoint" ? 0x73c68b : activeSnapKind === "tangent" || activeSnapKind === "parallel" ? 0x6da9c8 : 0xffe07b })
     );
-    marker.position.set(point.x, 1.5, point.z);
+    marker.position.set(point.x, previewElevation + 1.5, point.z);
     previewGroup.add(marker);
   }
   if (cityTool === "road" && draft.length > 1) {
@@ -3525,8 +3593,9 @@ function renderDraft() {
           : lastRoadSnap?.kind === "parallel"
             ? ` · parallel to ${lastRoadSnap.targetRoadName}`
         : "";
-    const guide = makeLabel(`${length}m · ${angle}°${alignment}`);
-    guide.position.set((from.x + to.x) / 2, 7, (from.z + to.z) / 2);
+    const structureLabel = draftRoad?.structure === "bridge" ? ` · bridge +${draftRoad.elevationMeters}m` : draftRoad?.structure === "tunnel" ? ` · tunnel ${draftRoad.elevationMeters}m` : "";
+    const guide = makeLabel(`${length}m · ${angle}°${structureLabel}${alignment}`);
+    guide.position.set((from.x + to.x) / 2, previewElevation + 7, (from.z + to.z) / 2);
     guide.scale.set(56, 9, 1);
     previewGroup.add(guide);
   }
@@ -3590,10 +3659,15 @@ function currentRoadConfig() {
     curbParking: roadFeatureEnabled("curbParking"),
     streetTrees: roadFeatureEnabled("streetTrees")
   }, roadClass);
+  const structure = normalizeRoadStructure(
+    (document.querySelector("#road-structure") as HTMLSelectElement).value as RoadStructure,
+    Number((document.querySelector("#road-elevation") as HTMLSelectElement).value)
+  );
   return {
     class: roadClass,
     profile,
-    width: roadWidthForProfile(profile)
+    width: roadWidthForProfile(profile),
+    ...structure
   };
 }
 
@@ -3633,7 +3707,21 @@ function setRoadFeature(feature: keyof RoadProfile, enabled: boolean) {
   button.classList.toggle("active", enabled);
 }
 
-function setRoadProfileControls(profile: RoadProfile, roadClass: RoadClass) {
+function syncRoadElevationOptions(structure: RoadStructure, selectedElevation?: number) {
+  const elevation = document.querySelector<HTMLSelectElement>("#road-elevation")!;
+  const options = structure === "bridge"
+    ? [4, 8, 12, 16].map(value => new Option(`Bridge +${value}m`, String(value)))
+    : structure === "tunnel"
+      ? [-4, -8, -12, -16].map(value => new Option(`Tunnel ${value}m`, String(value)))
+      : [new Option("Ground level", "0")];
+  elevation.replaceChildren(...options);
+  elevation.disabled = structure === "surface";
+  const fallback = structure === "bridge" ? 8 : structure === "tunnel" ? -8 : 0;
+  const normalized = normalizeRoadStructure(structure, selectedElevation ?? fallback);
+  elevation.value = String(normalized.elevationMeters);
+}
+
+function setRoadProfileControls(profile: RoadProfile, roadClass: RoadClass, structure: RoadStructure = "surface", elevationMeters = 0) {
   (document.querySelector("#road-class") as HTMLSelectElement).value = roadClass;
   (document.querySelector("#road-lanes") as HTMLSelectElement).value = String(profile.travelLanes);
   (document.querySelector("#road-speed") as HTMLSelectElement).value = String(profile.speedLimitKph);
@@ -3643,13 +3731,15 @@ function setRoadProfileControls(profile: RoadProfile, roadClass: RoadClass) {
   setRoadFeature("median", profile.median);
   setRoadFeature("curbParking", profile.curbParking);
   setRoadFeature("streetTrees", profile.streetTrees);
+  (document.querySelector("#road-structure") as HTMLSelectElement).value = structure;
+  syncRoadElevationOptions(structure, elevationMeters);
   renderDraft();
   updateRoadProfileSummary();
 }
 
 function syncRoadTargetOptions() {
   const target = document.querySelector<HTMLSelectElement>("#road-target")!;
-  const key = world.roads.map(road => `${road.id}:${road.name ?? ""}:${road.class ?? "street"}:${JSON.stringify(road.profile)}`).join("|");
+  const key = world.roads.map(road => `${road.id}:${road.name ?? ""}:${road.class ?? "street"}:${road.structure ?? "surface"}:${road.elevationMeters ?? 0}:${JSON.stringify(road.profile)}`).join("|");
   if (key !== roadTargetKey) {
     const previous = target.value;
     target.replaceChildren(
@@ -3659,7 +3749,10 @@ function syncRoadTargetOptions() {
     target.value = world.roads.some(road => road.id === previous) ? previous : "";
     roadTargetKey = key;
     const selectedRoad = world.roads.find(road => road.id === target.value);
-    if (selectedRoad) setRoadProfileControls(world.roadProfile(selectedRoad), selectedRoad.class ?? "street");
+    if (selectedRoad) {
+      const structure = world.roadStructure(selectedRoad);
+      setRoadProfileControls(world.roadProfile(selectedRoad), selectedRoad.class ?? "street", structure.structure, structure.elevationMeters);
+    }
   }
   document.querySelector<HTMLButtonElement>("#apply-road-profile")!.disabled = !target.value;
 }
@@ -3681,9 +3774,16 @@ function updateRoadProfileSummary() {
   const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
   const targetRoad = world.roads.find(candidate => candidate.id === targetId);
   const pricedPoints = targetRoad?.points ?? draft;
-  const rawCost = pricedPoints.length > 1 ? roadConstructionCost(pricedPoints, road.profile) : 0;
+  const rawCost = pricedPoints.length > 1
+    ? roadConstructionCost(pricedPoints, road.profile, road.structure, road.elevationMeters)
+    : 0;
   const cost = targetRoad ? Math.max(25_000, Math.round(rawCost * .35 / 1_000) * 1_000) : rawCost;
-  summary.textContent = `${road.width}m · ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} veh/h${cost ? ` · $${cost.toLocaleString()}` : " · draw to price"} · ${roadProfileEffects(road.profile)}`;
+  const structureCopy = road.structure === "bridge"
+    ? `Bridge +${road.elevationMeters}m`
+    : road.structure === "tunnel"
+      ? `Tunnel ${road.elevationMeters}m`
+      : "Surface";
+  summary.textContent = `${road.width}m · ${structureCopy} · ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} veh/h${cost ? ` · $${cost.toLocaleString()}` : " · draw to price"} · ${roadProfileEffects(road.profile)}`;
 }
 
 function currentDistrictPolicy() {
@@ -5991,10 +6091,11 @@ function updateCityToolPanel(lot?: Lot) {
     const road = currentRoadConfig();
     const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
     const drawingAids = `${roadDrawingAidEnabled("road-snap-endpoints") ? "endpoints snap within 12m" : "endpoint snapping off"} · ${roadDrawingAidEnabled("road-angle-lock") ? "15° angle lock on" : "free-angle curves"} · ${roadDrawingAidEnabled("road-tangent-guide") ? "tangent guides" : "tangent guides off"} · ${roadDrawingAidEnabled("road-parallel-guide") ? "parallel guides" : "parallel guides off"}`;
+    const structureCopy = road.structure === "bridge" ? `bridge deck at +${road.elevationMeters}m` : road.structure === "tunnel" ? `tunnel at ${road.elevationMeters}m` : "surface construction";
     setPanel(
       "STREET DESIGNER",
       targetId ? "Retrofit a living street" : "Draw beyond the grid",
-      `${road.profile.travelLanes} travel lanes at ${road.profile.speedLimitKph} km/h · ${road.width}m roadway · capacity ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} vehicles per hour. ${roadProfileEffects(road.profile)} · ${drawingAids}. Every choice changes cost, traffic capacity, and visible street geometry.`,
+      `${road.profile.travelLanes} travel lanes at ${road.profile.speedLimitKph} km/h · ${road.width}m roadway · ${structureCopy} · capacity ${roadCapacityForProfile(road.profile, road.class).toLocaleString()} vehicles per hour. ${roadProfileEffects(road.profile)} · ${drawingAids}. Every choice changes cost, traffic capacity, and visible street geometry.`,
       targetId ? "Profile controls|Design retrofit;Apply profile|Commit changes;⌘ Z|Undo" : "Click|Add a curve point;Enter|Build and pay;Backspace|Remove last point;Escape|Cancel draft;⌘ Z|Undo"
     );
   } else if (cityTool === "inspect") {
@@ -6530,7 +6631,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     updateRoadProfileSummary();
     updateRoadDrawingAidStatus();
     const road = currentRoadConfig();
-    const cost = draft.length > 1 ? roadConstructionCost(draft, road.profile) : 0;
+    const cost = draft.length > 1 ? roadConstructionCost(draft, road.profile, road.structure, road.elevationMeters) : 0;
     const snapCopy = lastRoadSnap.kind === "endpoint"
       ? ` · joined ${lastRoadSnap.targetRoadName}`
       : lastRoadSnap.kind === "angle"
@@ -6751,8 +6852,8 @@ addEventListener("keydown", event => {
       notice(`${utilityName(kind)} connected`);
     } else if (cityTool === "road") {
       const road = currentRoadConfig();
-      const cost = roadConstructionCost(draft, road.profile);
-      if (!world.addRoad(draft, road.width, road.class, road.profile)) {
+      const cost = roadConstructionCost(draft, road.profile, road.structure, road.elevationMeters);
+      if (!world.addRoad(draft, road.width, road.class, road.profile, road.structure, road.elevationMeters)) {
         notice(`The city needs $${cost.toLocaleString()} for this road`);
         return;
       }
@@ -7065,7 +7166,10 @@ document.querySelector("#road-target")!.addEventListener("change", () => {
   const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
   const road = world.roads.find(candidate => candidate.id === targetId);
   document.querySelector<HTMLButtonElement>("#apply-road-profile")!.disabled = !road;
-  if (road) setRoadProfileControls(world.roadProfile(road), road.class ?? "street");
+  if (road) {
+    const structure = world.roadStructure(road);
+    setRoadProfileControls(world.roadProfile(road), road.class ?? "street", structure.structure, structure.elevationMeters);
+  }
   else {
     const roadClass = (document.querySelector("#road-class") as HTMLSelectElement).value as RoadClass;
     setRoadProfileControls(ROAD_PROFILE_PRESETS[roadClass], roadClass);
@@ -7077,11 +7181,19 @@ document.querySelector("#road-target")!.addEventListener("change", () => {
   updateCityToolPanel();
   notice(road ? `${road.name ?? "Road"} selected for retrofit` : "New road profile selected");
 });
-document.querySelectorAll<HTMLSelectElement>("#road-lanes, #road-speed, #road-sidewalk").forEach(control => control.addEventListener("change", () => {
+document.querySelectorAll<HTMLSelectElement>("#road-lanes, #road-speed, #road-sidewalk, #road-elevation").forEach(control => control.addEventListener("change", () => {
   renderDraft();
   updateRoadProfileSummary();
   updateCityToolPanel();
 }));
+document.querySelector("#road-structure")!.addEventListener("change", event => {
+  const structure = (event.currentTarget as HTMLSelectElement).value as RoadStructure;
+  syncRoadElevationOptions(structure);
+  renderDraft();
+  updateRoadProfileSummary();
+  updateCityToolPanel();
+  notice(structure === "bridge" ? "Bridge structure selected" : structure === "tunnel" ? "Tunnel structure selected" : "Surface road selected");
+});
 document.querySelectorAll<HTMLButtonElement>("[data-road-feature]").forEach(button => button.addEventListener("click", () => {
   const enabled = button.getAttribute("aria-pressed") !== "true";
   button.setAttribute("aria-pressed", String(enabled));
@@ -7107,7 +7219,7 @@ document.querySelectorAll<HTMLButtonElement>("#road-snap-endpoints, #road-angle-
 document.querySelector("#apply-road-profile")!.addEventListener("click", () => {
   const targetId = (document.querySelector("#road-target") as HTMLSelectElement).value;
   const road = currentRoadConfig();
-  const result = world.updateRoadProfile(targetId, road.profile, road.class);
+  const result = world.updateRoadProfile(targetId, road.profile, road.class, road.structure, road.elevationMeters);
   if (!result.ok) {
     notice(result.reason);
     return;

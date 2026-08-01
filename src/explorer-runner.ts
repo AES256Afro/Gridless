@@ -378,6 +378,52 @@ check(
     && restoredProfileRoad.class === "street",
   "Road profile persistence lost a retrofitted road design."
 );
+const structureWorld = new World();
+structureWorld.applyTemplate("blank");
+structureWorld.clock.treasury = 100_000_000;
+const structurePoints = [{ x: -40, z: 0 }, { x: 40, z: 0 }];
+const structureProfile = ROAD_PROFILE_PRESETS.avenue;
+const surfaceStructureCost = roadConstructionCost(structurePoints, structureProfile, "surface", 0);
+const bridgeStructureCost = roadConstructionCost(structurePoints, structureProfile, "bridge", 8);
+const tunnelStructureCost = roadConstructionCost(structurePoints, structureProfile, "tunnel", -12);
+check(
+  surfaceStructureCost < bridgeStructureCost
+    && bridgeStructureCost < tunnelStructureCost
+    && structureWorld.addRoad(structurePoints, 12, "avenue", structureProfile, "bridge", 8),
+  "Road structure costs did not distinguish surface, bridge, and tunnel construction."
+);
+const bridgeRoad = structureWorld.roads[0];
+check(
+  structureWorld.roadStructure(bridgeRoad).structure === "bridge"
+    && structureWorld.roadStructure(bridgeRoad).elevationMeters === 8
+    && bridgeRoad.developable === false
+    && structureWorld.lots.every(lot => lot.roadId !== bridgeRoad.id),
+  "Bridge construction did not retain its safe persistent deck height or suppress ground-level frontage."
+);
+const restoredStructureWorld = new World();
+check(
+  restoredStructureWorld.restore(structureWorld.serialize())
+    && restoredStructureWorld.roadStructure(restoredStructureWorld.roads[0]).structure === "bridge"
+    && restoredStructureWorld.roadStructure(restoredStructureWorld.roads[0]).elevationMeters === 8,
+  "Road structure and elevation did not survive save and restore."
+);
+const tunnelRetrofit = structureWorld.updateRoadProfile(bridgeRoad.id, structureProfile, "avenue", "tunnel", -12);
+check(
+  tunnelRetrofit.ok
+    && structureWorld.roadStructure(bridgeRoad).structure === "tunnel"
+    && structureWorld.roadStructure(bridgeRoad).elevationMeters === -12,
+  "A funded bridge-to-tunnel retrofit did not update the persistent road structure."
+);
+const unsafeStructureSnapshot = JSON.parse(structureWorld.serialize());
+unsafeStructureSnapshot.roads[0].structure = "skyway";
+unsafeStructureSnapshot.roads[0].elevationMeters = 999;
+const migratedStructureWorld = new World();
+check(
+  migratedStructureWorld.restore(JSON.stringify(unsafeStructureSnapshot))
+    && migratedStructureWorld.roadStructure(migratedStructureWorld.roads[0]).structure === "surface"
+    && migratedStructureWorld.roadStructure(migratedStructureWorld.roads[0]).elevationMeters === 0,
+  "Unsafe legacy road structure values did not migrate to a surface road."
+);
 const priorityLine = profiledWorld.addTransitLine(authoredRoad.id)!;
 const unprioritizedHeadway = profiledWorld.transitEffectiveHeadway(priorityLine);
 const priorityRetrofit = profiledWorld.updateRoadProfile(authoredRoad.id, {
@@ -3265,6 +3311,10 @@ console.log(JSON.stringify({
   roadAngleSnap: angleSnap.angleDegrees,
   roadTangentSnap: tangentSnap.angleDegrees,
   roadParallelSnap: parallelSnap.angleDegrees,
+  bridgeElevation: restoredStructureWorld.roadStructure(restoredStructureWorld.roads[0]).elevationMeters,
+  tunnelElevation: structureWorld.roadStructure(bridgeRoad).elevationMeters,
+  bridgeCost: bridgeStructureCost,
+  tunnelCost: tunnelStructureCost,
   intersections: intersections.length,
   redSignalStop: stoppedTraffic.stopped,
   greenSignalMovement: !movingTraffic.stopped,
