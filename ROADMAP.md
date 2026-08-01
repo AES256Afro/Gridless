@@ -14,6 +14,8 @@ The interface follows the same hierarchy. The persistent top switcher moves betw
 
 City Builder also provides a compact City Advisor. It ranks the three highest-value next actions from live roads, service coverage, staffing, outages, budget, congestion, wellbeing, and development state, explains the metric behind each recommendation, and opens the relevant tool or planning view when selected.
 
+Zoning separates land use from development intensity. Every parcel can independently apply low, medium, or high intensity to residential, commercial, mixed, industrial, or civic use; capacity, construction, and regional building massing respond without changing the parcel geometry or imposing a grid.
+
 Neighborhood Voices adds a human-scale diagnostic alongside the City Advisor. Every live district receives a deterministic pulse from its utility reliability, wellbeing, traffic, land value, park access, environmental exposure, jobs, outages, and policies. The most urgent representative voices appear first, and each card focuses its district and opens the matching evidence view.
 
 ## NYC as the flexible starting language

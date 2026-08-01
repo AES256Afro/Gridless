@@ -421,6 +421,7 @@ export type Lot = {
   width: number;
   depth: number;
   zone: Zone;
+  density?: LotDensity;
   constructionStartedAt?: number;
   constructionDuration?: number;
   households: number;
@@ -433,6 +434,8 @@ export type Lot = {
 };
 
 export type Zone = "unassigned" | "residential" | "commercial" | "mixed" | "industrial" | "civic";
+export type LotDensity = "low" | "medium" | "high";
+export const LOT_DENSITY_MULTIPLIERS: Record<LotDensity, number> = { low: .45, medium: 1, high: 1.65 };
 
 export type HouseholdMix = {
   families: number;
@@ -1859,11 +1862,27 @@ export class World {
     return { ok: true, cost: upgradeCost, reason: `${road.name ?? "Road"} profile updated` };
   }
 
-  zoneLot(lotId: string, zone: Zone) {
+  lotDensity(lot: Lot): LotDensity {
+    return lot.density === "low" || lot.density === "high" ? lot.density : "medium";
+  }
+
+  lotDevelopmentCapacity(lot: Lot) {
+    const density = this.lotDensity(lot);
+    return {
+      density,
+      households: Math.round(targetHouseholds(lot.zone, hashString(lot.id), density)),
+      businesses: Math.round(targetBusinesses(lot.zone, hashString(lot.id), density))
+    };
+  }
+
+  zoneLot(lotId: string, zone: Zone, density?: LotDensity) {
     const lot = this.lots.find(item => item.id === lotId);
-    if (!lot || lot.zone === zone) return false;
+    if (!lot) return false;
+    const nextDensity = density === "low" || density === "high" ? density : "medium";
+    if (lot.zone === zone && this.lotDensity(lot) === nextDensity) return false;
     this.checkpoint();
     lot.zone = zone;
+    lot.density = nextDensity;
     lot.constructionStartedAt = this.clock.elapsedMinutes;
     lot.constructionDuration = 1440 + hashString(lot.id) % 2880;
     lot.households = 0;
@@ -5628,6 +5647,7 @@ export class World {
       return {
         ...lot,
         zone,
+        density: lot.density === "low" || lot.density === "high" ? lot.density : "medium",
         households,
         businesses,
         householdMix: lot.householdMix ?? createHouseholdMix(households, seed),
@@ -5950,6 +5970,7 @@ export class World {
   private rebuildLots() {
     const existingHomes = new Map(this.lots.filter(l => l.homeId).map(l => [l.id, l.homeId]));
     const existingZones = new Map(this.lots.map(l => [l.id, l.zone]));
+    const existingDensities = new Map(this.lots.map(l => [l.id, this.lotDensity(l)]));
     const existingConstruction = new Map(this.lots.map(l => [l.id, {
       startedAt: l.constructionStartedAt,
       duration: l.constructionDuration
@@ -5993,6 +6014,7 @@ export class World {
             width: 16,
             depth: 18,
             zone,
+            density: existingDensities.get(id) ?? "medium",
             constructionStartedAt: existingConstruction.get(id)?.startedAt,
             constructionDuration: existingConstruction.get(id)?.duration,
             households,
@@ -6137,7 +6159,8 @@ export class World {
       const businessTaxRate = lot.zone === "industrial" ? this.taxPolicy.industrial : this.taxPolicy.commercial;
       const businessTaxFactor = clamp(1 - (businessTaxRate - 10) * .025, .72, 1.12);
       const policies = this.districtPoliciesForLot(lot);
-      const householdTarget = Math.round(targetHouseholds(lot.zone, seed) * householdTaxFactor);
+      const density = this.lotDensity(lot);
+      const householdTarget = Math.round(targetHouseholds(lot.zone, seed, density) * householdTaxFactor);
       if (lot.households < householdTarget) {
         const moves = Math.min(householdTarget - lot.households, Math.max(1, Math.floor(1 + attractiveness * 3)));
         lot.households += moves;
@@ -6157,7 +6180,7 @@ export class World {
         : 1;
       const grantFactor = policies.includes("small-business-grants") ? 1.14 : 1;
       const freightFactor = policies.includes("heavy-traffic-ban") && lot.zone === "industrial" ? .82 : 1;
-      const businessTarget = Math.round(targetBusinesses(lot.zone, seed) * businessTaxFactor * grantFactor * freightFactor * viabilityFactor);
+      const businessTarget = Math.round(targetBusinesses(lot.zone, seed, density) * businessTaxFactor * grantFactor * freightFactor * viabilityFactor);
       const businessesBeforeGrowth = lot.businesses;
       if (lot.businesses < businessTarget && attractiveness > .38) {
         lot.businesses += 1;
@@ -7726,17 +7749,18 @@ function legacyServiceStaff(kind: ServiceKind) {
   return { power: 160, water: 85, sewage: 110, waste: 95, fire: 75, health: 140, school: 180 }[kind];
 }
 
-function targetHouseholds(zone: Zone, seed: number) {
-  if (zone === "residential") return 28 + seed % 76;
-  if (zone === "mixed") return 20 + seed % 90;
+function targetHouseholds(zone: Zone, seed: number, density: LotDensity = "medium") {
+  if (zone === "residential") return (28 + seed % 76) * LOT_DENSITY_MULTIPLIERS[density];
+  if (zone === "mixed") return (20 + seed % 90) * LOT_DENSITY_MULTIPLIERS[density];
   return 0;
 }
 
-function targetBusinesses(zone: Zone, seed: number) {
-  if (zone === "commercial") return 3 + seed % 14;
-  if (zone === "mixed") return 2 + seed % 9;
-  if (zone === "industrial") return 2 + seed % 8;
-  if (zone === "civic") return 1;
+function targetBusinesses(zone: Zone, seed: number, density: LotDensity = "medium") {
+  const multiplier = LOT_DENSITY_MULTIPLIERS[density];
+  if (zone === "commercial") return (3 + seed % 14) * multiplier;
+  if (zone === "mixed") return (2 + seed % 9) * multiplier;
+  if (zone === "industrial") return (2 + seed % 8) * multiplier;
+  if (zone === "civic") return Math.max(1, multiplier);
   return 0;
 }
 
