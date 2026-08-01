@@ -58,6 +58,7 @@ import {
   RESIDENT_WORK_TASK_DEFINITIONS,
   ROAD_PROFILE_PRESETS,
   World,
+  defaultHomeRoofStyle,
   homeEntityFloor,
   homeFloorView,
   homeRoomExteriorWalls,
@@ -1493,6 +1494,35 @@ check(
     && restoredWindowWorld.homes[0].windows?.length === 1
     && restoredWindowWorld.homes[0].windows?.[0].glazing === "privacy",
   "Authored window glazing did not survive save and restore."
+);
+const roofDesignWorld = new World();
+roofDesignWorld.templateId = "seattle";
+roofDesignWorld.homes = [structuredClone(interiorHome)];
+const roofDesignHome = roofDesignWorld.homes[0];
+const roofDesignBudget = roofDesignWorld.homeRemainingBudget(roofDesignHome);
+check(
+  defaultHomeRoofStyle("nyc") === "flat"
+    && defaultHomeRoofStyle("seattle") === "green"
+    && defaultHomeRoofStyle("portland") === "gable",
+  "Regional home roof defaults were not deterministic."
+);
+check(
+  roofDesignWorld.setHomeRoof(roofDesignHome.id, "green", "#486b46")
+    && roofDesignHome.roofStyle === "green"
+    && roofDesignHome.roofColor === "#486b46"
+    && roofDesignWorld.homeRemainingBudget(roofDesignHome) === roofDesignBudget - HOME_BUILD_COSTS.roof - HOME_BUILD_COSTS.greenRoof,
+  "A planted roof did not persist its style, color, and exact construction cost."
+);
+check(
+  !roofDesignWorld.setHomeRoof(roofDesignHome.id, "green", "#486b46"),
+  "Home Simulator charged for an unchanged roof design."
+);
+const restoredRoofWorld = new World();
+check(
+  restoredRoofWorld.restore(roofDesignWorld.serialize())
+    && restoredRoofWorld.homes[0].roofStyle === "green"
+    && restoredRoofWorld.homes[0].roofColor === "#486b46",
+  "Authored roof design did not survive save and restore."
 );
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
@@ -3963,6 +3993,7 @@ console.log(JSON.stringify({
   authoredWindows: authoredWindowHome.windows?.length ?? 0,
   authoredWindowGlazing: authoredWindowHome.windows?.[0]?.glazing,
   authoredWindowDaylight: authoredWindowWorld.roomDaylight(authoredWindowHome, authoredWindowHome.rooms[0]),
+  authoredRoof: `${restoredRoofWorld.homes[0].roofStyle} ${restoredRoofWorld.homes[0].roofColor}`,
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
