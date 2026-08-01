@@ -397,6 +397,7 @@ Exit gate: a player can build a distinctive two-story home, furnish it efficient
 - [Complete] Expand career progression into five skill-linked tracks with deterministic specialization branches, wages, personality fit, and aspiration feedback.
 - [Complete] Career branches use physical city workplaces, named rosters, active attendance, track-specific tasks, performance history, visible coworker and customer agents, live service pressure, and persistent customer-backed business ledgers across all three scales.
 - [Complete] Add persistent invitations, four gathering types, visible visitors, schedule conflicts, celebration outcomes, and cross-scale context.
+- [Complete] Derive lasting relationship-specific Warmth, Loyalty, Wariness, and Resentment from bounded social memories, then use those impressions in autonomous partner choice and future conversation outcomes.
 - Add childcare interactions, moving, and household splits while preserving social memory.
 
 Exit gate: one household can be followed for a full in-game year with understandable goals, meaningful choices, and no continuity loss between home and city.

@@ -975,6 +975,18 @@ function integrityFailures(world: World) {
       }
       if (relationshipKeys.has(key)) failures.push(`Home ${home.id} has duplicate relationship pairs.`);
       relationshipKeys.add(key);
+      const impression = world.relationshipImpression(relationship);
+      if (
+        !Number.isInteger(impression.strength)
+        || impression.strength < -100
+        || impression.strength > 100
+        || !Number.isInteger(impression.outcomeBias)
+        || impression.outcomeBias < -3
+        || impression.outcomeBias > 3
+        || !Number.isInteger(impression.partnerBias)
+        || impression.partnerBias < -10
+        || impression.partnerBias > 10
+      ) failures.push(`Home ${home.id} has an invalid derived relationship impression.`);
       if (relationship.score < 0 || relationship.score > 100) {
         failures.push(`Home ${home.id} has a relationship score outside 0 to 100.`);
       }

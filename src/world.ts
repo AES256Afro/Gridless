@@ -799,6 +799,15 @@ export type ResidentRelationship = {
   memories?: SocialMemory[];
 };
 
+export type RelationshipImpression = {
+  kind: "unformed" | "steady" | "warmth" | "loyalty" | "wariness" | "resentment";
+  label: string;
+  strength: number;
+  outcomeBias: number;
+  partnerBias: number;
+  summary: string;
+};
+
 export type ResidentWellbeing = {
   score: number;
   label: "Thriving" | "Stable" | "Strained" | "Critical";
@@ -3444,6 +3453,56 @@ export class World {
             : "Conflict";
   }
 
+  relationshipImpression(relationship: ResidentRelationship): RelationshipImpression {
+    const memories = relationship.memories ?? [];
+    if (!memories.length) {
+      return {
+        kind: "unformed",
+        label: "First impression",
+        strength: 0,
+        outcomeBias: 0,
+        partnerBias: 0,
+        summary: "Shared history is still forming"
+      };
+    }
+    const strength = Math.round(clamp(memories.reduce((total, memory, index) => {
+      const recency = Math.max(.45, 1 - index * .08);
+      const tensionRelief = -memory.tensionChange * .18;
+      const intentWeight = memory.intent === "support" || memory.intent === "apologize"
+        ? 1.12
+        : memory.intent === "confront"
+          ? 1.18
+          : 1;
+      return total + (memory.relationshipChange * intentWeight + tensionRelief) * recency;
+    }, 0), -100, 100));
+    const tension = relationship.tension ?? 0;
+    const kind: RelationshipImpression["kind"] = strength >= 20
+      ? "loyalty"
+      : strength >= 7
+        ? "warmth"
+        : strength <= -9 || tension >= 50
+          ? "resentment"
+          : strength <= -3 || tension >= 20
+            ? "wariness"
+            : "steady";
+    const presentation: Record<RelationshipImpression["kind"], { label: string; summary: string }> = {
+      unformed: { label: "First impression", summary: "Shared history is still forming" },
+      steady: { label: "Steady", summary: "Good and difficult moments feel balanced" },
+      warmth: { label: "Warmth", summary: "Supportive moments make future conversation easier" },
+      loyalty: { label: "Loyalty", summary: "Repeated support and repair built durable trust" },
+      wariness: { label: "Wariness", summary: "Recent friction makes conversation more cautious" },
+      resentment: { label: "Resentment", summary: "Conflict still shapes how future words are received" }
+    };
+    return {
+      kind,
+      label: presentation[kind].label,
+      strength,
+      outcomeBias: Math.round(clamp(strength / 8, -3, 3)),
+      partnerBias: Math.round(clamp(strength * .4, -10, 10)),
+      summary: presentation[kind].summary
+    };
+  }
+
   residentTraitLabel(trait: ResidentTrait) {
     return RESIDENT_TRAIT_DETAILS[trait].label;
   }
@@ -3804,18 +3863,20 @@ export class World {
     secondResident: Resident,
     intent: ConversationIntent,
     directed: boolean,
-    tension = 0
+    tension = 0,
+    history?: ResidentRelationship
   ) {
     const compatibility = this.relationshipCompatibility(firstResident, secondResident);
+    const impressionBias = history ? this.relationshipImpression(history).outcomeBias : 0;
     if (!directed && intent !== "apologize") {
-      return Math.round(clamp(3 + (compatibility - 50) / 12, 1, 8));
+      return Math.round(clamp(3 + (compatibility - 50) / 12 + impressionBias, 1, 8));
     }
     if (intent === "apologize") {
       const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
         + (secondResident.traits.includes("empathetic") ? 1 : 0);
       const directionBonus = directed ? 2 : 0;
       return Math.round(clamp(
-        3 + directionBonus + empathy + tension / 12 + (compatibility - 50) / 20,
+        3 + directionBonus + empathy + tension / 12 + (compatibility - 50) / 20 + impressionBias,
         2,
         12
       ));
@@ -3823,20 +3884,20 @@ export class World {
     if (intent === "support") {
       const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
         + (secondResident.traits.includes("empathetic") ? 1 : 0);
-      return Math.round(clamp(7 + empathy + (compatibility - 50) / 15, 4, 12));
+      return Math.round(clamp(7 + empathy + (compatibility - 50) / 15 + impressionBias, 3, 12));
     }
     if (intent === "joke") {
       const humor = (firstResident.traits.includes("creative") ? 1 : 0)
         + (firstResident.traits.includes("outgoing") ? 1 : 0)
         + (secondResident.traits.includes("outgoing") ? 1 : 0);
-      return Math.round(clamp(5 + humor + (compatibility - 50) / 16, 2, 11));
+      return Math.round(clamp(5 + humor + (compatibility - 50) / 16 + impressionBias, 1, 11));
     }
     if (intent === "confront") {
       const empathy = (firstResident.traits.includes("empathetic") ? 2 : 0)
         + (secondResident.traits.includes("empathetic") ? 1 : 0);
-      return Math.round(clamp(-9 + empathy + (compatibility - 50) / 18, -14, -3));
+      return Math.round(clamp(-9 + empathy + (compatibility - 50) / 18 + impressionBias, -14, -2));
     }
-    return Math.round(clamp(6 + (compatibility - 50) / 12, 4, 11));
+    return Math.round(clamp(6 + (compatibility - 50) / 12 + impressionBias, 2, 11));
   }
 
   strongestRelationship(home: Home, residentId: string) {
@@ -6295,14 +6356,17 @@ export class World {
       .map(candidate => {
         const relationship = this.relationshipBetween(home, resident.id, candidate.id);
         const tension = relationship?.tension ?? 0;
+        const impression = relationship ? this.relationshipImpression(relationship) : undefined;
         return {
           resident: candidate,
           relationship,
+          impression,
           tension,
           score:
             this.relationshipScore(home, resident.id, candidate.id) * .55
             + this.relationshipCompatibility(resident, candidate) * .45
             + (100 - candidate.social) * .12
+            + (impression?.partnerBias ?? 0)
             + tension * (resident.traits.includes("empathetic") ? .42 : .1)
             + hashString(`${resident.id}-${candidate.id}-${Math.floor(now / 60)}`) % 8
         };
@@ -6312,7 +6376,7 @@ export class World {
     const learnedPreference = this.residentLearnedPreferences(home, resident);
     const autonomousConversationIntent: ConversationIntent =
       availablePartnerMatch
-      && availablePartnerMatch.tension >= 25
+      && (availablePartnerMatch.tension >= 25 || availablePartnerMatch.impression?.kind === "resentment")
       && (resident.traits.includes("empathetic") || availablePartnerMatch.tension >= 45)
         ? "apologize"
         : learnedPreference.preferredIntent ?? "chat";
@@ -6464,7 +6528,8 @@ export class World {
             partner,
             intent,
             Boolean(action.directed),
-            previousTension
+            previousTension,
+            relationship
           );
           const tensionChange = {
             chat: -6,
