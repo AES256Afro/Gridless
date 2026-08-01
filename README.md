@@ -82,6 +82,7 @@ The current vertical slice proves:
 - Persistent street-facing entrances for homes, businesses, parks, and transit stops with step-free access, clear width, tactile guidance, automatic-door state, and saved upgrades
 - City-funded accessibility upgrades plus complete-trip Explorer routing that cycles destination types and reports sidewalk, crossing, and final-entrance barriers
 - Enterable Home Simulator interiors reached from their actual City Explorer street entrances with `F`, using the same step-free and clear-width access gate as city wayfinding
+- Persistent one-to-four-story homes with floor-specific rooms and furnishings, paid floor shells, placeable adjacent-floor stairs, safe top-floor removal, resident floor memory, and `E` stair navigation in City Explorer
 - First-person room traversal with exterior and connecting door openings, wall containment, furniture collision, warm interior lighting, and room-aware location readouts
 - Selectable Home Simulator rooms with persistent Living Room, Bedroom, Kitchen, Bathroom, Study, Dining Room, Nursery, or Studio purposes; oak, tile, concrete, or carpet floors; warm white, sage, clay, or slate walls; area-based finish costs; protected final-room deletion; automatic furnishing cleanup; and partial refunds
 - Functional-room scoring across sleep, meals, hygiene, relaxation, and study, with visible room-purpose alignment that rewards sensible layouts without blocking unconventional object placement
@@ -102,7 +103,7 @@ The current vertical slice proves:
 - A live interaction prompt with keyboard intent selection, action effects, remaining duration, controlled-resident identity, and completed-action feedback
 - Vehicle parking with low-speed checks, facility capacity, saved position and heading, garage collision, and pedestrian return to the sidewalk
 - Persistent home entities and directly controlled resident positions attached to real city lots
-- Room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, persistent Natural, Light, Dark, or Colorful furniture styles, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
+- Floor-aware room drawing with area-based construction costs, architectural walls and floors, a persistent $60,000 design budget, a categorized eight-object catalog, persistent Natural, Light, Dark, or Colorful furniture styles, room-contained furniture, green/red placement previews, click selection, cost-free moving, collision-aware 45-degree rotation, half-cost selling, and household residents
 - A focused household creator for resident name, adult or child life stage, daily role, and exactly two behavior-shaping personality traits, with an eight-person household limit and immediate profile preview
 - A contextual Home Advisor that turns resident needs, bed and room capacity, missing functional objects, creative traits, relationship tension, and finances into three prioritized household wants with direct build actions
 

@@ -1,7 +1,10 @@
 import {
   RESIDENT_PURCHASES,
   RESIDENT_PERSONALITY_AXES,
+  MAX_HOME_FLOORS,
   World,
+  homeEntityFloor,
+  homeFloorView,
   type Home,
   type ServiceKind,
   type UtilityKind
@@ -492,6 +495,9 @@ function integrityFailures(world: World) {
       failures.push(`Home ${home.id} has invalid saved identity.`);
     }
     if (!home.rooms.length) failures.push(`Home ${home.id} has no interior rooms.`);
+    if (!Number.isInteger(home.floors) || home.floors < 1 || home.floors > MAX_HOME_FLOORS) {
+      failures.push(`Home ${home.id} has an invalid floor count.`);
+    }
     const functionality = world.homeFunctionality(home);
     if (
       world.homeQuality(home) < 0
@@ -523,9 +529,10 @@ function integrityFailures(world: World) {
     ) {
       failures.push(`Home ${home.id} has invalid household finances.`);
     }
-    if (!interiorEntryPoint(home)) failures.push(`Home ${home.id} has no clear interior entry position.`);
+    if (!interiorEntryPoint(homeFloorView(home, 0))) failures.push(`Home ${home.id} has no clear ground-floor entry position.`);
     const roomIds = new Set(home.rooms.map(room => room.id));
     const furnitureIds = new Set(home.furniture.map(item => item.id));
+    const stairIds = new Set((home.stairs ?? []).map(stair => stair.id));
     const residentIds = new Set(home.residents.map(resident => resident.id));
     const residentNames = new Set(home.residents.map(resident => resident.name.toLocaleLowerCase()));
     if (
@@ -541,11 +548,15 @@ function integrityFailures(world: World) {
     const relationshipKeys = new Set<string>();
     if (roomIds.size !== home.rooms.length) failures.push(`Home ${home.id} has duplicate room IDs.`);
     if (furnitureIds.size !== home.furniture.length) failures.push(`Home ${home.id} has duplicate furniture IDs.`);
+    if (stairIds.size !== (home.stairs ?? []).length) failures.push(`Home ${home.id} has duplicate stair IDs.`);
     if (residentIds.size !== home.residents.length) failures.push(`Home ${home.id} has duplicate resident IDs.`);
     if (residentNames.size !== home.residents.length) failures.push(`Home ${home.id} has duplicate resident names.`);
     if (home.residents.length > 8) failures.push(`Home ${home.id} exceeds the supported eight named residents.`);
     for (const room of home.rooms) {
       if (room.width < 2 || room.depth < 2) failures.push(`Room ${room.id} is smaller than the supported 2m minimum.`);
+      if (!Number.isInteger(homeEntityFloor(room)) || homeEntityFloor(room) < 0 || homeEntityFloor(room) >= home.floors) {
+        failures.push(`Room ${room.id} is assigned to an invalid floor.`);
+      }
       if (!VALID_HOME_FLOOR_FINISHES.has(room.floorFinish ?? "oak")) failures.push(`Room ${room.id} has an invalid floor finish.`);
       if (!VALID_HOME_WALL_FINISHES.has(room.wallFinish ?? "warm-white")) failures.push(`Room ${room.id} has an invalid wall finish.`);
     }
@@ -555,11 +566,43 @@ function integrityFailures(world: World) {
       if (!Number.isFinite(item.rotation) || item.rotation < 0 || item.rotation >= Math.PI * 2) {
         failures.push(`Furniture ${item.id} has an invalid rotation.`);
       }
-      if (!world.canPlaceFurniture(home, item.kind, item.x, item.z, item.rotation, item.id)) {
+      if (homeEntityFloor(item) >= home.floors) failures.push(`Furniture ${item.id} is assigned to an invalid floor.`);
+      if (!world.canPlaceFurniture(home, item.kind, item.x, item.z, item.rotation, item.id, homeEntityFloor(item))) {
         failures.push(`Furniture ${item.id} overlaps a wall or furnishing in home ${home.id}.`);
       }
     }
+    for (const stair of home.stairs ?? []) {
+      const stairCosine = Math.cos(stair.rotation);
+      const stairSine = Math.sin(stair.rotation);
+      const stairCorners = [
+        { x: -1, z: -2 }, { x: 1, z: -2 }, { x: 1, z: 2 }, { x: -1, z: 2 }
+      ].map(point => ({
+        x: stair.x + stairCosine * point.x + stairSine * point.z,
+        z: stair.z - stairSine * point.x + stairCosine * point.z
+      }));
+      const hasLanding = (floor: number) => home.rooms.some(room =>
+        homeEntityFloor(room) === floor
+        && stairCorners.every(corner =>
+          Math.abs(corner.x - room.x) <= room.width / 2 - .1
+          && Math.abs(corner.z - room.z) <= room.depth / 2 - .1
+        )
+      );
+      if (
+        !Number.isFinite(stair.x)
+        || !Number.isFinite(stair.z)
+        || !Number.isFinite(stair.rotation)
+        || !Number.isInteger(stair.fromFloor)
+        || stair.fromFloor < 0
+        || stair.toFloor !== stair.fromFloor + 1
+        || stair.toFloor >= home.floors
+        || !hasLanding(stair.fromFloor)
+        || !hasLanding(stair.toFloor)
+      ) failures.push(`Stairs ${stair.id} have an invalid floor connection.`);
+    }
     for (const resident of home.residents) {
+      if (!Number.isInteger(resident.homeFloor ?? 0) || (resident.homeFloor ?? 0) < 0 || (resident.homeFloor ?? 0) >= home.floors) {
+        failures.push(`Resident ${resident.id} is assigned to an invalid home floor.`);
+      }
       const personality = world.residentPersonality(resident);
       if (RESIDENT_PERSONALITY_AXES.some(axis =>
         !Number.isInteger(personality[axis]) || personality[axis] < 0 || personality[axis] > 100

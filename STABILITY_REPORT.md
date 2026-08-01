@@ -2,7 +2,7 @@
 
 Status: PASS
 
-Deterministic signature: `0f021f2d`
+Deterministic signature: `badbbaa7`
 
 Command:
 
@@ -12,7 +12,7 @@ npm run test:stability
 
 ## Scope
 
-The gate creates a fixed NYC reference city with 296 lots, persistent editable road profiles, neutral tax policy, district-policy and municipal-debt state, eight persistent spatial chunks, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent personality, skills, career growth, household finances, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
+The gate creates a fixed NYC reference city with 296 lots, persistent editable road profiles, neutral tax policy, district-policy and municipal-debt state, eight persistent spatial chunks, 304 persistent accessibility entrances, priced parking, timed curb rules with hourly delivery and enforcement activity, a recurring named event with persistent road closures and temporary transit service, an editable frequency-controlled transit network with hourly passenger activity, complete municipal service types, connected utility networks, commute representatives, emergency response, utility repairs, and a furnished autonomous household with persistent floor assignments, personality, skills, career growth, household finances, intent-aware conversations, bounded social memories, conflict and reconciliation state, and a clear enterable interior.
 
 Each run advances ten 360-day simulation years in 14,400 six-hour steps. It posts 120 monthly budgets and captures an exact anniversary checkpoint after each year. The runner then creates the scenario again, repeats the entire decade, and requires the same signature.
 
@@ -33,7 +33,7 @@ Each run advances ten 360-day simulation years in 14,400 six-hour steps. It post
 | Cumulative event attendance | 0 | 333,314 |
 | Save snapshot | 340 KB | 352 KB |
 
-The largest observed snapshot was 367,130 bytes.
+The largest observed snapshot was 367,144 bytes.
 
 ## Load and recovery
 
@@ -56,7 +56,7 @@ The run found no:
 - negative household or business counts
 - cohort or sector sum mismatches
 - resident needs, functional-room scores, or home quality outside 0 to 100
-- missing, undersized, duplicate, unreachable, or invalidly finished home rooms, duplicate or unknown catalog furnishings, invalid furniture styles, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
+- missing, undersized, duplicate, unreachable, invalidly assigned, or invalidly finished home rooms, invalid floor counts, duplicate or malformed stair links, invalid resident floor assignments, duplicate or unknown catalog furnishings, invalid furniture styles, invalid design budgets, overspending, invalid furniture rotation, furniture overlap, or furniture crossing room walls
 - invalid or duplicate resident names, oversized households, invalid controlled-resident home positions, personality traits, resident action targets, conversation partners, conversation intents, social memories, tension, conflict or reconciliation history, recent relationship outcomes, relationship pairs, scores, conversation counts, or household purchase records
 - non-finite or out-of-range learned resident social preferences derived from relationship memories
 - non-integer or out-of-range resident skill points, career levels, or career experience
