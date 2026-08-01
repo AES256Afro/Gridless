@@ -1681,6 +1681,31 @@ check(
     && roomClaimWorld.residentRoom(roomClaimHome, "privacy-b")?.id === "room-b",
   "Smart room assignment did not maximize resident fit and household privacy deterministically."
 );
+const constrainedSpacePlan = roomClaimWorld.homeSpacePlan(roomClaimHome);
+roomClaimHome.furniture.push(
+  { id: "space-shower", kind: "shower", x: 5, z: -1, rotation: 0 },
+  { id: "space-desk-a", kind: "desk", x: -2, z: -1, rotation: 0 },
+  { id: "space-desk-b", kind: "desk", x: 7, z: -1, rotation: 0 },
+  { id: "space-sofa", kind: "sofa", x: 5, z: 1, rotation: 0 }
+);
+const equippedSpacePlan = roomClaimWorld.homeSpacePlan(roomClaimHome);
+check(
+  constrainedSpacePlan.deficits.some(deficit => deficit.kind === "hygiene")
+    && constrainedSpacePlan.deficits.some(deficit => deficit.kind === "work")
+    && constrainedSpacePlan.deficits.some(deficit => deficit.kind === "social")
+    && equippedSpacePlan.score > constrainedSpacePlan.score
+    && equippedSpacePlan.hygiene.capacity >= equippedSpacePlan.hygiene.demand
+    && equippedSpacePlan.work.capacity >= equippedSpacePlan.work.demand
+    && equippedSpacePlan.social.capacity >= equippedSpacePlan.social.demand,
+  "Household space planning did not identify and resolve capacity deficits."
+);
+const emptySpaceHome = structuredClone(roomClaimHome);
+emptySpaceHome.residents = [];
+check(
+  roomClaimWorld.homeSpacePlan(emptySpaceHome).score === 100
+    && roomClaimWorld.homeSpacePlan(emptySpaceHome).deficits.length === 0,
+  "An empty home incorrectly reported household space pressure."
+);
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
@@ -4165,6 +4190,10 @@ console.log(JSON.stringify({
     mismatchFit: mismatchedPersonalRoom.score,
     personalizedFit: fittedPersonalRoom.score,
     smartAssignment
+  },
+  householdSpacePlan: {
+    constrained: constrainedSpacePlan,
+    equipped: equippedSpacePlan
   },
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
