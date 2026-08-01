@@ -605,9 +605,13 @@ function integrityFailures(world: World) {
       })
     ) failures.push(`Home ${home.id} has invalid household gathering state.`);
     const functionality = world.homeFunctionality(home);
+    const daylight = world.homeDaylight(home);
     if (
       world.homeQuality(home) < 0
       || world.homeQuality(home) > 100
+      || daylight < 18
+      || daylight > 100
+      || home.rooms.some(room => world.roomDaylight(home, room) < 18 || world.roomDaylight(home, room) > 100)
       || functionality.completeness < 0
       || functionality.completeness > 100
       || functionality.alignment < 0
