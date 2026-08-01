@@ -342,6 +342,7 @@ Current foundation:
 - The world is deterministically partitioned into persistent 256-meter spatial chunks. Every lot belongs to exactly one chunk, road segments register with every chunk they cross, and chunk aggregates retain households, businesses, population, and jobs.
 - Each chunk resolves to agent, active, or aggregate detail from the current Builder focus, Explorer position, or Home lot. The live HUD reports active-detail residents and aggregate chunk counts.
 - The renderer consumes an explicit deterministic stream plan at every scale. Agent chunks keep full lots, street details, and building windows; active chunks retain real parcel shells; aggregate chunks replace individual buildings with population and job-weighted low-poly massing. Selected neighborhoods are promoted so direct editing never targets an impostor.
+- Completed City Builder building shells use one GPU-instanced batch with per-instance transforms and colors. Parcel planes remain individually selectable, construction sites remain explicit, and Explorer plus Home retain human-scale geometry.
 - Chunk size and metadata persist in snapshots. Older saves rebuild valid metadata from their existing roads and lots, while the stability gate verifies unique membership, references, and population reconciliation.
 - `npm run test:explorer` verifies the eight-chunk NYC reference, exact lot membership, aggregate population equality, focus-to-distance tier changes, lossless render-plan partitioning, distant massing inputs, and snapshot persistence.
 - The same regression gate verifies Chicago identity, exact grid and water features, developable-road parcel rules, four-way zoning mix, road-profile hierarchy, local transit, parking, event, deterministic climate, and save restoration.
@@ -349,7 +350,7 @@ Current foundation:
 - Seattle regression coverage verifies constrained water geometry, no-frontage freeways and bridges, transit and bicycle priority, three slope states, terrain land-value pressure, urban-village zoning, regional transit and events, cool deterministic climate, and legacy terrain restoration.
 - Portland regression coverage verifies two-river geometry, bridge corridors, compact parcels, freeway and greenway access rules, inside and outside growth-boundary states, boundary land-value pressure, neighborhood zoning, regional transit and events, rainy deterministic climate, and legacy terrain restoration.
 
-Next scale systems are instanced building batches, occlusion, hierarchical inter-chunk pathfinding, deterministic background workers, and real million-population performance budgets.
+Next scale systems are instanced facade and prop batches, occlusion, hierarchical inter-chunk pathfinding, deterministic background workers, and real million-population performance budgets.
 
 ## Milestone 4: Players jump in
 

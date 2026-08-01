@@ -816,6 +816,7 @@ let photoFov = 55;
 let soundscapeSyncAccumulator = 0;
 let spatialStreamSyncAccumulator = 0;
 let renderedSpatialTierSignature = "";
+let cityBuildingBatchCount = 0;
 
 const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x303533, roughness: .94 });
 const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b4aa, roughness: .98 });
@@ -2473,6 +2474,7 @@ function renderWorld() {
   for (const chunk of aggregateChunks) {
     worldGroup.add(createAggregateChunkMassing(chunk, activeCityView));
   }
+  const cityBuildingInstances: Array<{ lot: Lot; height: number; color: number }> = [];
   for (const lot of world.lots) {
     if (!detailedLotIds.has(lot.id)) continue;
     const planningValue = lotPlanningValue(lot, activeCityView, totalPopulation, effectiveStaffing, roadTraffic);
@@ -2508,23 +2510,28 @@ function renderWorld() {
     const occupiedShare = lot.zone === "residential" || lot.zone === "mixed"
       ? activity.atHome / Math.max(1, activity.population)
       : activity.openBusinesses / Math.max(1, lot.businesses);
-    const shell = new THREE.Mesh(
-      new THREE.BoxGeometry(lot.width * .62, height, lot.depth * .58),
-      new THREE.MeshStandardMaterial({
-        color: activeCityView === "normal" ? progress < 1 ? 0xc5a25f : zoneBuildingColors[lot.zone] : planningColor,
-        emissive: activeCityView === "normal"
-          ? progress < 1 || occupiedShare <= 0 || powerOutage ? 0x000000 : 0x2e2415
-          : planningColor,
-        emissiveIntensity: activeCityView === "normal" ? progress < 1 || powerOutage ? 0 : darkness * occupiedShare * .12 : .08,
-        roughness: .8
-      })
-    );
-    shell.position.set(lot.center.x, height / 2, lot.center.z);
-    shell.rotation.y = lot.rotation;
-    shell.castShadow = shell.receiveShadow = mode !== "city";
-    worldGroup.add(shell);
-    if (progress >= 1 && mode !== "city" && agentLotIds.has(lot.id)) {
-      addBuildingWindows(lot, height, darkness, occupiedShare);
+    const shellColor = activeCityView === "normal" ? progress < 1 ? 0xc5a25f : zoneBuildingColors[lot.zone] : planningColor;
+    if (mode === "city" && progress >= 1) {
+      cityBuildingInstances.push({ lot, height, color: shellColor });
+    } else {
+      const shell = new THREE.Mesh(
+        new THREE.BoxGeometry(lot.width * .62, height, lot.depth * .58),
+        new THREE.MeshStandardMaterial({
+          color: shellColor,
+          emissive: activeCityView === "normal"
+            ? progress < 1 || occupiedShare <= 0 || powerOutage ? 0x000000 : 0x2e2415
+            : planningColor,
+          emissiveIntensity: activeCityView === "normal" ? progress < 1 || powerOutage ? 0 : darkness * occupiedShare * .12 : .08,
+          roughness: .8
+        })
+      );
+      shell.position.set(lot.center.x, height / 2, lot.center.z);
+      shell.rotation.y = lot.rotation;
+      shell.castShadow = shell.receiveShadow = mode !== "city";
+      worldGroup.add(shell);
+      if (progress >= 1 && mode !== "city" && agentLotIds.has(lot.id)) {
+        addBuildingWindows(lot, height, darkness, occupiedShare);
+      }
     }
     if (progress < 1) {
       const scaffold = new THREE.Mesh(
@@ -2536,6 +2543,9 @@ function renderWorld() {
       worldGroup.add(scaffold);
     }
   }
+  const cityBuildingBatch = createCityBuildingBatch(cityBuildingInstances);
+  cityBuildingBatchCount = cityBuildingBatch?.count ?? 0;
+  if (cityBuildingBatch) worldGroup.add(cityBuildingBatch);
   renderAccessibilityEntrances();
   renderCityEvents();
   document.querySelector("#lot-count")!.textContent = String(world.lots.length);
@@ -2923,6 +2933,29 @@ function createAggregateChunkMassing(chunk: SpatialChunk, view: CityView) {
   return group;
 }
 
+function createCityBuildingBatch(records: Array<{ lot: Lot; height: number; color: number }>) {
+  if (!records.length) return undefined;
+  const batch = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .82, vertexColors: true }),
+    records.length
+  );
+  const transform = new THREE.Object3D();
+  records.forEach((record, index) => {
+    transform.position.set(record.lot.center.x, record.height / 2, record.lot.center.z);
+    transform.rotation.set(0, record.lot.rotation, 0);
+    transform.scale.set(record.lot.width * .62, record.height, record.lot.depth * .58);
+    transform.updateMatrix();
+    batch.setMatrixAt(index, transform.matrix);
+    batch.setColorAt(index, new THREE.Color(record.color));
+  });
+  batch.instanceMatrix.needsUpdate = true;
+  if (batch.instanceColor) batch.instanceColor.needsUpdate = true;
+  batch.userData.cityBuildingBatch = true;
+  batch.userData.instanceCount = records.length;
+  return batch;
+}
+
 function updateCityStats(renderPlan = world.spatialRenderPlan(worldRenderFocus())) {
   const {
     households,
@@ -2984,7 +3017,7 @@ function updateCityStats(renderPlan = world.spatialRenderPlan(worldRenderFocus()
   const representativeChunk = renderPlan.agentChunks[0]
     ?? world.spatialChunks[0];
   const lodStatus = document.querySelector<HTMLElement>("#lod-status")!;
-  lodStatus.textContent = `${totalChunks} streamed chunks · ${renderPlan.agentChunks.length} agent · ${renderPlan.activeChunks.length} active · ${renderPlan.aggregateChunks.length} massed`;
+  lodStatus.textContent = `${totalChunks} streamed chunks · ${renderPlan.agentChunks.length} agent · ${renderPlan.activeChunks.length} active · ${renderPlan.aggregateChunks.length} massed${mode === "city" ? ` · ${cityBuildingBatchCount} batched` : ""}`;
   lodStatus.title = representativeChunk
     ? `Focused chunk ${spatialChunkLabel(representativeChunk)} · ${activePopulation.toLocaleString()} residents in active detail`
     : "No populated spatial chunks";
