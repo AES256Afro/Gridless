@@ -58,6 +58,7 @@ import {
   homeFloorView,
   roadConstructionCost,
   roadWidthForProfile,
+  snapRoadDrawingPoint,
   type AccessibilityEntrance,
   type Area,
   type ConversationIntent,
@@ -246,6 +247,41 @@ const nearest = nearestRoadLocation(paths, { x: 0, z: 9 });
 check(Boolean(nearest), "Curved road lookup did not return a location.");
 check(nearest!.roadName === "Test Avenue", "Road lookup lost the road name.");
 check(nearest!.distance < 2, "Curved road lookup is too far from the visible spline.");
+
+const endpointSnap = snapRoadDrawingPoint(
+  { x: 38, z: 3 },
+  [{ x: 80, z: 80 }],
+  [road],
+  { endpoints: true, angleLock: true, endpointDistance: 12 }
+);
+const angleSnap = snapRoadDrawingPoint(
+  { x: 19, z: 7 },
+  [{ x: 0, z: 0 }],
+  [],
+  { endpoints: true, angleLock: true, angleStepDegrees: 15 }
+);
+const freeSnap = snapRoadDrawingPoint(
+  { x: 19, z: 7 },
+  [{ x: 0, z: 0 }],
+  [road],
+  { endpoints: false, angleLock: false }
+);
+check(
+  endpointSnap.kind === "endpoint"
+    && endpointSnap.point.x === 40
+    && endpointSnap.point.z === 0
+    && endpointSnap.targetRoadId === road.id,
+  "Road drawing did not prioritize an exact nearby network endpoint."
+);
+check(
+  angleSnap.kind === "angle"
+    && angleSnap.angleDegrees === 15
+    && Math.abs(Math.hypot(angleSnap.point.x, angleSnap.point.z) - Math.hypot(19, 7)) < .02
+    && freeSnap.kind === "free"
+    && freeSnap.point.x === 19
+    && freeSnap.point.z === 7,
+  "Optional road angle locking did not preserve segment length or release cleanly."
+);
 
 const profiledWorld = new World();
 check(
@@ -2936,6 +2972,8 @@ check(garageMove.blocked, "Garage collision did not block the player.");
 console.log("Gridless Explorer movement checks: PASS");
 console.log(JSON.stringify({
   roadSamples: paths[0].points.length,
+  roadEndpointSnap: endpointSnap.targetRoadName,
+  roadAngleSnap: angleSnap.angleDegrees,
   intersections: intersections.length,
   redSignalStop: stoppedTraffic.stopped,
   greenSignalMovement: !movingTraffic.stopped,

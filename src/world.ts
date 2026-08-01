@@ -112,6 +112,64 @@ export function roadConstructionCost(points: Point2[], profile: RoadProfile) {
   return Math.max(25_000, Math.round((length * roadWidthForProfile(profile) * 1_350 + featureCost) / 1_000) * 1_000);
 }
 
+export type RoadDrawingSnap = {
+  point: Point2;
+  kind: "free" | "endpoint" | "angle";
+  distance: number;
+  angleDegrees?: number;
+  targetRoadId?: string;
+  targetRoadName?: string;
+};
+
+export function snapRoadDrawingPoint(
+  candidate: Point2,
+  draftPoints: Point2[],
+  roads: Road[],
+  settings: { endpoints: boolean; angleLock: boolean; angleStepDegrees?: number; endpointDistance?: number }
+): RoadDrawingSnap {
+  const endpointDistance = clamp(settings.endpointDistance ?? 12, 2, 30);
+  if (settings.endpoints) {
+    const closest = roads
+      .flatMap(road => [road.points[0], road.points[road.points.length - 1]].filter(Boolean).map(point => ({ road, point })))
+      .map(entry => ({
+        ...entry,
+        distance: Math.hypot(entry.point.x - candidate.x, entry.point.z - candidate.z)
+      }))
+      .filter(entry => entry.distance <= endpointDistance)
+      .sort((first, second) => first.distance - second.distance || first.road.id.localeCompare(second.road.id))[0];
+    if (closest) {
+      return {
+        point: { x: closest.point.x, z: closest.point.z },
+        kind: "endpoint",
+        distance: closest.distance,
+        targetRoadId: closest.road.id,
+        targetRoadName: closest.road.name ?? "Unnamed road"
+      };
+    }
+  }
+  const previous = draftPoints[draftPoints.length - 1];
+  if (settings.angleLock && previous) {
+    const dx = candidate.x - previous.x;
+    const dz = candidate.z - previous.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > .5) {
+      const step = Math.PI / (180 / clamp(settings.angleStepDegrees ?? 15, 5, 90));
+      const angle = Math.round(Math.atan2(dz, dx) / step) * step;
+      const angleDegrees = positiveModulo(Math.round(angle * 180 / Math.PI), 360);
+      return {
+        point: {
+          x: Math.round((previous.x + Math.cos(angle) * distance) * 100) / 100,
+          z: Math.round((previous.z + Math.sin(angle) * distance) * 100) / 100
+        },
+        kind: "angle",
+        distance,
+        angleDegrees
+      };
+    }
+  }
+  return { point: { x: candidate.x, z: candidate.z }, kind: "free", distance: 0 };
+}
+
 function normalizeRoadRecord(road: Road): Road {
   const roadClass: RoadClass = road.class
     ?? (road.width >= 15 ? "arterial" : road.width >= 11 ? "avenue" : "street");

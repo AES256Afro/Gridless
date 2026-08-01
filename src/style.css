@@ -1479,6 +1479,10 @@ kbd {
   color: #172019;
   background: #b9d7ba;
 }
+.road-drawing-aids { display: flex; align-items: center; gap: 3px; }
+.road-drawing-aids button { padding: 7px 8px; color: #aab7ad; background: rgba(255,255,255,.045); font-size: 10px; }
+.road-drawing-aids button.active, .road-drawing-aids button[aria-pressed="true"] { color: #172019; background: #f0d980; }
+#road-snap-status { min-width: 128px; color: #b8c4bb; font-size: 9px; }
 #road-profile-summary {
   min-width: 178px;
   color: #c7d3c9;
