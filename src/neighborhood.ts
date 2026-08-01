@@ -84,7 +84,7 @@ export function neighborhoodPulse(input: NeighborhoodPulseInput): NeighborhoodPu
       priority: exposure * .9,
       voice: "Neighbor voice",
       headline: "Environmental risk feels close",
-      message: `${Math.round(exposure)}% of local parcels face mapped flood, slope, or growth-boundary pressure.`,
+      message: `${Math.round(exposure)}% of local parcels face mapped constraints or unhealthy local exposure.`,
       actionLabel: "Inspect environment",
       focusView: "environment"
     },

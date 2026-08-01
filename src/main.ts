@@ -140,7 +140,7 @@ type HomeFurnitureKind = Home["furniture"][number]["kind"];
 type HomeTool = "select" | "room" | "stairs" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
-type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment" | "voices";
+type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment" | "pollution" | "voices";
 const HOME_FURNITURE_KINDS: HomeFurnitureKind[] = ["sofa", "table", "bed", "plant", "desk", "bookcase", "fridge", "shower"];
 const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const isHomeFurnitureKind = (value: string): value is HomeFurnitureKind => HOME_FURNITURE_KINDS.includes(value as HomeFurnitureKind);
@@ -430,6 +430,7 @@ app.innerHTML = `
         <button data-city-view="wellbeing">Wellbeing</button>
         <button data-city-view="land-value">Land value</button>
         <button data-city-view="environment">Environment</button>
+        <button data-city-view="pollution">Pollution</button>
         <button data-city-view="development">Development</button>
         <button data-city-view="voices">Voices</button>
         <div class="city-view-legend" id="city-view-legend"><i></i><span>Natural city colors</span></div>
@@ -2190,6 +2191,7 @@ function lotPlanningValue(
   if (view === "wellbeing") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "voices") return world.lotWellbeing(lot, totalPopulation, effectiveStaffing) / 100;
   if (view === "land-value") return world.lotLandValue(lot, totalPopulation, effectiveStaffing) / 100;
+  if (view === "pollution") return world.lotEnvironmentalQuality(lot).score / 100;
   if (view === "environment") return 1 - world.lotEnvironmentalConstraintScore(lot);
   if (view === "development") return lot.zone === "unassigned" ? 0 : world.constructionProgress(lot);
   return 1;
@@ -6327,6 +6329,7 @@ function neighborhoodPulses() {
       const roadIds = new Set(lots.map(lot => lot.roadId));
       const localRoads = world.roads.filter(road => roadIds.has(road.id));
       const constrained = lots.filter(lot => world.lotEnvironmentalConstraintScore(lot) > 0).length;
+      const unhealthyExposure = lots.filter(lot => world.lotEnvironmentalQuality(lot).score < 55).length;
       const parkServed = lots.filter(lot => parkCenters.some(park => Math.hypot(lot.center.x - park.x, lot.center.z - park.z) <= 320)).length;
       const pulse = neighborhoodPulse({
         districtId: district.id,
@@ -6338,7 +6341,7 @@ function neighborhoodPulses() {
         trafficPressure: average(localRoads.map(road => world.roadTrafficPressure(road))),
         landValue: average(lots.map(lot => world.lotLandValue(lot, totalPopulation, effectiveStaffing))),
         parkAccess: parkServed / lots.length * 100,
-        environmentalExposure: constrained / lots.length * 100,
+        environmentalExposure: Math.max(constrained, unhealthyExposure) / lots.length * 100,
         activeOutages: lots.reduce((total, lot) => total + world.utilityFailuresForLot(lot).length, 0),
         policyCount: world.districtPolicies[district.id]?.length ?? 0
       });
@@ -6422,6 +6425,7 @@ function renderParcelDetails(lot: Lot) {
   const activity = world.lotActivity(lot);
   const lotWellbeing = world.lotWellbeing(lot);
   const lotWellbeingState = wellbeingLabel(lotWellbeing);
+  const environmentalQuality = world.lotEnvironmentalQuality(lot);
   const lotHome = world.homes.find(home => home.lotId === lot.id);
   const latestHomeMilestone = lotHome?.residents
     .flatMap(resident => world.residentMilestones(resident).map(milestone => ({ resident, milestone })))
@@ -6510,6 +6514,11 @@ function renderParcelDetails(lot: Lot) {
       <span>Household wellbeing</span>
       <strong>${lotWellbeing}% · ${lotWellbeingState}</strong>
       <small>${world.lotUtilityReliability(lot)}% utilities · ${world.lotNeighborhoodSupport(lot)}% neighborhood support${lotHome?.residents.length ? ` · ${lotHome.residents.length} named ${lotHome.residents.length === 1 ? "resident" : "residents"}` : ""}</small>
+    </div>
+    <div class="parcel-line">
+      <span>Environmental health</span>
+      <strong>${environmentalQuality.score}% ${environmentalQuality.label} · air ${environmentalQuality.airQuality}% · noise ${environmentalQuality.noiseLevel}% · ground pollution ${environmentalQuality.groundPollution}%</strong>
+      <small>${environmentalQuality.sources.length ? `Sources: ${environmentalQuality.sources.join(" · ")}` : "No major local source"}${environmentalQuality.mitigations.length ? ` · Relief: ${environmentalQuality.mitigations.join(" · ")}` : ""}</small>
     </div>
     ${accessibilityEntrance ? `
       <div class="parcel-line">
@@ -6726,6 +6735,22 @@ function updateCityViewPanel() {
       `${averageValue}/100 average land value`,
       `${pressured} developed parcels are below 45. Values combine reliable utilities, neighborhood services, park access, road speed and traffic noise, zoning, tax pressure, and district policy.`,
       "Red|Low value;Amber|Stable;Green|High value;Economy|Change taxes and policy"
+    );
+  } else if (cityView === "pollution") {
+    const quality = world.lots
+      .filter(lot => lot.zone !== "unassigned")
+      .map(lot => world.lotEnvironmentalQuality(lot));
+    const averageQuality = quality.length
+      ? Math.round(quality.reduce((total, item) => total + item.score, 0) / quality.length)
+      : 0;
+    const unhealthy = quality.filter(item => item.score < 42).length;
+    const strained = quality.filter(item => item.score >= 42 && item.score < 60).length;
+    legendCopy.textContent = "Unhealthy · clean";
+    setPanel(
+      "ENVIRONMENTAL HEALTH",
+      `${averageQuality}% average environmental quality`,
+      `${unhealthy} parcels are unhealthy and ${strained} are strained. Air quality, noise, and ground pollution respond to live traffic, speed, industry, waste, sewage, parks, street trees, recycling, and heavy-traffic policy.`,
+      "Red|Unhealthy;Amber|Strained;Green|Healthy;Inspect|See sources and relief"
     );
   } else if (cityView === "environment") {
     const highRisk = world.lots.filter(lot => world.lotFloodRisk(lot) === "high").length;

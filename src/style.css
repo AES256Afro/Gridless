@@ -1572,6 +1572,7 @@ kbd {
 .city-view-legend.normal i { background: linear-gradient(90deg, #87977f, #b7b4aa, #8e8ca0); }
 .city-view-legend.traffic i { background: linear-gradient(90deg, #68b77c, #e8c96a, #d95f52); }
 .city-view-legend.land-value i { background: linear-gradient(90deg, #d95f52, #e8c96a, #68b77c); }
+.city-view-legend.pollution i { background: linear-gradient(90deg, #a94f4f, #c8a958, #64b57d); }
 .city-view-legend.development i { background: linear-gradient(90deg, #66716a, #d7a956, #70b4d0); }
 .city-view-legend.voices i { background: linear-gradient(90deg, #d36d62, #e1b866, #71b889); }
 .panel.voices-open { width: 350px; }
