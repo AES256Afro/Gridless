@@ -780,6 +780,9 @@ kbd {
 .resident-profile-preview { padding: 12px; border-radius: 10px; margin-top: 12px; background: rgba(109,169,200,.1); }
 .resident-profile-preview strong { display: block; margin-top: 4px; font-size: 15px; }
 .resident-profile-preview p { margin: 3px 0 0; color: #aebbb1; font-size: 11px; }
+.resident-outfit-preview { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
+.resident-outfit-preview i { width: 15px; height: 15px; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; }
+.resident-outfit-preview small { margin-left: 3px; color: #dce5dd; font-size: 10px; font-style: normal; }
 .resident-creator-actions { justify-content: flex-end; margin-top: 10px; }
 .resident-creator-actions button { padding: 10px 14px; }
 .resident-creator-actions .primary { color: #172019; background: #f0d980; }
@@ -986,6 +989,23 @@ kbd {
   flex-basis: 100%;
   color: #899a90;
   font-size: 8px;
+}
+.resident-outfit-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 7px;
+}
+.resident-outfit-editor label { display: grid; gap: 2px; color: #829289; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.resident-outfit-editor select {
+  min-width: 0;
+  padding: 4px 5px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 5px;
+  color: #d8e3da;
+  background: rgba(255,255,255,.05);
+  font: inherit;
+  text-transform: none;
 }
 .resident-personality {
   display: grid;

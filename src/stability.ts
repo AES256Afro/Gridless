@@ -3,6 +3,8 @@ import {
   RESIDENT_CAREER_TRACK_DEFINITIONS,
   RESIDENT_LIFE_STAGE_DEFINITIONS,
   RESIDENT_LIFE_STAGES,
+  RESIDENT_OUTFIT_DEFINITIONS,
+  RESIDENT_OUTFIT_PALETTES,
   RESIDENT_PASTIME_DEFINITIONS,
   RESIDENT_PERSONAL_ITEM_DEFINITIONS,
   RESIDENT_PURCHASES,
@@ -640,9 +642,14 @@ function integrityFailures(world: World) {
       )) failures.push(`Resident ${resident.id} has an invalid personality matrix.`);
       const decorPreference = world.residentDecorPreference(resident);
       const pastime = world.residentFavoritePastime(resident);
+      const outfitStyle = world.residentOutfitStyle(resident);
+      const outfitPalette = world.residentOutfitPalette(resident);
       const personalItems = world.residentPersonalItems(resident);
       if (!VALID_HOME_FURNITURE_STYLES.has(decorPreference)) failures.push(`Resident ${resident.id} has an invalid decor preference.`);
       if (!RESIDENT_PASTIME_DEFINITIONS[pastime]) failures.push(`Resident ${resident.id} has an invalid favorite pastime.`);
+      if (!RESIDENT_OUTFIT_DEFINITIONS[outfitStyle] || !RESIDENT_OUTFIT_PALETTES[outfitPalette]) {
+        failures.push(`Resident ${resident.id} has an invalid outfit profile.`);
+      }
       if (
         personalItems.length > Object.keys(RESIDENT_PERSONAL_ITEM_DEFINITIONS).length
         || new Set(personalItems.map(item => item.id)).size !== personalItems.length

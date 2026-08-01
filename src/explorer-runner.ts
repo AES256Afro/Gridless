@@ -1531,6 +1531,8 @@ check(
     careerTrack: "civic",
     decorPreference: "dark",
     favoritePastime: "reading",
+    outfitStyle: "formal",
+    outfitPalette: "sunset",
     personality: {
       cleanliness: 88,
       spontaneity: 34,
@@ -1549,9 +1551,18 @@ check(
     && residentCreatorHome.residents[0].personality?.emotionality === 28
     && residentCreatorWorld.residentDecorPreference(residentCreatorHome.residents[0]) === "dark"
     && residentCreatorWorld.residentFavoritePastime(residentCreatorHome.residents[0]) === "reading"
+    && residentCreatorWorld.residentOutfitStyle(residentCreatorHome.residents[0]) === "formal"
+    && residentCreatorWorld.residentOutfitPalette(residentCreatorHome.residents[0]) === "sunset"
     && residentCreatorWorld.residentMilestones(residentCreatorHome.residents[0])[0]?.kind === "arrival"
     && residentCreatorHome.name === "Morgan Lee's household",
   "Resident creator did not preserve the authored profile or household name."
+);
+check(
+  residentCreatorWorld.setResidentOutfit(residentCreatorHome.id, residentCreatorHome.residents[0].id, "active", "ocean")
+    && residentCreatorWorld.residentOutfitLabel(residentCreatorHome.residents[0]) === "Active · Ocean"
+    && residentCreatorWorld.setResidentOutfit(residentCreatorHome.id, residentCreatorHome.residents[0].id, "formal", "sunset")
+    && residentCreatorWorld.residentOutfitLabel(residentCreatorHome.residents[0]) === "Formal · Sunset",
+  "Resident wardrobe changes did not update the persistent profile."
 );
 const personalWorld = new World();
 const personalHome = structuredClone(residentCreatorHome);
@@ -1611,6 +1622,8 @@ check(
     && restoredPersonalWorld.homes[0].residents[0].inventory?.[0].kind === "book-set"
     && restoredPersonalWorld.residentDecorPreference(restoredPersonalWorld.homes[0].residents[0]) === "dark"
     && restoredPersonalWorld.residentFavoritePastime(restoredPersonalWorld.homes[0].residents[0]) === "reading"
+    && restoredPersonalWorld.residentOutfitStyle(restoredPersonalWorld.homes[0].residents[0]) === "formal"
+    && restoredPersonalWorld.residentOutfitPalette(restoredPersonalWorld.homes[0].residents[0]) === "sunset"
     && restoredPersonalWorld.residentMilestones(restoredPersonalWorld.homes[0].residents[0])[0]?.kind === "collection",
   "Personal preferences, inventory, milestone, or furniture ownership was lost during persistence."
 );
@@ -1706,6 +1719,8 @@ const legacyPersonalityResident = legacyPersonalitySnapshot.homes[0].residents[0
 delete legacyPersonalityResident.personality;
 delete legacyPersonalityResident.decorPreference;
 delete legacyPersonalityResident.favoritePastime;
+delete legacyPersonalityResident.outfitStyle;
+delete legacyPersonalityResident.outfitPalette;
 legacyPersonalityResident.inventory = [
   { id: "legacy-books", kind: "book-set", acquiredAt: 99_999 },
   { id: "duplicate-books", kind: "book-set", acquiredAt: 99_999 },
@@ -1721,11 +1736,13 @@ check(
     )
     && personalityMigrationWorld.residentDecorPreference(personalityMigrationWorld.homes[0].residents[0]) === "colorful"
     && personalityMigrationWorld.residentFavoritePastime(personalityMigrationWorld.homes[0].residents[0]) === "cooking"
+    && personalityMigrationWorld.residentOutfitStyle(personalityMigrationWorld.homes[0].residents[0]) === "smart"
+    && personalityMigrationWorld.residentOutfitPalette(personalityMigrationWorld.homes[0].residents[0]) === "bright"
     && personalityMigrationWorld.homes[0].residents[0].inventory?.length === 2
     && new Set(personalityMigrationWorld.homes[0].residents[0].inventory?.map(item => item.id)).size === 2
     && personalityMigrationWorld.homes[0].residents[0].inventory?.[0].acquiredAt === 0
     && personalityMigrationWorld.homes[0].furniture[0].ownerResidentId === undefined,
-  "A legacy resident did not receive safe personality, preference, inventory, and ownership migration."
+  "A legacy resident did not receive safe personality, preference, outfit, inventory, and ownership migration."
 );
 residentCreatorHome.residents[0].careerXp = 38;
 residentCreatorWorld.advanceMinutes(24 * 60, 0);
@@ -2938,6 +2955,7 @@ console.log(JSON.stringify({
   personalInventory: personalResident.inventory?.map(item => item.kind),
   ownedFurniture: personalWorld.residentOwnedFurniture(personalHome, personalResident).length,
   belongingSatisfaction: personalWorld.residentOwnershipSatisfaction(personalHome, personalResident),
+  residentOutfit: personalWorld.residentOutfitLabel(personalResident),
   directResidentAction: directControlHome.residents[0].lastActionKind,
   directedActionsCompleted: directControlHome.residents[0].completedActions,
   controlledResidentEnergy: directControlHome.residents[0].energy,
