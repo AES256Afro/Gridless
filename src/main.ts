@@ -121,7 +121,7 @@ import {
   resolveInteriorMovement,
   worldToLotLocal
 } from "./interiors";
-import { approveHomeMoveIn, assessHomeReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import {
   detectStreetIntersections,
   trafficSignalState,
@@ -556,6 +556,7 @@ app.innerHTML = `
         <option value="slate">Slate · $12/m²</option>
       </select></label>
       <span id="room-condition">Pristine · 100%</span>
+      <span id="room-readiness">Room readiness unavailable</span>
       <label>Room claim<select id="room-resident-claim"><option value="">Clear room claims</option></select></label>
       <span id="room-claim-status">No resident claim</span>
       <button id="assign-room-resident">Assign room</button>
@@ -5908,6 +5909,10 @@ function updateRoomEditor(home: Home | null) {
   const roomNameInput = document.querySelector<HTMLInputElement>("#room-name-input")!;
   if (document.activeElement !== roomNameInput) roomNameInput.value = room.name ?? "";
   document.querySelector("#room-condition")!.textContent = `${world.homeConditionLabel(roomCondition)} · ${roomCondition}%`;
+  const roomReadiness = assessRoomReadiness(world, home, room);
+  const roomReadinessElement = document.querySelector<HTMLElement>("#room-readiness")!;
+  roomReadinessElement.textContent = `Room readiness ${roomReadiness.score}% · ${roomReadiness.status}${roomReadiness.issues[0] ? ` · ${roomReadiness.issues[0]}` : " · all checks passed"}`;
+  roomReadinessElement.classList.toggle("warning", roomReadiness.status !== "Ready");
   const renovate = document.querySelector<HTMLButtonElement>("#renovate-room")!;
   renovate.disabled = !renovationCost;
   renovate.textContent = renovationCost ? `Renovate · ${formatHomeCurrency(renovationCost)}` : "Pristine · 100%";
@@ -5995,6 +6000,7 @@ function updateHouseholdSummary(home: Home) {
     const readiness = assessHomeReadiness(world, home);
     const moveInAuthorization = homeMoveInAuthorization(world, home);
     const moveInGoals = homeMoveInGoals(world, home);
+    const roomReadiness = home.rooms.map(room => assessRoomReadiness(world, home, room));
     const unreachableRooms = home.rooms
       .filter(room => circulation.unreachableRoomIds.includes(room.id))
       .map(room => `${homeRoomLabel(room)} on Floor ${homeEntityFloor(room) + 1}`);
@@ -6030,6 +6036,7 @@ function updateHouseholdSummary(home: Home) {
         <div title="${moveInAuthorization.reason}"><span>Move-in decision</span><strong>${moveInAuthorization.status}${moveInAuthorization.approvedScore ? ` · ${moveInAuthorization.approvedScore}%` : ""}</strong></div>
         <div title="${moveInGoals.map(goal => `${goal.label}: ${goal.complete ? "complete" : goal.detail}`).join(" · ") || "No goals pinned"}"><span>Move-in goals</span><strong>${moveInGoals.filter(goal => goal.complete).length}/${moveInGoals.length || 0} complete</strong></div>
         <div><span>First night</span><strong>${home.firstNightAt !== undefined ? `Complete · +${home.firstNightComfortGain ?? 0} comfort` : "Not begun"}</strong></div>
+        <div title="${roomReadiness.flatMap(result => result.issues).join(" · ") || "Every room passes its live purpose, access, daylight, condition, clearance, and egress checks."}"><span>Ready rooms</span><strong>${roomReadiness.filter(result => result.status === "Ready").length}/${roomReadiness.length}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
         <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>

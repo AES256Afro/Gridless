@@ -28,7 +28,7 @@ import { buildingProgram } from "./building-program";
 import { cityAdvisorActions } from "./advisor";
 import { homeAdvisorActions } from "./home-advisor";
 import { filterHomeCatalog, normalizeHomeCatalogFavorites } from "./home-catalog";
-import { approveHomeMoveIn, assessHomeReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
+import { approveHomeMoveIn, assessHomeReadiness, assessRoomReadiness, beginApprovedHomeFirstNight, homeMoveInAuthorization, homeMoveInGoals, pinSuggestedHomeMoveInGoals } from "./home-readiness";
 import { recordActivity } from "./activity";
 import {
   assessAccessibleTrip,
@@ -1830,6 +1830,8 @@ safeHome.windows = [
   { id: "safety-window-b", roomId: "room-b", floor: 0, orientation: "z", side: "negative", boundary: -3, center: 6, width: 1.3, glazing: "clear" }
 ];
 const safeAudit = homeSafetyAudit(safeHome);
+const unsafeRoomReadiness = assessRoomReadiness(roomClaimWorld, unsafeHome, unsafeHome.rooms[1]);
+const safeRoomReadiness = assessRoomReadiness(roomClaimWorld, safeHome, safeHome.rooms[0]);
 const unsafeReadiness = assessHomeReadiness(roomClaimWorld, unsafeHome);
 const safeReadiness = assessHomeReadiness(roomClaimWorld, safeHome);
 const moveInApprovalWorld = new World();
@@ -1857,6 +1859,16 @@ check(
     && safeAudit.egressCoverage === 100
     && safeAudit.score > unsafeAudit.score,
   "Whole-home safety auditing did not respond to connected wide egress and escape windows."
+);
+check(
+  unsafeRoomReadiness.status === "Unsafe"
+    && unsafeRoomReadiness.components.access === 0
+    && unsafeRoomReadiness.components.egress === 0
+    && unsafeRoomReadiness.issues.some(issue => issue.includes("doorway"))
+    && safeRoomReadiness.status === "Ready"
+    && safeRoomReadiness.components.purpose === 100
+    && safeRoomReadiness.issues.length === 0,
+  "Room readiness did not explain and resolve purpose, access, or sleeping-room egress failures."
 );
 check(
   unsafeReadiness.status === "Unsafe"
@@ -4494,6 +4506,7 @@ console.log(JSON.stringify({
   homeMoveInDecision: { approved: activeMoveInAuthorization, suspended: suspendedMoveInAuthorization },
   homeMoveInGoals: { unsafe: unsafeMoveInGoals, corrected: correctedMoveInGoals },
   homeFirstNight: { residents: firstNight.residents, comfortGain: firstNight.comfortGain, action: safeHome.residents[0].currentAction?.kind },
+  roomReadiness: { unsafe: unsafeRoomReadiness, safe: safeRoomReadiness },
   roomDuplication: {
     cost: duplicatedRoom.cost,
     copiedFurniture: duplicatedRoom.copiedFurniture,
