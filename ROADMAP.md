@@ -427,6 +427,7 @@ Exit gate: a player can build a distinctive two-story home, furnish it efficient
 - [Complete] Career branches use physical city workplaces, named rosters, active attendance, track-specific tasks, performance history, visible coworker and customer agents, live service pressure, and persistent customer-backed business ledgers across all three scales.
 - [Complete] Add persistent invitations, four gathering types, visible visitors, schedule conflicts, celebration outcomes, and cross-scale context.
 - [Complete] Add live room-by-room readiness audits for purpose, access, daylight, condition, clearance, and sleeping-room egress, with direct correction advice in Home Simulator.
+- [Complete] Connect readiness evidence to a deterministic next-room workflow that jumps to the worst issue and cycles through the remaining home corrections.
 - [Complete] Derive lasting relationship-specific Warmth, Loyalty, Wariness, and Resentment from bounded social memories, then use those impressions in autonomous partner choice and future conversation outcomes.
 - [In progress] Directed and autonomous childcare, linked-dependent need recovery, caregiver skill growth, family-bond memories, and individual household moves are live; whole-household splits remain ahead.
 
