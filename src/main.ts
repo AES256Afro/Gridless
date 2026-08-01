@@ -55,6 +55,7 @@ import {
   type HomeFurnitureStyle,
   type HomeFurnitureVariant,
   type HomeRoomKind,
+  type HomeWindowGlazing,
   type HomeWallFinish,
   type HouseholdGatheringKind,
   type Lot,
@@ -139,7 +140,7 @@ import {
 
 type Mode = "city" | "explore" | "home";
 type HomeFurnitureKind = Home["furniture"][number]["kind"];
-type HomeTool = "select" | "room" | "stairs" | HomeFurnitureKind;
+type HomeTool = "select" | "room" | "stairs" | "window" | HomeFurnitureKind;
 type CityTool = "road" | "inspect" | "service" | "utility" | "parking" | "curb" | "event" | "transit" | "access" | Exclude<Zone, "unassigned">;
 type CityToolGroup = "build" | "zone" | "services" | "mobility" | "economy" | "events" | "views";
 type CityView = "normal" | "traffic" | "utilities" | "wellbeing" | "development" | "land-value" | "environment" | "pollution" | "voices";
@@ -450,6 +451,12 @@ app.innerHTML = `
       <button id="add-home-floor" type="button">+ Floor · $12k</button>
       <button id="remove-home-floor" type="button" disabled>Remove top</button>
       <button data-home-tool="stairs">Place stairs · $4.8k</button>
+      <button data-home-tool="window">Place window · $900</button>
+      <select id="home-window-glazing" aria-label="Window glazing">
+        <option value="clear">Clear glass</option>
+        <option value="privacy">Privacy glass · +$200</option>
+      </select>
+      <button id="remove-home-window" type="button" disabled>Remove window</button>
       <div class="tool-divider"></div>
       <select id="home-catalog" aria-label="Home object catalog">
         <optgroup label="Living">
@@ -763,6 +770,7 @@ let explorerInteriorFloor = 0;
 let homeDraft: Point2 | null = null;
 let selectedFurnitureId: string | null = null;
 let selectedRoomId: string | null = null;
+let selectedHomeWindowId: string | null = null;
 let movingFurnitureId: string | null = null;
 let homePreviewPoint: Point2 | null = null;
 let yaw = Math.PI;
@@ -3857,7 +3865,26 @@ function renderDraft() {
     const home = currentHome();
     const movingItem = home?.furniture.find(item => item.id === movingFurnitureId);
     const kind = movingItem?.kind ?? (isHomeFurnitureKind(homeTool) ? homeTool : null);
-    if (home && kind) {
+    if (home && homeTool === "window") {
+      const glazing = (document.querySelector("#home-window-glazing") as HTMLSelectElement).value as HomeWindowGlazing;
+      const placement = world.previewHomeWindow(home, homePreviewPoint, homeFloor, glazing);
+      const cost = world.homeWindowCost(glazing);
+      const valid = Boolean(placement) && world.homeRemainingBudget(home) >= cost;
+      const localPosition = placement
+        ? {
+            x: placement.orientation === "z" ? placement.center : placement.boundary + (placement.side === "negative" ? -.11 : .11),
+            z: placement.orientation === "z" ? placement.boundary + (placement.side === "negative" ? -.11 : .11) : placement.center
+          }
+        : homePreviewPoint;
+      const preview = new THREE.Mesh(
+        new THREE.BoxGeometry(placement?.width ?? 1.3, 1.1, .08),
+        new THREE.MeshBasicMaterial({ color: valid ? 0x73c68b : 0xd96c5f, transparent: true, opacity: .7, depthWrite: false })
+      );
+      const worldPosition = localToWorld(localPosition, selectedLot);
+      preview.position.set(worldPosition.x, 1.88, worldPosition.z);
+      preview.rotation.y = selectedLot.rotation + (placement?.orientation === "x" ? Math.PI / 2 : 0);
+      previewGroup.add(preview);
+    } else if (home && kind) {
       const rotation = movingItem?.rotation ?? 0;
       const activeFloor = movingItem ? homeEntityFloor(movingItem) : homeFloor;
       const valid = world.canPlaceFurniture(home, kind, homePreviewPoint.x, homePreviewPoint.z, rotation, movingItem?.id, activeFloor);
@@ -4677,6 +4704,9 @@ function renderHome() {
   if (selectedRoomId && !floorHome.rooms.some(room => room.id === selectedRoomId)) {
     selectedRoomId = null;
   }
+  if (selectedHomeWindowId && !floorHome.windows?.some(window => window.id === selectedHomeWindowId)) {
+    selectedHomeWindowId = null;
+  }
   lastHomeActionSignature = home.residents.map(resident =>
     `${resident.id}:${resident.homeFloor ?? 0}:${world.activeResidentAction(resident)?.kind ?? world.residentStatus(resident)}:${Math.floor(world.residentActionProgress(resident) * 10)}:${world.residentWellbeing(resident).score}`
   ).join("|");
@@ -4968,6 +4998,12 @@ function addHomeRoomWindows(
   room: Home["rooms"][number],
   exteriorDoorway: ReturnType<typeof interiorExteriorDoorway>
 ) {
+  if (home.windows !== undefined) {
+    for (const window of home.windows.filter(candidate => candidate.roomId === room.id)) {
+      addAuthoredHomeWindow(window, mode === "home" && selectedHomeWindowId === window.id);
+    }
+    return;
+  }
   const frosted = room.kind === "Bathroom" || room.kind === "Nursery";
   for (const wall of homeRoomExteriorWalls(home, room)) {
     const length = wall.end - wall.start;
@@ -5021,6 +5057,56 @@ function addHomeRoomWindows(
       homeGroup.add(group);
     }
   }
+}
+
+function addAuthoredHomeWindow(window: NonNullable<Home["windows"]>[number], selected: boolean) {
+  const group = new THREE.Group();
+  const privacy = window.glazing === "privacy";
+  const glass = new THREE.Mesh(
+    new THREE.PlaneGeometry(window.width, 1.08),
+    new THREE.MeshStandardMaterial({
+      color: privacy ? 0xc9d8d2 : 0x86b4c4,
+      emissive: privacy ? 0x263632 : 0x19323b,
+      emissiveIntensity: selected ? .42 : .18,
+      metalness: .05,
+      roughness: privacy ? .72 : .26,
+      transparent: true,
+      opacity: privacy ? .84 : .72,
+      side: THREE.DoubleSide
+    })
+  );
+  group.add(glass);
+  const frameMaterial = new THREE.MeshStandardMaterial({
+    color: selected ? 0xf0d980 : 0xe6e1d4,
+    emissive: selected ? 0x554713 : 0x000000,
+    emissiveIntensity: selected ? .28 : 0,
+    roughness: .78
+  });
+  for (const horizontal of [-.59, .59]) {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(window.width + .16, .08, .06), frameMaterial);
+    frame.position.y = horizontal;
+    group.add(frame);
+  }
+  for (const vertical of [-window.width / 2 - .04, window.width / 2 + .04]) {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(.08, 1.24, .06), frameMaterial);
+    frame.position.x = vertical;
+    group.add(frame);
+  }
+  const sideOffset = window.side === "negative" ? -.101 : .101;
+  if (window.orientation === "z") {
+    group.position.set(window.center, 1.68, window.boundary + sideOffset);
+  } else {
+    group.position.set(window.boundary + sideOffset, 1.68, window.center);
+    group.rotation.y = Math.PI / 2;
+  }
+  group.userData.homeWindow = true;
+  group.userData.homeWindowId = window.id;
+  group.userData.roomId = window.roomId;
+  group.traverse(object => {
+    object.userData.homeWindowId = window.id;
+    object.userData.roomId = window.roomId;
+  });
+  homeGroup.add(group);
 }
 
 function addSegmentedHomeWall(
@@ -5382,6 +5468,7 @@ function closeResidentCreator() {
 
 function updateHomeBuildControls(home: Home | null) {
   const selected = home?.furniture.find(item => item.id === selectedFurnitureId) ?? null;
+  const selectedWindow = home?.windows?.find(item => item.id === selectedHomeWindowId) ?? null;
   const move = document.querySelector<HTMLButtonElement>("#move-furniture")!;
   const rotate = document.querySelector<HTMLButtonElement>("#rotate-furniture")!;
   const style = document.querySelector<HTMLSelectElement>("#furniture-style")!;
@@ -5395,6 +5482,8 @@ function updateHomeBuildControls(home: Home | null) {
   const floorSelect = document.querySelector<HTMLSelectElement>("#home-floor")!;
   const addFloor = document.querySelector<HTMLButtonElement>("#add-home-floor")!;
   const removeFloor = document.querySelector<HTMLButtonElement>("#remove-home-floor")!;
+  const removeWindow = document.querySelector<HTMLButtonElement>("#remove-home-window")!;
+  const windowGlazing = document.querySelector<HTMLSelectElement>("#home-window-glazing")!;
   floorSelect.replaceChildren(...Array.from({ length: home?.floors ?? 1 }, (_, floor) => new Option(`Floor ${floor + 1}`, String(floor))));
   if (home) homeFloor = Math.max(0, Math.min(home.floors - 1, homeFloor));
   floorSelect.value = String(homeFloor);
@@ -5402,6 +5491,11 @@ function updateHomeBuildControls(home: Home | null) {
   addFloor.disabled = !home || home.floors >= MAX_HOME_FLOORS || world.homeRemainingBudget(home) < HOME_BUILD_COSTS.floorShell;
   addFloor.textContent = home && home.floors >= MAX_HOME_FLOORS ? `Max ${MAX_HOME_FLOORS} floors` : "+ Floor · $12k";
   removeFloor.disabled = !home || home.floors <= 1;
+  removeWindow.disabled = !selectedWindow;
+  removeWindow.textContent = selectedWindow
+    ? `Remove ${selectedWindow.glazing} window · ${formatHomeCurrency(world.homeWindowCost(selectedWindow.glazing) * .5)}`
+    : "Remove window";
+  windowGlazing.disabled = !home;
   move.disabled = !selected;
   rotate.disabled = !selected;
   style.disabled = !selected;
@@ -5986,6 +6080,7 @@ function setMode(next: Mode) {
   if (next !== "home") {
     selectedFurnitureId = null;
     selectedRoomId = null;
+    selectedHomeWindowId = null;
     movingFurnitureId = null;
     homePreviewPoint = null;
   }
@@ -6870,12 +6965,25 @@ renderer.domElement.addEventListener("pointerdown", event => {
   raycaster.setFromCamera(pointer, camera);
   if (mode === "home") {
     const home = currentHome();
+    const homeWindowHit = raycaster
+      .intersectObjects(homeGroup.children, true)
+      .find(item => item.object.userData.homeWindowId);
+    if (homeTool === "select" && !movingFurnitureId && home && homeWindowHit) {
+      selectedHomeWindowId = homeWindowHit.object.userData.homeWindowId as string;
+      selectedFurnitureId = null;
+      selectedRoomId = null;
+      renderHome();
+      const selected = home.windows?.find(item => item.id === selectedHomeWindowId);
+      if (selected) notice(`${selected.glazing === "privacy" ? "Privacy" : "Clear"} window selected · ${world.roomDaylight(home, home.rooms.find(room => room.id === selected.roomId)!)}% room daylight`);
+      return;
+    }
     const furnitureHit = raycaster
       .intersectObjects(homeGroup.children, true)
       .find(item => item.object.userData.furnitureId);
     if (homeTool === "select" && !movingFurnitureId && home && furnitureHit) {
       selectedFurnitureId = furnitureHit.object.userData.furnitureId as string;
       selectedRoomId = null;
+      selectedHomeWindowId = null;
       renderHome();
       const selected = home.furniture.find(item => item.id === selectedFurnitureId);
       if (selected) {
@@ -6890,6 +6998,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     if (homeTool === "select" && !movingFurnitureId && home && roomHit) {
       selectedRoomId = roomHit.object.userData.roomId as string;
       selectedFurnitureId = null;
+      selectedHomeWindowId = null;
       renderHome();
       const room = home.rooms.find(item => item.id === selectedRoomId);
       if (room) notice(`${room.kind} selected. Choose its floor and wall finishes.`);
@@ -6929,6 +7038,7 @@ renderer.domElement.addEventListener("pointerdown", event => {
     if (homeTool === "select") {
       selectedFurnitureId = null;
       selectedRoomId = null;
+      selectedHomeWindowId = null;
       renderHome();
       notice("Selection cleared");
       return;
@@ -6963,6 +7073,17 @@ renderer.domElement.addEventListener("pointerdown", event => {
         notice("Add an upper floor before placing stairs");
       } else {
         notice("Stairs need overlapping rooms on this floor and the floor above");
+      }
+    } else if (homeTool === "window") {
+      const glazing = (document.querySelector("#home-window-glazing") as HTMLSelectElement).value as HomeWindowGlazing;
+      const cost = world.homeWindowCost(glazing);
+      if (world.addHomeWindow(home.id, point, homeFloor, glazing)) {
+        renderWorld();
+        notice(`${glazing === "privacy" ? "Privacy" : "Clear"} window placed for ${formatHomeCurrency(cost)} · home daylight ${world.homeDaylight(home)}%`);
+      } else {
+        notice(world.homeRemainingBudget(home) < cost
+          ? `${formatHomeCurrency(cost)} needed. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains`
+          : "Windows snap to an open exterior wall and cannot overlap");
       }
     } else {
       if (world.addFurniture(home.id, homeTool, point.x, point.z, homeFloor)) {
@@ -7995,6 +8116,7 @@ function activateHomeTool(next: HomeTool) {
   movingFurnitureId = null;
   if (homeTool !== "select") selectedFurnitureId = null;
   if (homeTool !== "select") selectedRoomId = null;
+  if (homeTool !== "select") selectedHomeWindowId = null;
   renderDraft();
   renderHome();
   document.querySelectorAll<HTMLButtonElement>("[data-home-tool]").forEach(item => item.classList.toggle("active", item.dataset.homeTool === homeTool));
@@ -8003,6 +8125,8 @@ function activateHomeTool(next: HomeTool) {
     ? "Click two corners to draw a room"
     : homeTool === "stairs"
       ? `Place stairs in overlapping rooms on Floor ${homeFloor + 1} and Floor ${homeFloor + 2}`
+    : homeTool === "window"
+      ? "Move along an exterior wall, then click to place a window"
     : homeTool === "select"
       ? "Inspect mode"
       : `Click inside the home to place a ${homeFurnitureLabel(homeTool)}`);
@@ -8017,6 +8141,7 @@ document.querySelector("#home-floor")!.addEventListener("change", event => {
   homeFloor = Math.max(0, Math.min(home.floors - 1, Number((event.currentTarget as HTMLSelectElement).value)));
   selectedFurnitureId = null;
   selectedRoomId = null;
+  selectedHomeWindowId = null;
   movingFurnitureId = null;
   homeDraft = null;
   renderHome();
@@ -8045,6 +8170,7 @@ document.querySelector("#remove-home-floor")!.addEventListener("click", () => {
   homeFloor = Math.min(homeFloor, home.floors - 1);
   selectedFurnitureId = null;
   selectedRoomId = null;
+  selectedHomeWindowId = null;
   activateHomeTool("select");
   renderWorld();
   notice(`Top floor removed. This home now has ${home.floors} floor${home.floors === 1 ? "" : "s"}.`);
@@ -8057,6 +8183,22 @@ document.querySelector("#home-catalog")!.addEventListener("change", event => {
 document.querySelector("#place-catalog-item")!.addEventListener("click", () => {
   const kind = (document.querySelector("#home-catalog") as HTMLSelectElement).value as HomeFurnitureKind;
   activateHomeTool(kind);
+});
+document.querySelector("#home-window-glazing")!.addEventListener("change", event => {
+  const glazing = (event.currentTarget as HTMLSelectElement).value as HomeWindowGlazing;
+  const button = document.querySelector<HTMLButtonElement>('[data-home-tool="window"]')!;
+  button.textContent = `Place ${glazing === "privacy" ? "privacy " : ""}window · ${formatHomeCurrency(world.homeWindowCost(glazing))}`;
+  renderDraft();
+  if (homeTool === "window") notice(`${glazing === "privacy" ? "Privacy glass softens daylight and blocks direct views" : "Clear glass maximizes daylight"}`);
+});
+document.querySelector("#remove-home-window")!.addEventListener("click", () => {
+  const home = currentHome();
+  const window = home?.windows?.find(candidate => candidate.id === selectedHomeWindowId);
+  if (!home || !window || !world.removeHomeWindow(home.id, window.id)) return;
+  const refund = world.homeWindowCost(window.glazing) * .5;
+  selectedHomeWindowId = null;
+  renderWorld();
+  notice(`Window removed · ${formatHomeCurrency(refund)} returned · home daylight ${world.homeDaylight(home)}%`);
 });
 document.querySelector("#move-furniture")!.addEventListener("click", () => {
   const home = currentHome();
@@ -8206,6 +8348,7 @@ document.querySelector("#delete-room")!.addEventListener("click", () => {
   }
   selectedRoomId = null;
   selectedFurnitureId = null;
+  selectedHomeWindowId = null;
   movingFurnitureId = null;
   renderWorld();
   notice(`${room.kind} removed. Exclusive furnishings were sold automatically.`);

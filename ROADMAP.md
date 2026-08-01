@@ -44,7 +44,7 @@ Every foundation must remain editable. Their value comes from distinct constrain
 
 ### Home Simulator build order
 
-- **Structure:** room drawing, up to four persistent floor levels, floor-aware rooms and furnishings, paid floor shells, placeable stair links, Explorer stair navigation, eight room purposes, selectable plans, persistent floor and wall finishes, and safe top-floor removal are live; manual doors, windows, roofs, split levels, and foundation choices remain ahead
+- **Structure:** room drawing, up to four persistent floor levels, floor-aware rooms and furnishings, paid floor shells, placeable stair links, Explorer stair navigation, eight room purposes, selectable plans, persistent floor and wall finishes, safe top-floor removal, and authored exterior windows are live; manual doors, roofs, split levels, and foundation choices remain ahead
 - **Furnishing:** a categorized eight-object catalog, four persistent style swatches, resident ownership, purpose-aware one-click starter sets, priced placement, collision-aware rotation, selling, budget, and functional interactions are live; object variants, per-part recolors, free rotation, and snapping choices remain ahead
 - **Households:** resident creator, seven life stages, caregiver lineage, inherited personality, relationships, aspirations, five branching career tracks, physical workplaces and daily tasks, dated life milestones, favorite styles and pastimes, persistent outfits, invitations, visible visitors, celebrations, bounded personal collections, object ownership, skills, needs, schedules, wages, daily expenses, household funds, and three discretionary purchases are live; household splits remain ahead
 - **Guidance:** prioritized household wants are live for residents, beds, crowding, hygiene, meals, comfort, skill growth, relationship tension, and finances; five long-term resident aspirations are live, while player-pinned household goals remain ahead
@@ -388,7 +388,7 @@ Exit gate: a player can reproduce a recognizable real neighborhood street patter
 ### P0: A complete home shell
 
 - [Complete] Rooms and furnishings retain bounded persistent condition, age through occupancy and object use, visibly fade in 3D, influence home quality and resident satisfaction, and can be repaired or renovated from household funds.
-- [In progress] Foundations, floor levels, walls, automatic interior and exterior doorways, stairs, procedural exterior windows, cutaway roofs, privacy glazing, and bounded daylight consequences are live; manual wall, doorway, window, and roof editing remains ahead.
+- [In progress] Foundations, floor levels, walls, automatic interior and exterior doorways, stairs, cutaway roofs, and player-authored exterior windows are live. Windows snap to valid outside wall segments, preserve clear or privacy glazing, charge construction cost, support selection and partial-refund removal, migrate older procedural openings safely, and drive bounded daylight consequences. Manual wall, doorway, and roof editing remains ahead.
 - Add copy, multi-select, eyedropper, room duplication, search, favorites, recolors, and object variants.
 - Preserve valid traversal, furniture clearance, daylight, privacy, accessibility, and construction cost through every edit.
 

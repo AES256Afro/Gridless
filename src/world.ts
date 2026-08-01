@@ -1159,6 +1159,20 @@ export type HomeStair = {
   toFloor: number;
 };
 
+export type HomeWindowGlazing = "clear" | "privacy";
+
+export type HomeWindow = {
+  id: string;
+  roomId: string;
+  floor: number;
+  orientation: "x" | "z";
+  side: "negative" | "positive";
+  boundary: number;
+  center: number;
+  width: number;
+  glazing: HomeWindowGlazing;
+};
+
 export type Home = {
   id: string;
   lotId: string;
@@ -1167,6 +1181,7 @@ export type Home = {
   rooms: HomeRoom[];
   furniture: Array<{ id: string; kind: "sofa" | "table" | "bed" | "plant" | "desk" | "bookcase" | "fridge" | "shower"; x: number; z: number; rotation: number; style?: HomeFurnitureStyle; variant?: HomeFurnitureVariant; tint?: string; floor?: number; ownerResidentId?: string; condition?: number; lastRepairedAt?: number }>;
   stairs?: HomeStair[];
+  windows?: HomeWindow[];
   designBudget: number;
   designSpent: number;
   householdFunds?: number;
@@ -1225,6 +1240,8 @@ export const HOME_BUILD_COSTS = {
   roomPerSquareMeter: 220,
   floorShell: 12_000,
   stairs: 4_800,
+  window: 900,
+  privacyGlazing: 200,
   sofa: 1_400,
   table: 650,
   bed: 1_200,
@@ -1264,6 +1281,7 @@ export function homeFloorView(home: Home, floor: number): Home {
     rooms: home.rooms.filter(room => homeEntityFloor(room) === normalizedFloor),
     furniture: home.furniture.filter(item => homeEntityFloor(item) === normalizedFloor),
     stairs: (home.stairs ?? []).filter(stair => stair.fromFloor === normalizedFloor || stair.toFloor === normalizedFloor),
+    windows: home.windows?.filter(window => window.floor === normalizedFloor),
     residents: home.residents.filter(resident => Math.max(0, Math.round(resident.homeFloor ?? 0)) === normalizedFloor)
   };
 }
@@ -4206,6 +4224,12 @@ export class World {
   }
 
   roomDaylight(home: Home, room: HomeRoom) {
+    if (home.windows !== undefined) {
+      const exposure = home.windows
+        .filter(window => window.roomId === room.id && window.floor === homeEntityFloor(room))
+        .reduce((total, window) => total + window.width * (window.glazing === "privacy" ? .62 : 1), 0);
+      return Math.round(clamp(18 + exposure * 25, 18, 100));
+    }
     const exteriorLength = homeRoomExteriorWalls(home, room)
       .reduce((total, wall) => total + wall.end - wall.start, 0);
     const perimeter = Math.max(1, (room.width + room.depth) * 2);
@@ -5041,13 +5065,16 @@ export class World {
       return insideRemoved && !insideRemaining;
     });
     const removedFurnitureIds = new Set(removedFurniture.map(item => item.id));
+    const removedWindows = (home.windows ?? []).filter(window => window.roomId === roomId);
     const refund = Math.round(room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter * .25)
       + removedFurniture.reduce((total, item) => total + Math.round(HOME_BUILD_COSTS[item.kind] * .5), 0)
+      + removedWindows.reduce((total, window) => total + Math.round(this.homeWindowCost(window.glazing) * .5), 0)
       + Math.round(removedStairCount * HOME_BUILD_COSTS.stairs * .5);
     this.checkpoint();
     home.rooms = remainingRooms;
     home.furniture = home.furniture.filter(item => !removedFurnitureIds.has(item.id));
     home.stairs = remainingStairs;
+    if (home.windows !== undefined) home.windows = home.windows.filter(window => window.roomId !== roomId);
     home.designSpent = Math.max(0, home.designSpent - refund);
     for (const resident of home.residents) {
       if (resident.currentAction?.targetFurnitureId && removedFurnitureIds.has(resident.currentAction.targetFurnitureId)) {
@@ -5084,13 +5111,16 @@ export class World {
     const removedFurniture = home.furniture.filter(item => homeEntityFloor(item) === floor);
     const removedFurnitureIds = new Set(removedFurniture.map(item => item.id));
     const removedStairCount = (home.stairs ?? []).filter(stair => stair.fromFloor === floor - 1 && stair.toFloor === floor).length;
+    const removedWindows = (home.windows ?? []).filter(window => window.floor === floor);
     const removedRoomCost = removedRooms.reduce((total, room) => total + room.width * room.depth * HOME_BUILD_COSTS.roomPerSquareMeter, 0);
     const removedFurnitureCost = removedFurniture.reduce((total, item) => total + HOME_BUILD_COSTS[item.kind], 0);
-    const refund = Math.round(HOME_BUILD_COSTS.floorShell * .35 + removedRoomCost * .25 + removedFurnitureCost * .5 + removedStairCount * HOME_BUILD_COSTS.stairs * .5);
+    const removedWindowCost = removedWindows.reduce((total, window) => total + this.homeWindowCost(window.glazing), 0);
+    const refund = Math.round(HOME_BUILD_COSTS.floorShell * .35 + removedRoomCost * .25 + removedFurnitureCost * .5 + removedWindowCost * .5 + removedStairCount * HOME_BUILD_COSTS.stairs * .5);
     this.checkpoint();
     home.rooms = home.rooms.filter(room => homeEntityFloor(room) !== floor);
     home.furniture = home.furniture.filter(item => homeEntityFloor(item) !== floor);
     home.stairs = (home.stairs ?? []).filter(stair => stair.fromFloor !== floor - 1 && stair.toFloor !== floor);
+    if (home.windows !== undefined) home.windows = home.windows.filter(window => window.floor !== floor);
     home.floors -= 1;
     home.designSpent = Math.max(0, home.designSpent - refund);
     for (const resident of home.residents) {
@@ -5126,6 +5156,67 @@ export class World {
     home.stairs ??= [];
     home.stairs.push({ id: crypto.randomUUID(), x, z, rotation, fromFloor: normalizedFloor, toFloor: normalizedFloor + 1 });
     home.designSpent += HOME_BUILD_COSTS.stairs;
+    return true;
+  }
+
+  homeWindowCost(glazing: HomeWindowGlazing) {
+    return HOME_BUILD_COSTS.window + (glazing === "privacy" ? HOME_BUILD_COSTS.privacyGlazing : 0);
+  }
+
+  previewHomeWindow(home: Home, point: Point2, floor = 0, glazing: HomeWindowGlazing = "clear") {
+    const width = 1.3;
+    const candidates = home.rooms
+      .filter(room => homeEntityFloor(room) === floor)
+      .flatMap(room => homeRoomExteriorWalls(home, room).flatMap(wall => {
+        if (wall.end - wall.start < width + .3) return [];
+        const along = wall.orientation === "z" ? point.x : point.z;
+        const perpendicular = wall.orientation === "z" ? point.z : point.x;
+        const center = clamp(along, wall.start + width / 2 + .1, wall.end - width / 2 - .1);
+        return [{
+          roomId: room.id,
+          floor,
+          orientation: wall.orientation,
+          side: wall.side,
+          boundary: wall.boundary,
+          center,
+          width,
+          glazing,
+          distance: Math.hypot(perpendicular - wall.boundary, along - center)
+        }];
+      }))
+      .sort((first, second) => first.distance - second.distance);
+    const candidate = candidates[0];
+    if (!candidate || candidate.distance > 1.25) return undefined;
+    const overlaps = (home.windows ?? []).some(window =>
+      window.floor === floor
+      && window.orientation === candidate.orientation
+      && Math.abs(window.boundary - candidate.boundary) < .15
+      && Math.abs(window.center - candidate.center) < (window.width + candidate.width) / 2 + .18
+    );
+    if (overlaps) return undefined;
+    const { distance: _distance, ...placement } = candidate;
+    return placement;
+  }
+
+  addHomeWindow(homeId: string, point: Point2, floor = 0, glazing: HomeWindowGlazing = "clear") {
+    const home = this.homes.find(item => item.id === homeId);
+    const cost = this.homeWindowCost(glazing);
+    const placement = home && this.previewHomeWindow(home, point, floor, glazing);
+    if (!home || !placement || this.homeRemainingBudget(home) < cost) return false;
+    this.checkpoint();
+    home.windows ??= [];
+    home.windows.push({ id: crypto.randomUUID(), ...placement });
+    home.designSpent += cost;
+    return true;
+  }
+
+  removeHomeWindow(homeId: string, windowId: string) {
+    const home = this.homes.find(item => item.id === homeId);
+    const window = home?.windows?.find(item => item.id === windowId);
+    if (!home || !window) return false;
+    this.checkpoint();
+    home.windows = home.windows!.filter(item => item.id !== windowId);
+    home.designSpent = Math.max(0, home.designSpent - Math.round(this.homeWindowCost(window.glazing) * .5));
     return true;
   }
 
@@ -5765,6 +5856,10 @@ export class World {
           if (relationship) relationship.score = Math.max(78, relationship.score);
         }
       }
+      const roomFloorById = new Map((home.rooms ?? []).map(room => [
+        room.id,
+        Math.round(clamp(room.floor ?? 0, 0, normalizedFloors - 1))
+      ]));
       return {
         ...home,
         name: savedHomeName.length >= 2
@@ -5804,10 +5899,24 @@ export class World {
           && stair.toFloor === stair.fromFloor + 1
           && stair.toFloor < normalizedFloors
         ),
+        windows: home.windows === undefined
+          ? undefined
+          : home.windows.filter(window =>
+              roomFloorById.get(window.roomId) === window.floor
+              && (window.orientation === "x" || window.orientation === "z")
+              && (window.side === "negative" || window.side === "positive")
+              && Number.isFinite(window.boundary)
+              && Number.isFinite(window.center)
+              && Number.isFinite(window.width)
+              && window.width >= .6
+              && window.width <= 3
+              && (window.glazing === "clear" || window.glazing === "privacy")
+            ).map(window => ({ ...window, width: clamp(window.width, .6, 3) })),
         designBudget: Math.max(0, Math.round(home.designBudget ?? 60_000)),
         designSpent: Math.max(0, Math.round(
           home.designSpent
           ?? (home.furniture ?? []).reduce((total, item) => total + HOME_BUILD_COSTS[item.kind], 0)
+            + (home.windows ?? []).reduce((total, window) => total + this.homeWindowCost(window.glazing), 0)
         )),
         householdFunds: Math.round(clamp(home.householdFunds ?? 15_000, -100_000, 10_000_000)),
         lastDailyIncome: Math.max(0, Math.round(home.lastDailyIncome ?? 0)),
