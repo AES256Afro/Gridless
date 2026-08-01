@@ -1682,6 +1682,22 @@ check(
     && roomClaimWorld.residentRoom(roomClaimHome, "privacy-b")?.id === "room-b",
   "Smart room assignment did not maximize resident fit and household privacy deterministically."
 );
+const residentToPersonalize = roomClaimHome.residents.find(resident => resident.id === "privacy-b")!;
+residentToPersonalize.decorPreference = "colorful";
+const roomFitBeforePersonalization = roomClaimWorld.residentRoomFit(roomClaimHome, residentToPersonalize).score;
+const personalizationFundsBefore = roomClaimWorld.homeHouseholdFunds(roomClaimHome);
+const personalizationCost = roomClaimWorld.residentRoomPersonalizationCost(roomClaimHome, residentToPersonalize.id);
+const personalization = roomClaimWorld.personalizeResidentRoom(roomClaimHome.id, residentToPersonalize.id);
+check(
+  personalization.ok
+    && personalization.cost === personalizationCost
+    && personalization.changed > 0
+    && roomClaimWorld.homeHouseholdFunds(roomClaimHome) === personalizationFundsBefore - personalizationCost
+    && roomClaimWorld.residentRoomFurniture(roomClaimHome, residentToPersonalize.id).every(item => item.ownerResidentId === residentToPersonalize.id && item.style === "colorful")
+    && roomClaimWorld.residentRoomFit(roomClaimHome, residentToPersonalize).score > roomFitBeforePersonalization
+    && !roomClaimWorld.personalizeResidentRoom(roomClaimHome.id, residentToPersonalize.id).ok,
+  "Resident-led room personalization did not apply ownership, preferred decor, cost, and fit atomically."
+);
 const constrainedSpacePlan = roomClaimWorld.homeSpacePlan(roomClaimHome);
 roomClaimHome.furniture.push(
   { id: "space-shower", kind: "shower", x: 5, z: -1, rotation: 0 },
@@ -4222,6 +4238,12 @@ console.log(JSON.stringify({
     mismatchFit: mismatchedPersonalRoom.score,
     personalizedFit: fittedPersonalRoom.score,
     smartAssignment
+  },
+  roomPersonalization: {
+    cost: personalization.cost,
+    changed: personalization.changed,
+    fitBefore: roomFitBeforePersonalization,
+    fitAfter: personalization.score
   },
   householdSpacePlan: {
     constrained: constrainedSpacePlan,
