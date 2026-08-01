@@ -99,6 +99,7 @@ The current vertical slice proves:
 - Enterable Home Simulator interiors reached from their actual City Explorer street entrances with `F`, using the same step-free and clear-width access gate as city wayfinding
 - Persistent one-to-four-story homes with floor-specific rooms and furnishings, paid floor shells, placeable adjacent-floor stairs, safe top-floor removal, resident floor memory, and `E` stair navigation in City Explorer
 - First-person room traversal with exterior and connecting door openings, wall containment, furniture collision, warm interior lighting, and room-aware location readouts
+- Procedural home roofs and exterior-wall windows derived from the actual floor plan, with privacy-aware glazing, door clearance, deterministic room daylight, home-quality consequences, and a live Home Simulator daylight score
 - Selectable Home Simulator rooms with persistent Living Room, Bedroom, Kitchen, Bathroom, Study, Dining Room, Nursery, or Studio purposes; oak, tile, concrete, or carpet floors; warm white, sage, clay, or slate walls; area-based finish costs; protected final-room deletion; automatic furnishing cleanup; and partial refunds
 - Functional-room scoring across sleep, meals, hygiene, relaxation, and study, with visible room-purpose alignment that rewards sensible layouts without blocking unconventional object placement
 - Deterministic one-click starter furnishing for every room purpose, with exact pricing, existing-object recognition, wall and overlap safety, and graceful partial placement when space or design budget is limited

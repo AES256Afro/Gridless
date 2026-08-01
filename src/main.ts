@@ -32,6 +32,7 @@ import {
   normalizeRoadStructure,
   homeEntityFloor,
   homeFloorView,
+  homeRoomExteriorWalls,
   roadCapacityForProfile,
   roadConstructionCost,
   snapRoadDrawingPoint,
@@ -2532,6 +2533,12 @@ function renderWorld() {
       if (progress >= 1 && mode !== "city" && agentLotIds.has(lot.id)) {
         addBuildingWindows(lot, height, darkness, occupiedShare);
       }
+      if (lotHome && progress >= 1 && mode === "explore") {
+        const roof = createHomeRoof(lot.width * .68, lot.depth * .64, shellColor);
+        roof.position.set(lot.center.x, height + .66, lot.center.z);
+        roof.rotation.y = lot.rotation + Math.PI / 4;
+        worldGroup.add(roof);
+      }
     }
     if (progress < 1) {
       const scaffold = new THREE.Mesh(
@@ -4554,6 +4561,17 @@ function renderHome() {
       homeGroup.add(light);
     }
     addHomeRoomWalls(floorHome, room, exteriorDoorway, wornWallColor.getHex());
+    addHomeRoomWindows(floorHome, room, exteriorDoorway);
+  }
+
+  if (mode === "home" && activeFloor === home.floors - 1 && floorHome.rooms.length) {
+    const minX = Math.min(...floorHome.rooms.map(room => room.x - room.width / 2));
+    const maxX = Math.max(...floorHome.rooms.map(room => room.x + room.width / 2));
+    const minZ = Math.min(...floorHome.rooms.map(room => room.z - room.depth / 2));
+    const maxZ = Math.max(...floorHome.rooms.map(room => room.z + room.depth / 2));
+    const roof = createHomeRoof(maxX - minX + .45, maxZ - minZ + .45, 0x625044, true);
+    roof.position.set((minX + maxX) / 2, 3.74, (minZ + maxZ) / 2);
+    homeGroup.add(roof);
   }
 
   for (const item of floorHome.furniture) homeGroup.add(createFurniture(item));
@@ -4635,6 +4653,27 @@ function renderHome() {
     updateRoomEditor(home);
     updateHouseholdSummary(home);
   }
+}
+
+function createHomeRoof(width: number, depth: number, color: number, cutaway = false) {
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(1, 1.35, 4),
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: .88,
+      transparent: cutaway,
+      opacity: cutaway ? .18 : 1,
+      wireframe: cutaway,
+      depthWrite: !cutaway,
+      side: THREE.DoubleSide
+    })
+  );
+  roof.scale.set(width * .72, 1, depth * .72);
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = !cutaway;
+  roof.receiveShadow = !cutaway;
+  roof.userData.homeRoof = true;
+  return roof;
 }
 
 function createHomeStairs(stair: NonNullable<Home["stairs"]>[number], floor: number) {
@@ -4749,6 +4788,66 @@ function addHomeRoomWalls(
       : undefined),
     wallColor
   );
+}
+
+function addHomeRoomWindows(
+  home: Home,
+  room: Home["rooms"][number],
+  exteriorDoorway: ReturnType<typeof interiorExteriorDoorway>
+) {
+  const frosted = room.kind === "Bathroom" || room.kind === "Nursery";
+  for (const wall of homeRoomExteriorWalls(home, room)) {
+    const length = wall.end - wall.start;
+    if (length < 1.6) continue;
+    const desiredCount = Math.max(1, Math.min(3, Math.floor(length / 3.2)));
+    const centers = Array.from({ length: desiredCount }, (_, index) =>
+      wall.start + length * (index + 1) / (desiredCount + 1)
+    ).filter(center => !(
+      exteriorDoorway?.roomId === room.id
+      && exteriorDoorway.orientation === wall.orientation
+      && Math.abs(exteriorDoorway.boundary - wall.boundary) < .2
+      && Math.abs(exteriorDoorway.center - center) < exteriorDoorway.width / 2 + .75
+    ));
+    const windowWidth = Math.min(1.3, length / (desiredCount + 1) * .72);
+    for (const center of centers) {
+      const group = new THREE.Group();
+      const glass = new THREE.Mesh(
+        new THREE.PlaneGeometry(windowWidth, 1.08),
+        new THREE.MeshStandardMaterial({
+          color: frosted ? 0xc9d8d2 : 0x86b4c4,
+          emissive: frosted ? 0x263632 : 0x19323b,
+          emissiveIntensity: .18,
+          metalness: .05,
+          roughness: frosted ? .72 : .26,
+          transparent: true,
+          opacity: frosted ? .82 : .72,
+          side: THREE.DoubleSide
+        })
+      );
+      group.add(glass);
+      const frameMaterial = new THREE.MeshStandardMaterial({ color: 0xe6e1d4, roughness: .78 });
+      for (const horizontal of [-.59, .59]) {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(windowWidth + .16, .08, .06), frameMaterial);
+        frame.position.y = horizontal;
+        group.add(frame);
+      }
+      for (const vertical of [-windowWidth / 2 - .04, windowWidth / 2 + .04]) {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(.08, 1.24, .06), frameMaterial);
+        frame.position.x = vertical;
+        group.add(frame);
+      }
+      const sideOffset = wall.side === "negative" ? -.101 : .101;
+      if (wall.orientation === "z") {
+        group.position.set(center, 1.68, wall.boundary + sideOffset);
+      } else {
+        group.position.set(wall.boundary + sideOffset, 1.68, center);
+        group.rotation.y = Math.PI / 2;
+      }
+      group.userData.homeWindow = true;
+      group.userData.roomId = room.id;
+      homeGroup.add(group);
+    }
+  }
 }
 
 function addSegmentedHomeWall(
@@ -5224,8 +5323,9 @@ function updateHouseholdSummary(home: Home) {
       ? ` ${world.householdGatheringLabel(activeGathering)} is underway with ${activeGathering.guestCount} visitors.`
       : "";
     const homeCondition = world.homeCondition(home);
+    const homeDaylight = world.homeDaylight(home);
     document.querySelector("#panel-copy")!.textContent =
-      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
+      `${home.residents.length ? `${home.name} is ${wellbeingLabel(homeScore).toLowerCase()} at ${homeScore}% wellbeing.` : "Build the home and add residents to begin their daily simulation."} This is a ${home.floors}-floor home with ${home.rooms.length} rooms and ${(home.stairs ?? []).length} stair connection${(home.stairs ?? []).length === 1 ? "" : "s"}, currently ${world.homeConditionLabel(homeCondition).toLowerCase()} at ${homeCondition}% condition with ${homeDaylight}% daylight. The household has ${formatHomeCurrency(world.homeHouseholdFunds(home))} with a ${formatSignedHomeCurrency(world.homeDailyNet(home))} last daily result. ${formatHomeCurrency(world.homeRemainingBudget(home))} remains from the separate ${formatHomeCurrency(home.designBudget)} design budget. ${activity.atHome} residents are home, ${activity.atWorkOrSchool} are at work or school, and ${activity.outInCity} are elsewhere.${actionCopy}${gatheringCopy}${outageCopy}${commuteCopy}`;
     const details = document.querySelector("#parcel-details")!;
     const utility = world.lotUtilityReliability(selectedLot);
     const neighborhood = world.lotNeighborhoodSupport(selectedLot);
@@ -5247,6 +5347,7 @@ function updateHouseholdSummary(home: Home) {
         <div><span>Structure</span><strong>${home.floors} floor${home.floors === 1 ? "" : "s"}</strong></div>
         <div><span>Home quality</span><strong>${world.homeQuality(home)}%</strong></div>
         <div><span>Condition</span><strong>${homeCondition}% · ${world.homeConditionLabel(homeCondition)}</strong></div>
+        <div><span>Daylight</span><strong>${homeDaylight}%</strong></div>
         <div><span>Utilities</span><strong>${utility}%</strong></div>
         <div><span>Neighborhood</span><strong>${neighborhood}%</strong></div>
         <div><span>Entrance</span><strong>${entrance ? entranceAccessLabel(entrance) : "Not connected"}</strong></div>

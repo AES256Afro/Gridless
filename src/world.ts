@@ -1140,6 +1140,48 @@ export type Home = {
   relationships: ResidentRelationship[];
 };
 
+export type HomeExteriorWall = {
+  orientation: "x" | "z";
+  boundary: number;
+  start: number;
+  end: number;
+  side: "negative" | "positive";
+};
+
+export function homeRoomExteriorWalls(home: Home, room: HomeRoom): HomeExteriorWall[] {
+  const candidates: HomeExteriorWall[] = [
+    { orientation: "z", boundary: room.z - room.depth / 2, start: room.x - room.width / 2, end: room.x + room.width / 2, side: "negative" },
+    { orientation: "z", boundary: room.z + room.depth / 2, start: room.x - room.width / 2, end: room.x + room.width / 2, side: "positive" },
+    { orientation: "x", boundary: room.x - room.width / 2, start: room.z - room.depth / 2, end: room.z + room.depth / 2, side: "negative" },
+    { orientation: "x", boundary: room.x + room.width / 2, start: room.z - room.depth / 2, end: room.z + room.depth / 2, side: "positive" }
+  ];
+  const sameFloorRooms = home.rooms.filter(candidate => candidate.id !== room.id && homeEntityFloor(candidate) === homeEntityFloor(room));
+  return candidates.flatMap(wall => {
+    const covered = sameFloorRooms.flatMap(candidate => {
+      const candidateBoundaries = wall.orientation === "z"
+        ? [candidate.z - candidate.depth / 2, candidate.z + candidate.depth / 2]
+        : [candidate.x - candidate.width / 2, candidate.x + candidate.width / 2];
+      if (!candidateBoundaries.some(boundary => Math.abs(boundary - wall.boundary) < .12)) return [];
+      const candidateStart = wall.orientation === "z" ? candidate.x - candidate.width / 2 : candidate.z - candidate.depth / 2;
+      const candidateEnd = wall.orientation === "z" ? candidate.x + candidate.width / 2 : candidate.z + candidate.depth / 2;
+      const start = Math.max(wall.start, candidateStart);
+      const end = Math.min(wall.end, candidateEnd);
+      return end - start > .2 ? [{ start, end }] : [];
+    }).sort((a, b) => a.start - b.start);
+    let segments = [{ start: wall.start, end: wall.end }];
+    for (const interval of covered) {
+      segments = segments.flatMap(segment => {
+        if (interval.end <= segment.start || interval.start >= segment.end) return [segment];
+        const result: Array<{ start: number; end: number }> = [];
+        if (interval.start - segment.start > .2) result.push({ start: segment.start, end: interval.start });
+        if (segment.end - interval.end > .2) result.push({ start: interval.end, end: segment.end });
+        return result;
+      });
+    }
+    return segments.map(segment => ({ ...wall, ...segment }));
+  });
+}
+
 export const HOME_BUILD_COSTS = {
   roomPerSquareMeter: 220,
   floorShell: 12_000,
@@ -3805,6 +3847,7 @@ export class World {
     const plants = Math.min(3, home.furniture.filter(item => item.kind === "plant").length);
     const functionality = this.homeFunctionality(home);
     const conditionPenalty = (100 - this.homeCondition(home)) * .24;
+    const daylightPenalty = (100 - this.homeDaylight(home)) * .08;
     return Math.round(clamp(
       30
       + roomShare * 22
@@ -3813,10 +3856,22 @@ export class World {
       + functionality.alignment / 100 * 5
       + furnitureVariety * 7
       + plants * 2
-      - conditionPenalty,
+      - conditionPenalty
+      - daylightPenalty,
       0,
       100
     ));
+  }
+
+  roomDaylight(home: Home, room: HomeRoom) {
+    const exteriorLength = homeRoomExteriorWalls(home, room)
+      .reduce((total, wall) => total + wall.end - wall.start, 0);
+    const perimeter = Math.max(1, (room.width + room.depth) * 2);
+    return Math.round(clamp(18 + exteriorLength / perimeter * 82, 18, 100));
+  }
+
+  homeDaylight(home: Home) {
+    return Math.round(average(home.rooms.map(room => this.roomDaylight(home, room))));
   }
 
   furniturePurposeFit(home: Home, furniture: Home["furniture"][number]) {
@@ -3924,6 +3979,7 @@ export class World {
       { value: 100 - utilityReliability, text: "Missing or unreliable utilities" },
       { value: commuteBurden, text: "Commute burden" },
       { value: 100 - homeQuality, text: "Crowded or under-furnished home" },
+      { value: home ? (100 - this.homeDaylight(home)) * .5 : 0, text: "Home needs more daylight" },
       { value: resident.stress, text: "High daily stress" },
       { value: 100 - financialSecurity, text: "Household financial pressure" },
       { value: hasCaregiver ? 0 : 78, text: "Needs a household caregiver" },

@@ -56,6 +56,7 @@ import {
   World,
   homeEntityFloor,
   homeFloorView,
+  homeRoomExteriorWalls,
   roadConstructionCost,
   roadWidthForProfile,
   snapRoadDrawingPoint,
@@ -1185,6 +1186,19 @@ check(
 );
 const furniturePlacementWorld = new World();
 furniturePlacementWorld.homes = [structuredClone(interiorHome)];
+const interiorExteriorWalls = interiorHome.rooms.flatMap(room => homeRoomExteriorWalls(interiorHome, room));
+check(
+  interiorExteriorWalls.length === 6,
+  "Shared interior walls incorrectly received exterior window eligibility."
+);
+check(
+  furniturePlacementWorld.homeDaylight(furniturePlacementWorld.homes[0]) === 79
+    && furniturePlacementWorld.homes[0].rooms.every(room =>
+      furniturePlacementWorld.roomDaylight(furniturePlacementWorld.homes[0], room) >= 18
+      && furniturePlacementWorld.roomDaylight(furniturePlacementWorld.homes[0], room) <= 100
+    ),
+  "Exterior wall exposure did not produce bounded deterministic home daylight."
+);
 const designBudgetBeforePlacement = furniturePlacementWorld.homeRemainingBudget(furniturePlacementWorld.homes[0]);
 check(
   furniturePlacementWorld.addFurniture(interiorHome.id, "plant", -2, 1),
@@ -3443,6 +3457,8 @@ console.log(JSON.stringify({
   waterBoundary: waterMove.blocked,
   interiorEntry: interiorEntry,
   interiorDoorways: interiorDoorways(interiorHome).length,
+  homeExteriorWalls: interiorExteriorWalls.length,
+  homeDaylight: furniturePlacementWorld.homeDaylight(furniturePlacementWorld.homes[0]),
   interiorFurnitureCollision: furnitureMove.blocked,
   furnitureVariant: catalogDesk.variant,
   furnitureTint: catalogDesk.tint,
